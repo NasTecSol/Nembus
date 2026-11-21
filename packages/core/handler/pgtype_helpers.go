@@ -42,6 +42,13 @@ func uuidFromString(s string) (uuid.UUID, error) {
 	return uuid.Parse(s)
 }
 
+func uuidPtr(u *uuid.UUID) pgtype.UUID {
+	if u == nil || *u == uuid.Nil {
+		return pgtype.UUID{Valid: false}
+	}
+	return pgtype.UUID{Bytes: *u, Valid: true}
+}
+
 func uuidPtrFromString(s *string) (pgtype.UUID, error) {
 	if s == nil || *s == "" {
 		return pgtype.UUID{Valid: false}, nil

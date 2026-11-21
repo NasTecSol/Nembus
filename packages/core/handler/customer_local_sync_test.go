@@ -15,6 +15,7 @@ import (
 	"github.com/NasTecSol/nembus-core/repository"
 	"github.com/NasTecSol/nembus-core/usecase"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -48,7 +49,7 @@ func TestLocalCustomerCreationQueuesExistingOutbox(t *testing.T) {
 		CREATE TABLE local_device_config (id serial PRIMARY KEY, pos_terminal_id integer);
 		INSERT INTO local_device_config(pos_terminal_id) VALUES(3);
 		CREATE TABLE customers (
-			id serial PRIMARY KEY, organization_id integer NOT NULL,
+			id uuid PRIMARY KEY DEFAULT gen_random_uuid(), organization_id integer NOT NULL,
 			customer_code varchar(50) NOT NULL, name varchar(255) NOT NULL,
 			email text, phone text, address text, customer_type text,
 			price_list_id integer, credit_limit numeric DEFAULT 0,
@@ -56,7 +57,7 @@ func TestLocalCustomerCreationQueuesExistingOutbox(t *testing.T) {
 			loyalty_tier text DEFAULT 'bronze', is_active boolean DEFAULT true,
 			metadata jsonb DEFAULT '{}', created_at timestamp DEFAULT now(),
 			updated_at timestamp DEFAULT now(), UNIQUE(organization_id,customer_code));
-		CREATE TABLE sync_queue (entity_type text, entity_id bigint, action text,
+		CREATE TABLE sync_queue (entity_type text, entity_id text, action text,
 			payload jsonb, status text, priority integer);`); err != nil {
 		t.Fatal(err)
 	}
@@ -81,13 +82,13 @@ func TestLocalCustomerCreationQueuesExistingOutbox(t *testing.T) {
 	if got := create("POS-ONE"); got != http.StatusCreated {
 		t.Fatalf("first customer HTTP status: %d", got)
 	}
-	var id int32
-	if err := pool.QueryRow(ctx, `SELECT id FROM customers WHERE customer_code='POS-ONE'`).Scan(&id); err != nil || id != 1000300001 {
-		t.Fatalf("first customer ID: %d, err=%v", id, err)
+	var id uuid.UUID
+	if err := pool.QueryRow(ctx, `SELECT id FROM customers WHERE customer_code='POS-ONE'`).Scan(&id); err != nil || id == uuid.Nil {
+		t.Fatalf("first customer ID: %s, err=%v", id, err)
 	}
 	var count int
 	if err := pool.QueryRow(ctx, `SELECT count(*) FROM sync_queue WHERE entity_type='customers'
-		AND entity_id=$1 AND action='INSERT' AND status='pending' AND payload->>'customer_code'='POS-ONE'`, id).Scan(&count); err != nil || count != 1 {
+		AND entity_id=$1 AND action='INSERT' AND status='pending' AND payload->>'customer_code'='POS-ONE'`, id.String()).Scan(&count); err != nil || count != 1 {
 		t.Fatalf("customer outbox event: count=%d err=%v", count, err)
 	}
 	if _, err := pool.Exec(ctx, `DROP TABLE sync_queue`); err != nil {

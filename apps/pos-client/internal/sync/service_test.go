@@ -51,41 +51,41 @@ func TestTransactionParentsForExistingQueueEntry(t *testing.T) {
 		CREATE TABLE sales_orders_v2 (id uuid PRIMARY KEY, source_cart_id uuid REFERENCES carts(id), fulfillment_status text, order_status text);
 		CREATE TABLE sales_order_lines_v2 (id uuid PRIMARY KEY, sales_order_id uuid REFERENCES sales_orders_v2(id), line_number integer);
 		CREATE TABLE pos_transactions (
-			id bigint PRIMARY KEY,
+			id uuid PRIMARY KEY,
 			sales_order_id uuid REFERENCES sales_orders_v2(id),
 			source_cart_id uuid REFERENCES carts(id)
 		);
-		CREATE TABLE pos_transaction_lines (id bigint PRIMARY KEY, transaction_id bigint NOT NULL, line_number integer DEFAULT 1);
-		CREATE TABLE pos_payments (id bigint PRIMARY KEY, transaction_id bigint NOT NULL, amount numeric DEFAULT 0);
-		CREATE TABLE sales_returns (id bigint PRIMARY KEY, return_number text, status text);
-		CREATE TABLE sales_return_lines (id bigint PRIMARY KEY, return_id bigint REFERENCES sales_returns(id), line_number integer);
+		CREATE TABLE pos_transaction_lines (id uuid PRIMARY KEY, transaction_id uuid NOT NULL, line_number integer DEFAULT 1);
+		CREATE TABLE pos_payments (id uuid PRIMARY KEY, transaction_id uuid NOT NULL, amount numeric DEFAULT 0);
+		CREATE TABLE sales_returns (id uuid PRIMARY KEY, return_number text, status text);
+		CREATE TABLE sales_return_lines (id uuid PRIMARY KEY, return_id uuid REFERENCES sales_returns(id), line_number integer);
 		INSERT INTO carts (id) VALUES ('00000000-0000-0000-0000-000000000001');
 		INSERT INTO sales_orders_v2 VALUES ('00000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000000001', 'fulfilled', 'fulfilled');
 		UPDATE carts SET converted_to_order_id = '00000000-0000-0000-0000-000000000002' WHERE id = '00000000-0000-0000-0000-000000000001';
 		ALTER TABLE carts ADD CONSTRAINT fk_carts_converted_to_order FOREIGN KEY (converted_to_order_id) REFERENCES sales_orders_v2(id);
 		INSERT INTO sales_order_lines_v2 VALUES ('00000000-0000-0000-0000-000000000003', '00000000-0000-0000-0000-000000000002', 1);
-		INSERT INTO pos_transaction_lines (id, transaction_id) VALUES (8, 7);
-		INSERT INTO pos_payments (id, transaction_id) VALUES (9, 7);
+		INSERT INTO pos_transaction_lines (id, transaction_id) VALUES ('00000000-0000-0000-0000-000000000008', '00000000-0000-0000-0000-000000000007');
+		INSERT INTO pos_payments (id, transaction_id) VALUES ('00000000-0000-0000-0000-000000000009', '00000000-0000-0000-0000-000000000007');
 		INSERT INTO pos_transactions (id, sales_order_id, source_cart_id)
-		VALUES (7, '00000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000000001');
-		CREATE TABLE sync_queue (id bigint PRIMARY KEY, outbox_uuid uuid DEFAULT gen_random_uuid(),
-			entity_type text, entity_id bigint, action text,
-			payload jsonb, created_at timestamptz DEFAULT now(), correlation_id text, status text,
+		VALUES ('00000000-0000-0000-0000-000000000007', '00000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000000001');
+		CREATE TABLE sync_queue (id bigserial PRIMARY KEY, outbox_uuid uuid DEFAULT gen_random_uuid(),
+			entity_type text, entity_id text, action text,
+			payload jsonb, created_at timestamptz DEFAULT now(), correlation_id text, status text, priority integer DEFAULT 0,
 			retry_count integer DEFAULT 0, max_retries integer DEFAULT 5, last_error text,
 			error_class text, next_attempt_at timestamptz DEFAULT now(), quarantined_at timestamptz);
 		INSERT INTO sync_queue (id, entity_type, entity_id, action, payload, status) VALUES
-			(1, 'pos_transactions', 7, 'INSERT', '{"id":7}', 'failed'),
-			(2, 'pos_transaction_lines', 8, 'INSERT', '{"id":8,"transaction_id":7}', 'pending'),
-			(3, 'pos_payments', 9, 'INSERT', '{"id":9,"transaction_id":7}', 'pending'),
-			(4, 'cashier_sessions', 10, 'INSERT', '{"id":10}', 'pending'),
-			(5, 'sales_returns', 100, 'INSERT', '{"id":100}', 'failed'),
-			(6, 'sales_return_lines', 101, 'INSERT', '{"id":101,"return_id":100}', 'pending');
+			(1, 'pos_transactions', '00000000-0000-0000-0000-000000000007', 'INSERT', '{"id":"00000000-0000-0000-0000-000000000007"}', 'failed'),
+			(2, 'pos_transaction_lines', '00000000-0000-0000-0000-000000000008', 'INSERT', '{"id":"00000000-0000-0000-0000-000000000008","transaction_id":"00000000-0000-0000-0000-000000000007"}', 'pending'),
+			(3, 'pos_payments', '00000000-0000-0000-0000-000000000009', 'INSERT', '{"id":"00000000-0000-0000-0000-000000000009","transaction_id":"00000000-0000-0000-0000-000000000007"}', 'pending'),
+			(4, 'cashier_sessions', '00000000-0000-0000-0000-000000000010', 'INSERT', '{"id":"00000000-0000-0000-0000-000000000010"}', 'pending'),
+			(5, 'sales_returns', '00000000-0000-0000-0000-000000000100', 'INSERT', '{"id":"00000000-0000-0000-0000-000000000100"}', 'failed'),
+			(6, 'sales_return_lines', '00000000-0000-0000-0000-000000000101', 'INSERT', '{"id":"00000000-0000-0000-0000-000000000101","return_id":"00000000-0000-0000-0000-000000000100"}', 'pending');
 	`)
 	if err != nil {
 		t.Fatal(err)
 	}
 	s := NewSyncService(ctx, pool, "localhost:50051", "test")
-	item := OutboxItem{ID: 42, EntityType: "pos_transactions", Payload: json.RawMessage(`{"id":7,"sales_order_id":"00000000-0000-0000-0000-000000000002","source_cart_id":"00000000-0000-0000-0000-000000000001"}`)}
+	item := OutboxItem{ID: 42, EntityType: "pos_transactions", Payload: json.RawMessage(`{"id":"00000000-0000-0000-0000-000000000007","sales_order_id":"00000000-0000-0000-0000-000000000002","source_cart_id":"00000000-0000-0000-0000-000000000001"}`)}
 	parents, err := s.transactionParents(item)
 	if err != nil {
 		t.Fatal(err)
@@ -133,12 +133,12 @@ func TestTransactionParentsForExistingQueueEntry(t *testing.T) {
 		t.Fatal(err)
 	}
 	// The order's source cart must also be sent if an older POS payload omits it.
-	item.Payload = json.RawMessage(`{"id":7,"sales_order_id":"00000000-0000-0000-0000-000000000002"}`)
+	item.Payload = json.RawMessage(`{"id":"00000000-0000-0000-0000-000000000007","sales_order_id":"00000000-0000-0000-0000-000000000002"}`)
 	parents, err = s.transactionParents(item)
 	if err != nil || len(parents) != 3 {
 		t.Fatalf("order-only reference: parents=%+v err=%v", parents, err)
 	}
-	item.Payload = json.RawMessage(`{"id":999,"sales_order_id":null,"source_cart_id":null}`)
+	item.Payload = json.RawMessage(`{"id":"00000000-0000-0000-0000-000000000999","sales_order_id":null,"source_cart_id":null}`)
 	parents, err = s.transactionParents(item)
 	if err != nil || len(parents) != 0 {
 		t.Fatalf("direct POS sale: parents=%+v err=%v", parents, err)
@@ -199,9 +199,9 @@ func TestTransactionParentsForExistingQueueEntry(t *testing.T) {
 		t.Fatalf("child sales_return_lines must become eligible after sales_returns synced; eligible=%v", ids)
 	}
 	if _, err := pool.Exec(ctx, `INSERT INTO sync_queue(id,entity_type,entity_id,action,payload,status) VALUES
-		(7,'customers',12,'INSERT','{"id":12,"organization_id":1,"customer_code":"POS-12"}','pending'),
-		(8,'pos_transactions',12,'INSERT','{"id":12,"customer_id":12}','pending'),
-		(9,'sales_returns',12,'INSERT','{"id":12,"customer_id":12}','pending')`); err != nil {
+		(7,'customers','00000000-0000-0000-0000-000000000012','INSERT','{"id":"00000000-0000-0000-0000-000000000012","organization_id":1,"customer_code":"POS-12"}','pending'),
+		(8,'pos_transactions','00000000-0000-0000-0000-000000000012','INSERT','{"id":"00000000-0000-0000-0000-000000000012","customer_id":"00000000-0000-0000-0000-000000000012"}','pending'),
+		(9,'sales_returns','00000000-0000-0000-0000-000000000012','INSERT','{"id":"00000000-0000-0000-0000-000000000012","customer_id":"00000000-0000-0000-0000-000000000012"}','pending')`); err != nil {
 		t.Fatal(err)
 	}
 	if ids := eligible(); len(ids) != 5 || ids[4] != 7 {
@@ -212,6 +212,28 @@ func TestTransactionParentsForExistingQueueEntry(t *testing.T) {
 	}
 	if ids := eligible(); len(ids) != 6 || ids[4] != 8 || ids[5] != 9 {
 		t.Fatalf("sale and return should unlock after customer acknowledgment; eligible=%v", ids)
+	}
+
+	// Verify OutboxResilienceDDL upgrades an existing bigint sync_queue.entity_id column to TEXT
+	// and trg_enqueue_sync_outbox() enqueues UUID primary keys cleanly.
+	if _, err := pool.Exec(ctx, `
+		SELECT setval(pg_get_serial_sequence('sync_queue', 'id'), (SELECT COALESCE(MAX(id), 1) FROM sync_queue));
+		CREATE TABLE user_biometric_templates (id uuid PRIMARY KEY);
+		CREATE TABLE cashier_sessions (id uuid PRIMARY KEY);
+		CREATE TABLE stock_movements (id uuid PRIMARY KEY, movement_type text);
+		CREATE TABLE local_device_config (id serial PRIMARY KEY);
+	`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, OutboxResilienceDDL); err != nil {
+		t.Fatalf("OutboxResilienceDDL failed: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO cashier_sessions (id) VALUES ('00000000-0000-0000-0000-000000000555')`); err != nil {
+		t.Fatalf("trigger enqueue UUID cashier_session failed: %v", err)
+	}
+	var queuedEntityID string
+	if err := pool.QueryRow(ctx, `SELECT entity_id FROM sync_queue WHERE entity_type = 'cashier_sessions' AND entity_id = '00000000-0000-0000-0000-000000000555'`).Scan(&queuedEntityID); err != nil || queuedEntityID != "00000000-0000-0000-0000-000000000555" {
+		t.Fatalf("expected trigger-enqueued UUID in sync_queue, got %q err=%v", queuedEntityID, err)
 	}
 }
 
@@ -238,13 +260,13 @@ func TestPendingOutboxSQLStructure(t *testing.T) {
 		"COALESCE(q.next_attempt_at, q.created_at, NOW()) <= NOW()",
 		"q.entity_type IN ('pos_transaction_lines', 'pos_payments')",
 		"parent.entity_type = 'pos_transactions'",
-		"parent.entity_id = (q.payload->>'transaction_id')::bigint",
+		"parent.entity_id = (q.payload->>'transaction_id')",
 		"q.entity_type IN ('pos_transactions', 'sales_returns')",
 		"parent.entity_type = 'customers'",
-		"parent.entity_id = (q.payload->>'customer_id')::bigint",
+		"parent.entity_id = (q.payload->>'customer_id')",
 		"q.entity_type = 'sales_return_lines'",
 		"parent.entity_type = 'sales_returns'",
-		"parent.entity_id = (q.payload->>'return_id')::bigint",
+		"parent.entity_id = (q.payload->>'return_id')",
 		"parent.status IN ('pending', 'failed', 'quarantined')",
 	}
 	for _, clause := range requiredClauses {

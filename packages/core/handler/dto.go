@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/NasTecSol/nembus-core/usecase"
+	"github.com/google/uuid"
 )
 
 // UserResponse represents a user in API responses
@@ -98,12 +99,12 @@ type EnrollFingerResponse struct {
 	StatusCode int    `json:"statusCode" example:"200"`
 	Message    string `json:"message" example:"biometric fingerprint enrolled successfully"`
 	Data       struct {
-		ID           int32  `json:"id" example:"1"`
-		UserID       int32  `json:"user_id" example:"12"`
-		FingerIndex  int16  `json:"finger_index" example:"2"`
-		FingerName   string `json:"finger_name" example:"Right Index"`
-		QualityScore int16  `json:"quality_score" example:"1"`
-		IsActive     bool   `json:"is_active" example:"true"`
+		ID           uuid.UUID `json:"id" example:"550e8400-e29b-41d4-a716-446655440000"`
+		UserID       int32     `json:"user_id" example:"12"`
+		FingerIndex  int16     `json:"finger_index" example:"2"`
+		FingerName   string    `json:"finger_name" example:"Right Index"`
+		QualityScore int16     `json:"quality_score" example:"1"`
+		IsActive     bool      `json:"is_active" example:"true"`
 	} `json:"data"`
 }
 
@@ -752,7 +753,7 @@ type RestaurantCreateCartRequest struct {
 	StoreID         int32                       `json:"store_id" binding:"required" example:"6"`
 	TableID         *int32                      `json:"table_id,omitempty" example:"1"`
 	OrderType       string                      `json:"order_type" example:"dine_in"`
-	CustomerID      *int32                      `json:"customer_id,omitempty" example:"1"`
+	CustomerID      *uuid.UUID                  `json:"customer_id,omitempty" example:"550e8400-e29b-41d4-a716-446655440000"`
 	GuestIdentifier string                      `json:"guest_identifier" example:"guest-abc-123"`
 	GuestName       string                      `json:"guest_name" example:"Walk-in Guest"`
 	GuestEmail      string                      `json:"guest_email" example:"guest@example.com"`
@@ -765,7 +766,7 @@ type RestaurantCreateCartRequest struct {
 	CreatedByUserID *int32                      `json:"created_by_user_id,omitempty" example:"1"`
 	CashierID       *int32                      `json:"cashier_id,omitempty" example:"1"`
 	PosTerminalID   *int32                      `json:"pos_terminal_id,omitempty" example:"8"`
-	KioskSessionID  *int32                      `json:"kiosk_session_id,omitempty"`
+	KioskSessionID  *uuid.UUID                  `json:"kiosk_session_id,omitempty"`
 	CouponCode      string                      `json:"coupon_code" example:""`
 	DiscountCode    string                      `json:"discount_code" example:""`
 	DeliveryAddress json.RawMessage             `json:"delivery_address" swaggertype:"object"`
@@ -781,7 +782,7 @@ type RestaurantAddToCartRequest struct {
 	StoreID              int32                                          `json:"store_id" example:"6"`
 	TableID              *int32                                         `json:"table_id,omitempty" example:"1"`
 	OrderType            string                                         `json:"order_type" example:"dine_in"`
-	CustomerID           *int32                                         `json:"customer_id,omitempty" example:"1"`
+	CustomerID           *uuid.UUID                                     `json:"customer_id,omitempty" example:"550e8400-e29b-41d4-a716-446655440000"`
 	GuestIdentifier      string                                         `json:"guest_identifier" example:"guest-abc-123"`
 	GuestName            string                                         `json:"guest_name" example:"Walk-in Guest"`
 	GuestEmail           string                                         `json:"guest_email" example:"guest@example.com"`
@@ -789,7 +790,7 @@ type RestaurantAddToCartRequest struct {
 	Channel              string                                         `json:"channel" example:"pos"`
 	CashierID            *int32                                         `json:"cashier_id,omitempty" example:"1"`
 	PosTerminalID        *int32                                         `json:"pos_terminal_id,omitempty" example:"8"`
-	KioskSessionID       *int32                                         `json:"kiosk_session_id,omitempty"`
+	KioskSessionID       *uuid.UUID                                     `json:"kiosk_session_id,omitempty"`
 	CreatedByUserID      *int32                                         `json:"created_by_user_id,omitempty" example:"1"`
 	MenuItemID           int32                                          `json:"menu_item_id" binding:"required" example:"10"`
 	Quantity             float64                                        `json:"quantity" example:"2"`
@@ -807,7 +808,7 @@ type RestaurantAddToCartRequest struct {
 type RestaurantUpdateCartRequest struct {
 	TableID         *int32          `json:"table_id,omitempty" example:"1"`
 	OrderType       string          `json:"order_type" example:"dine_in"`
-	CustomerID      *int32          `json:"customer_id,omitempty" example:"1"`
+	CustomerID      *uuid.UUID      `json:"customer_id,omitempty" example:"550e8400-e29b-41d4-a716-446655440000"`
 	GuestIdentifier string          `json:"guest_identifier" example:"guest-abc-123"`
 	GuestName       string          `json:"guest_name" example:"Walk-in Guest"`
 	GuestEmail      string          `json:"guest_email" example:"guest@example.com"`
@@ -835,9 +836,9 @@ type RestaurantUpdateCartItemRequest struct {
 }
 
 type RestaurantMergeCartRequest struct {
-	StoreID         int32  `json:"store_id" binding:"required" example:"6"`
-	GuestIdentifier string `json:"guest_identifier" binding:"required" example:"guest-abc-123"`
-	CustomerID      int32  `json:"customer_id" binding:"required" example:"1"`
+	StoreID         int32     `json:"store_id" binding:"required" example:"6"`
+	GuestIdentifier string    `json:"guest_identifier" binding:"required" example:"guest-abc-123"`
+	CustomerID      uuid.UUID `json:"customer_id" binding:"required" example:"550e8400-e29b-41d4-a716-446655440000"`
 }
 
 type RestaurantAssignTableRequest struct {
@@ -854,10 +855,10 @@ type RestaurantCheckoutRequest struct {
 	OrderType        string          `json:"order_type" example:"dine_in"`
 	TableID          *int32          `json:"table_id,omitempty" example:"1"`
 	CashierID        *int32          `json:"cashier_id,omitempty" example:"1"`
-	CashierSessionID *int32          `json:"cashier_session_id,omitempty" example:"1"`
-	CustomerID       *int32          `json:"customer_id,omitempty" example:"1"`
+	CashierSessionID *uuid.UUID      `json:"cashier_session_id,omitempty" example:"550e8400-e29b-41d4-a716-446655440000"`
+	CustomerID       *uuid.UUID      `json:"customer_id,omitempty" example:"550e8400-e29b-41d4-a716-446655440000"`
 	PosTerminalID    *int32          `json:"pos_terminal_id,omitempty" example:"8"`
-	KioskSessionID   *int32          `json:"kiosk_session_id,omitempty"`
+	KioskSessionID   *uuid.UUID      `json:"kiosk_session_id,omitempty"`
 	CreatedByUserID  *int32          `json:"created_by_user_id,omitempty" example:"1"`
 	CustomerName     string          `json:"customer_name" example:"Walk-in Guest"`
 	CustomerEmail    string          `json:"customer_email" example:"guest@example.com"`
@@ -868,7 +869,7 @@ type RestaurantCheckoutRequest struct {
 	PaymentGateway   string          `json:"payment_gateway" example:""`
 	ReferenceNumber  string          `json:"reference_number" example:""`
 	AmountPaid       float64         `json:"amount_paid" example:"0"`
-	PosTransactionID *int32          `json:"pos_transaction_id,omitempty"`
+	PosTransactionID *uuid.UUID      `json:"pos_transaction_id,omitempty"`
 	CouponCode       string          `json:"coupon_code" example:"PIZZA20"`
 	DiscountCode     string          `json:"discount_code" example:"PIZZA20-PROMO"`
 	Notes            string          `json:"notes" example:"Send to kitchen first"`
@@ -887,10 +888,10 @@ type CreateRestaurantOrderRequest struct {
 	StoreID          int32                       `json:"store_id" binding:"required" example:"6"`
 	TableID          *int32                      `json:"table_id,omitempty" example:"1"`
 	CashierID        *int32                      `json:"cashier_id,omitempty" example:"1"`
-	CashierSessionID *int32                      `json:"cashier_session_id,omitempty" example:"1"`
-	CustomerID       *int32                      `json:"customer_id,omitempty" example:"1"`
+	CashierSessionID *uuid.UUID                  `json:"cashier_session_id,omitempty" example:"550e8400-e29b-41d4-a716-446655440000"`
+	CustomerID       *uuid.UUID                  `json:"customer_id,omitempty" example:"550e8400-e29b-41d4-a716-446655440000"`
 	PosTerminalID    *int32                      `json:"pos_terminal_id,omitempty" example:"8"`
-	KioskSessionID   *int32                      `json:"kiosk_session_id,omitempty"`
+	KioskSessionID   *uuid.UUID                  `json:"kiosk_session_id,omitempty"`
 	CreatedByUserID  *int32                      `json:"created_by_user_id,omitempty" example:"1"`
 	SourceCartID     string                      `json:"source_cart_id,omitempty" example:""`
 	OrderNumber      string                      `json:"order_number,omitempty" example:""`
@@ -909,7 +910,7 @@ type CreateRestaurantOrderRequest struct {
 	AmountPaid       string                      `json:"amount_paid,omitempty" example:"0.00"`
 	ChangeGiven      string                      `json:"change_given,omitempty" example:"0.00"`
 	Notes            string                      `json:"notes,omitempty" example:"Table 1 order"`
-	PosTransactionID *int32                      `json:"pos_transaction_id,omitempty"`
+	PosTransactionID *uuid.UUID                  `json:"pos_transaction_id,omitempty"`
 	Metadata         string                      `json:"metadata,omitempty" example:"{}"`
 	Items            []RestaurantLineItemRequest `json:"items"`
 }
@@ -925,20 +926,20 @@ type CreateMenuItemModifierRequest struct {
 }
 
 type CreateWasteLogRequest struct {
-	StoreID     int32  `json:"store_id" binding:"required"`
-	ProductID   *int32 `json:"product_id"`
-	MenuItemID  *int32 `json:"menu_item_id"`
-	RecipeID    *int32 `json:"recipe_id"`
-	WasteSource string `json:"waste_source"`
-	Quantity    string `json:"quantity" binding:"required"`
-	UomID       *int32 `json:"uom_id"`
-	UnitCost    string `json:"unit_cost"`
-	TotalCost   string `json:"total_cost"`
-	Reason      string `json:"reason"`
-	LoggedBy    *int32 `json:"logged_by"`
-	OrderID     *int32 `json:"order_id"`
-	WastedAt    string `json:"wasted_at"`
-	Metadata    string `json:"metadata"`
+	StoreID     int32      `json:"store_id" binding:"required"`
+	ProductID   *int32     `json:"product_id"`
+	MenuItemID  *int32     `json:"menu_item_id"`
+	RecipeID    *int32     `json:"recipe_id"`
+	WasteSource string     `json:"waste_source"`
+	Quantity    string     `json:"quantity" binding:"required"`
+	UomID       *int32     `json:"uom_id"`
+	UnitCost    string     `json:"unit_cost"`
+	TotalCost   string     `json:"total_cost"`
+	Reason      string     `json:"reason"`
+	LoggedBy    *int32     `json:"logged_by"`
+	OrderID     *uuid.UUID `json:"order_id"`
+	WastedAt    string     `json:"wasted_at"`
+	Metadata    string     `json:"metadata"`
 }
 
 type CreateKioskSessionRequest struct {
@@ -954,7 +955,7 @@ type CreateOnlineOrderRequest struct {
 	OrganizationID  *int32                             `json:"organization_id,omitempty" example:"1"`
 	StoreID         int32                              `json:"store_id" binding:"required" example:"6"`
 	TableID         *int32                             `json:"table_id,omitempty"`
-	CustomerID      *int32                             `json:"customer_id,omitempty" example:"1"`
+	CustomerID      *uuid.UUID                         `json:"customer_id,omitempty" example:"550e8400-e29b-41d4-a716-446655440000"`
 	OrderSource     string                             `json:"order_source,omitempty" example:"online"`
 	OrderType       string                             `json:"order_type,omitempty" example:"delivery"`
 	CustomerName    string                             `json:"customer_name,omitempty" example:"Online Customer"`
@@ -974,9 +975,9 @@ type UpdateStatusRequest struct {
 }
 
 type SettleOrderRequest struct {
-	PosTransactionID *int32          `json:"pos_transaction_id,omitempty"`
+	PosTransactionID *uuid.UUID      `json:"pos_transaction_id,omitempty"`
 	CashierID        *int32          `json:"cashier_id,omitempty" example:"1"`
-	CashierSessionID *int32          `json:"cashier_session_id,omitempty" example:"1"`
+	CashierSessionID *uuid.UUID      `json:"cashier_session_id,omitempty" example:"550e8400-e29b-41d4-a716-446655440000"`
 	PosTerminalID    *int32          `json:"pos_terminal_id,omitempty" example:"8"`
 	PaymentMethod    string          `json:"payment_method,omitempty" example:"cash"`
 	PaymentGateway   string          `json:"payment_gateway,omitempty" example:""`
@@ -1075,8 +1076,8 @@ type CreateCartRequest struct {
 	CartNumber      string                 `json:"cart_number" binding:"required" example:"CART-20260210-0001"`
 	OrganizationID  int32                  `json:"organization_id" binding:"required" example:"1"`
 	StoreID         *int32                 `json:"store_id,omitempty" example:"10"`
-	CustomerID      *int32                 `json:"customer_id,omitempty" example:"123"`
-	GuestIdentifier *string                `json:"guest_identifier,omitempty" example:"guest-device-abc"`
+	CustomerID      *uuid.UUID             `json:"customer_id,omitempty" example:"550e8400-e29b-41d4-a716-446655440000"`
+		GuestIdentifier *string                `json:"guest_identifier,omitempty" example:"guest-device-abc"`
 	GuestEmail      *string                `json:"guest_email,omitempty" example:"guest@example.com"`
 	GuestPhone      *string                `json:"guest_phone,omitempty" example:"+15551234567"`
 	CartStatus      string                 `json:"cart_status" binding:"required" example:"active"`
@@ -1121,8 +1122,8 @@ type UpdateCartRequest struct {
 type CreateNewCartRequest struct {
 	OrganizationID  int32                  `json:"organization_id" binding:"required" example:"1"`
 	StoreID         *int32                 `json:"store_id,omitempty" example:"2"`
-	CustomerID      *int32                 `json:"customer_id,omitempty" example:"1"`
-	GuestIdentifier *string                `json:"guest_identifier,omitempty" example:"guest-abc-123"`
+	CustomerID      *uuid.UUID             `json:"customer_id,omitempty" example:"550e8400-e29b-41d4-a716-446655440000"`
+		GuestIdentifier *string                `json:"guest_identifier,omitempty" example:"guest-abc-123"`
 	GuestEmail      *string                `json:"guest_email,omitempty" example:"guest@example.com"`
 	GuestPhone      *string                `json:"guest_phone,omitempty" example:"+15551234567"`
 	PaymentMethod   *string                `json:"payment_method,omitempty" example:"cash"`
@@ -1141,7 +1142,7 @@ type UpdateCartStatusRequest struct {
 }
 
 type UpdateCartCustomerRequest struct {
-	CustomerID int32 `json:"customer_id" binding:"required" example:"123"`
+	CustomerID uuid.UUID `json:"customer_id" binding:"required" example:"550e8400-e29b-41d4-a716-446655440000"`
 }
 
 type AddToCartRequest struct {
@@ -1215,7 +1216,7 @@ type CreateSalesOrderV2Request struct {
 	OrderNumber          string                 `json:"order_number" binding:"required" example:"ORD-20260210-0001"`
 	OrganizationID       int32                  `json:"organization_id" binding:"required" example:"1"`
 	StoreID              *int32                 `json:"store_id,omitempty" example:"10"`
-	CustomerID           *int32                 `json:"customer_id,omitempty" example:"123"`
+	CustomerID           *uuid.UUID             `json:"customer_id,omitempty" example:"550e8400-e29b-41d4-a716-446655440000"`
 	CustomerName         *string                `json:"customer_name,omitempty" example:"John Doe"`
 	CustomerEmail        *string                `json:"customer_email,omitempty" example:"john@example.com"`
 	CustomerPhone        *string                `json:"customer_phone,omitempty" example:"+15551234567"`
@@ -1250,7 +1251,7 @@ type CreateSalesOrderV2Request struct {
 }
 
 type UpdateSalesOrderV2Request struct {
-	CustomerID           *int32                 `json:"customer_id,omitempty" example:"123"`
+	CustomerID           *uuid.UUID             `json:"customer_id,omitempty" example:"550e8400-e29b-41d4-a716-446655440000"`
 	CustomerName         *string                `json:"customer_name,omitempty" example:"John Doe"`
 	CustomerEmail        *string                `json:"customer_email,omitempty" example:"john@example.com"`
 	CustomerPhone        *string                `json:"customer_phone,omitempty" example:"+15551234567"`
@@ -1430,10 +1431,12 @@ type CloseCashierSessionRequest struct {
 
 type ProcessReturnRequest struct {
 	StoreID               int32                      `json:"store_id" binding:"required" example:"1"`
+	PosTerminalID         *int32                     `json:"pos_terminal_id,omitempty" example:"1"`
+	TerminalCode          string                     `json:"terminal_code,omitempty" example:"T01"`
 	CashierID             *int32                     `json:"cashier_id,omitempty" example:"1"`
-	SessionID             *int32                     `json:"session_id,omitempty" example:"1"`
-	OriginalTransactionID *int32                     `json:"original_transaction_id,omitempty" example:"100"`
-	CustomerID            *int32                     `json:"customer_id,omitempty" example:"5"`
+	SessionID             *uuid.UUID                 `json:"session_id,omitempty" example:"550e8400-e29b-41d4-a716-446655440000"`
+	OriginalTransactionID *uuid.UUID                 `json:"original_transaction_id,omitempty" example:"550e8400-e29b-41d4-a716-446655440000"`
+	CustomerID            *uuid.UUID                 `json:"customer_id,omitempty" example:"550e8400-e29b-41d4-a716-446655440000"`
 	ReturnReason          string                     `json:"return_reason" example:"Defective"`
 	Subtotal              string                     `json:"subtotal" binding:"required" example:"50.00"`
 	TaxAmount             string                     `json:"tax_amount" binding:"required" example:"5.00"`
@@ -1444,16 +1447,16 @@ type ProcessReturnRequest struct {
 }
 
 type ProcessReturnLineRequest struct {
-	ProductID        int32   `json:"product_id" binding:"required" example:"10"`
-	ProductVariantID *int32  `json:"product_variant_id,omitempty" example:"2"`
-	OriginalLineID   *int32  `json:"original_line_id,omitempty" example:"1"`
-	Quantity         string  `json:"quantity" binding:"required" example:"1"`
-	UnitPrice        string  `json:"unit_price" binding:"required" example:"50.00"`
-	RefundAmount     string  `json:"refund_amount" binding:"required" example:"50.00"`
-	ReturnToStock    bool    `json:"return_to_stock" example:"true"`
-	SerialNumber     *string `json:"serial_number,omitempty"`
-	BatchNumber      *string `json:"batch_number,omitempty"`
-	Condition        string  `json:"condition,omitempty" example:"resalable"`
+	ProductID        int32      `json:"product_id" binding:"required" example:"10"`
+	ProductVariantID *int32     `json:"product_variant_id,omitempty" example:"2"`
+	OriginalLineID   *uuid.UUID `json:"original_line_id,omitempty" example:"550e8400-e29b-41d4-a716-446655440000"`
+	Quantity         string     `json:"quantity" binding:"required" example:"1"`
+	UnitPrice        string     `json:"unit_price" binding:"required" example:"50.00"`
+	RefundAmount     string     `json:"refund_amount" binding:"required" example:"50.00"`
+	ReturnToStock    bool       `json:"return_to_stock" example:"true"`
+	SerialNumber     *string    `json:"serial_number,omitempty"`
+	BatchNumber      *string    `json:"batch_number,omitempty"`
+	Condition        string     `json:"condition,omitempty" example:"resalable"`
 }
 
 // =====================================================
@@ -2653,7 +2656,7 @@ type PrintReceiptRequest struct {
 type CreateStockMovementRequest struct {
 	MovementType     string                 `json:"movement_type" binding:"required" example:"receipt"`
 	ReferenceType    *string                `json:"reference_type,omitempty" example:"purchase_order"`
-	ReferenceID      *int32                 `json:"reference_id,omitempty" example:"100"`
+	ReferenceID      *string                `json:"reference_id,omitempty" example:"100"`
 	ProductID        int32                  `json:"product_id" binding:"required" example:"1"`
 	ProductVariantID *int32                 `json:"product_variant_id,omitempty" example:"2"`
 	FromStoreID      *int32                 `json:"from_store_id,omitempty" example:"1"`
@@ -2750,7 +2753,7 @@ type UpdateStockCountLineRequest struct {
 
 // BulkUpdateStockCountLineItem represents an individual line item in bulk update.
 type BulkUpdateStockCountLineItem struct {
-	ID              int32                  `json:"id" binding:"required" example:"1"`
+	ID              uuid.UUID              `json:"id" binding:"required" example:"550e8400-e29b-41d4-a716-446655440000"`
 	CountedQuantity float64                `json:"counted_quantity" binding:"required" example:"10.0"`
 	Variance        *float64               `json:"variance,omitempty" example:"0.0"`
 	VarianceValue   *float64               `json:"variance_value,omitempty" example:"0.0"`
@@ -2772,8 +2775,8 @@ type ApproveStockCountRequest struct {
 
 // StockCountLineResponse represents line item output for Swagger.
 type StockCountLineResponse struct {
-	ID                  int32           `json:"id" example:"1"`
-	StockCountID        int32           `json:"stock_count_id" example:"1"`
+	ID                  uuid.UUID       `json:"id" example:"550e8400-e29b-41d4-a716-446655440000"`
+	StockCountID        uuid.UUID       `json:"stock_count_id" example:"550e8400-e29b-41d4-a716-446655440000"`
 	ProductID           int32           `json:"product_id" example:"1"`
 	ProductName         *string         `json:"product_name,omitempty" example:"Fresh Milk 1L"`
 	ProductSKU          *string         `json:"product_sku,omitempty" example:"MILK-001"`
@@ -2808,7 +2811,7 @@ type StockCountSummaryResponse struct {
 
 // StockCountResponse represents stock count output for Swagger.
 type StockCountResponse struct {
-	ID                  int32                      `json:"id" example:"1"`
+	ID                  uuid.UUID                  `json:"id" example:"550e8400-e29b-41d4-a716-446655440000"`
 	CountNumber         string                     `json:"count_number" example:"SC-20260916-0001"`
 	StoreID             int32                      `json:"store_id" example:"1"`
 	StoreName           *string                    `json:"store_name,omitempty" example:"Main Store Branch"`

@@ -344,11 +344,11 @@ func RenderZATCAQR(payload string) ([]byte, error) {
 var errReceiptVoided = errors.New("transaction voided")
 
 func loadSaleReceipt(ctx context.Context, pool *pgxpool.Pool, event repository.NotificationEvent, payload map[string]interface{}) (saleReceipt, error) {
-	txID := jsonNumber(payload["transaction_id"])
-	if txID == 0 {
-		txID, _ = strconv.ParseInt(event.EntityID, 10, 64)
+	txID := jsonIDString(payload["transaction_id"])
+	if txID == "" {
+		txID = strings.TrimSpace(event.EntityID)
 	}
-	if txID == 0 || pool == nil {
+	if txID == "" || txID == "0" || pool == nil {
 		return saleReceipt{}, errors.New("receipt transaction id missing")
 	}
 
@@ -375,7 +375,7 @@ func loadSaleReceipt(ctx context.Context, pool *pgxpool.Pool, event repository.N
 		LEFT JOIN sales_orders_v2 so ON so.id = pt.sales_order_id
 		LEFT JOIN carts cart ON cart.id = COALESCE(pt.source_cart_id, so.source_cart_id)
 		LEFT JOIN customers cu ON cu.id = COALESCE(pt.customer_id, so.customer_id, cart.customer_id)
-		WHERE pt.id = $1
+		WHERE pt.id::text = $1
 	`, txID).Scan(
 		&receipt.Number, &receipt.StoreName, &status, &voidedAt,
 		&receipt.Tax, &receipt.Total, &receipt.Date, &meta, &salesOrderID,
@@ -414,7 +414,7 @@ func loadSaleReceipt(ctx context.Context, pool *pgxpool.Pool, event repository.N
 		receipt.Date = receipt.Date[:10]
 	}
 	if receipt.QR == "" {
-		receipt.QR = lookupZATCAQR(ctx, pool, salesOrderID, strconv.FormatInt(txID, 10))
+		receipt.QR = lookupZATCAQR(ctx, pool, salesOrderID, txID)
 	}
 
 	rows, err := pool.Query(ctx, `
@@ -423,7 +423,7 @@ func loadSaleReceipt(ctx context.Context, pool *pgxpool.Pool, event repository.N
 		       COALESCE(ptl.line_total, ptl.subtotal, 0)::text
 		FROM pos_transaction_lines ptl
 		LEFT JOIN products p ON p.id = ptl.product_id
-		WHERE ptl.transaction_id = $1
+		WHERE ptl.transaction_id::text = $1
 		ORDER BY COALESCE(ptl.line_number, 0), ptl.id
 	`, txID)
 	if err != nil {
@@ -458,6 +458,23 @@ func lookupZATCAQR(ctx context.Context, pool *pgxpool.Pool, salesOrderID, transa
 		return ""
 	}
 	return strings.TrimSpace(qr)
+}
+
+func jsonIDString(value interface{}) string {
+	switch v := value.(type) {
+	case string:
+		return strings.TrimSpace(v)
+	case json.Number:
+		if s := strings.TrimSpace(v.String()); s != "" && s != "0" {
+			return s
+		}
+		return ""
+	default:
+		if n := jsonNumber(value); n > 0 {
+			return strconv.FormatInt(n, 10)
+		}
+		return ""
+	}
 }
 
 func jsonNumber(value interface{}) int64 {

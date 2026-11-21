@@ -64,9 +64,10 @@ func TestZatcaSalesOrderReusesLegacyTransactionDocument(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	legacyTxnID := uuid.MustParse("00000000-0000-0000-0000-000000000077")
 	db.chainEntries[0].EntityType = "pos_transaction"
-	db.chainEntries[0].EntityID = "77"
-	db.legacyTransactionID = 77
+	db.chainEntries[0].EntityID = legacyTxnID.String()
+	db.legacyTransactionID = legacyTxnID
 	again, err := uc.EnsureSalesOrderDocument(context.Background(), db.order.ID)
 	if err != nil {
 		t.Fatal(err)
@@ -74,7 +75,7 @@ func TestZatcaSalesOrderReusesLegacyTransactionDocument(t *testing.T) {
 	if len(db.chainEntries) != 1 || again.EntityType != "pos_transaction" || again.XmlHash != entry.XmlHash {
 		t.Fatal("historical sale was issued twice")
 	}
-	transaction := &repository.PosTransaction{ID: 77, SalesOrderID: pgtype.UUID{Bytes: db.order.ID, Valid: true}}
+	transaction := &repository.PosTransaction{ID: legacyTxnID, SalesOrderID: pgtype.UUID{Bytes: db.order.ID, Valid: true}}
 	original, err := uc.OriginalIssuedInvoiceNumber(context.Background(), transaction)
 	if err != nil || original != "SO-TEST-ORDER" {
 		t.Fatal("return did not reference saved original invoice", original, err)
@@ -121,7 +122,7 @@ func TestZatcaSalesOrderAllocatesFinalDiscountOnce(t *testing.T) {
 	if !strings.Contains(entry.SignedXml.String, `>103.50<`) || !strings.Contains(entry.SignedXml.String, `>13.50<`) {
 		t.Fatal("discount/VAT totals were not mapped")
 	}
-	txn := &repository.PosTransaction{ID: 77, SalesOrderID: pgtype.UUID{Bytes: db.order.ID, Valid: true}}
+	txn := &repository.PosTransaction{ID: uuid.MustParse("00000000-0000-0000-0000-000000000077"), SalesOrderID: pgtype.UUID{Bytes: db.order.ID, Valid: true}}
 	name, err := uc.OriginalIssuedInvoiceNumber(context.Background(), txn)
 	if err != nil || name != db.order.OrderNumber {
 		t.Fatal("new order return reference is incorrect", name, err)

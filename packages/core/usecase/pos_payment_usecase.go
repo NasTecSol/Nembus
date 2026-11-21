@@ -8,6 +8,7 @@ import (
 
 	"github.com/NasTecSol/nembus-core/repository"
 	"github.com/NasTecSol/nembus-core/utils"
+	"github.com/google/uuid"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -29,7 +30,7 @@ func (uc *PosPaymentUseCase) SetRepository(repo *repository.Queries) {
 
 // CreatePosPaymentInput is the input for CreatePayment.
 type CreatePosPaymentInput struct {
-	TransactionID    int32
+	TransactionID    uuid.UUID
 	PaymentMethod    string
 	PaymentGateway   *string
 	Amount           pgtype.Numeric
@@ -75,7 +76,7 @@ func (uc *PosPaymentUseCase) CreatePayment(ctx context.Context, in *CreatePosPay
 	// Update cashier session expected balance for cash payments
 	if strings.EqualFold(strings.TrimSpace(in.PaymentMethod), "cash") {
 		txn, _ := uc.repo.GetPosTransaction(ctx, in.TransactionID)
-		if txn.CashierSessionID != 0 {
+		if txn.CashierSessionID != uuid.Nil {
 			var changeGiven float64
 			if len(in.Metadata) > 0 {
 				var meta struct {
@@ -102,7 +103,7 @@ func (uc *PosPaymentUseCase) CreatePayment(ctx context.Context, in *CreatePosPay
 }
 
 // GetPayment returns a single POS payment by ID.
-func (uc *PosPaymentUseCase) GetPayment(ctx context.Context, id int32) *repository.Response {
+func (uc *PosPaymentUseCase) GetPayment(ctx context.Context, id uuid.UUID) *repository.Response {
 	if uc.repo == nil {
 		return utils.NewResponse(utils.CodeError, "repository not set", nil)
 	}
@@ -114,7 +115,7 @@ func (uc *PosPaymentUseCase) GetPayment(ctx context.Context, id int32) *reposito
 }
 
 // ListPaymentsForTransaction returns all payments for a POS transaction (full rows).
-func (uc *PosPaymentUseCase) ListPaymentsForTransaction(ctx context.Context, transactionID int32) *repository.Response {
+func (uc *PosPaymentUseCase) ListPaymentsForTransaction(ctx context.Context, transactionID uuid.UUID) *repository.Response {
 	if uc.repo == nil {
 		return utils.NewResponse(utils.CodeError, "repository not set", nil)
 	}
@@ -130,7 +131,7 @@ func (uc *PosPaymentUseCase) ListPaymentsForTransaction(ctx context.Context, tra
 }
 
 // GetPaymentSummary returns total paid and payment breakdown for a transaction.
-func (uc *PosPaymentUseCase) GetPaymentSummary(ctx context.Context, transactionID int32) *repository.Response {
+func (uc *PosPaymentUseCase) GetPaymentSummary(ctx context.Context, transactionID uuid.UUID) *repository.Response {
 	if uc.repo == nil {
 		return utils.NewResponse(utils.CodeError, "repository not set", nil)
 	}
@@ -143,7 +144,7 @@ func (uc *PosPaymentUseCase) GetPaymentSummary(ctx context.Context, transactionI
 
 // UpdatePosPaymentInput is the input for UpdatePayment.
 type UpdatePosPaymentInput struct {
-	ID               int32
+	ID               uuid.UUID
 	PaymentMethod    string
 	PaymentGateway   *string
 	Amount           pgtype.Numeric
@@ -187,7 +188,7 @@ func (uc *PosPaymentUseCase) UpdatePayment(ctx context.Context, in *UpdatePosPay
 }
 
 // DeletePayment deletes a POS payment by ID.
-func (uc *PosPaymentUseCase) DeletePayment(ctx context.Context, id int32) *repository.Response {
+func (uc *PosPaymentUseCase) DeletePayment(ctx context.Context, id uuid.UUID) *repository.Response {
 	if uc.repo == nil {
 		return utils.NewResponse(utils.CodeError, "repository not set", nil)
 	}

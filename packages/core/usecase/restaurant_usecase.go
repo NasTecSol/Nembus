@@ -12,6 +12,7 @@ import (
 
 	"github.com/NasTecSol/nembus-core/repository"
 	"github.com/NasTecSol/nembus-core/utils"
+	"github.com/google/uuid"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -413,8 +414,8 @@ func (uc *RestaurantUseCase) CreateOrder(ctx context.Context, arg repository.Cre
 	if uc.repo == nil {
 		return utils.NewResponse(utils.CodeError, "repository not set", nil)
 	}
-	if arg.OrderNumber == "" {
-		arg.OrderNumber = fmt.Sprintf("ORD-%d", time.Now().UnixNano())
+	if IsWeakOrEmptyDocNumber(arg.OrderNumber) {
+		arg.OrderNumber = GenerateTerminalDocNumber("ORD", "POS")
 	}
 	order, err := uc.repo.CreateRestaurantOrder(ctx, arg)
 	if err != nil {
@@ -434,7 +435,7 @@ func (uc *RestaurantUseCase) UpdateOrder(ctx context.Context, arg repository.Upd
 	return utils.NewResponse(utils.CodeOK, "order updated successfully", order)
 }
 
-func (uc *RestaurantUseCase) DeleteOrder(ctx context.Context, id int32) *repository.Response {
+func (uc *RestaurantUseCase) DeleteOrder(ctx context.Context, id uuid.UUID) *repository.Response {
 	if uc.repo == nil {
 		return utils.NewResponse(utils.CodeError, "repository not set", nil)
 	}
@@ -456,7 +457,7 @@ func (uc *RestaurantUseCase) DeleteOrder(ctx context.Context, id int32) *reposit
 	})
 }
 
-func (uc *RestaurantUseCase) GetOrder(ctx context.Context, id int32) *repository.Response {
+func (uc *RestaurantUseCase) GetOrder(ctx context.Context, id uuid.UUID) *repository.Response {
 	if uc.repo == nil {
 		return utils.NewResponse(utils.CodeError, "repository not set", nil)
 	}
@@ -484,7 +485,7 @@ func (uc *RestaurantUseCase) ListOrders(ctx context.Context, storeID int32) *rep
 	return utils.NewResponse(utils.CodeOK, "orders fetched successfully", orders)
 }
 
-func (uc *RestaurantUseCase) UpdateOrderStatus(ctx context.Context, orderID int32, status string) *repository.Response {
+func (uc *RestaurantUseCase) UpdateOrderStatus(ctx context.Context, orderID uuid.UUID, status string) *repository.Response {
 	if uc.repo == nil {
 		return utils.NewResponse(utils.CodeError, "repository not set", nil)
 	}
@@ -498,7 +499,7 @@ func (uc *RestaurantUseCase) UpdateOrderStatus(ctx context.Context, orderID int3
 	return utils.NewResponse(utils.CodeOK, "order status updated successfully", order)
 }
 
-func (uc *RestaurantUseCase) GetOrderItem(ctx context.Context, id int32) *repository.Response {
+func (uc *RestaurantUseCase) GetOrderItem(ctx context.Context, id uuid.UUID) *repository.Response {
 	if uc.repo == nil {
 		return utils.NewResponse(utils.CodeError, "repository not set", nil)
 	}
@@ -609,7 +610,7 @@ func (uc *RestaurantUseCase) UpdateOrderItem(ctx context.Context, arg repository
 	})
 }
 
-func (uc *RestaurantUseCase) DeleteOrderItem(ctx context.Context, id int32) *repository.Response {
+func (uc *RestaurantUseCase) DeleteOrderItem(ctx context.Context, id uuid.UUID) *repository.Response {
 	if uc.repo == nil {
 		return utils.NewResponse(utils.CodeError, "repository not set", nil)
 	}
@@ -649,7 +650,7 @@ func (uc *RestaurantUseCase) DeleteOrderItem(ctx context.Context, id int32) *rep
 	})
 }
 
-func (uc *RestaurantUseCase) SettleOrder(ctx context.Context, orderID int32, posTxnID int32) *repository.Response {
+func (uc *RestaurantUseCase) SettleOrder(ctx context.Context, orderID uuid.UUID, posTxnID uuid.UUID) *repository.Response {
 	if uc.repo == nil {
 		return utils.NewResponse(utils.CodeError, "repository not set", nil)
 	}
@@ -673,7 +674,7 @@ func (uc *RestaurantUseCase) SettleOrder(ctx context.Context, orderID int32, pos
 		AmountPaid:       order.TotalAmount,
 		ChangeGiven:      pgtype.Numeric{Int: big.NewInt(0), Exp: 0, Valid: true},
 		Notes:            order.Notes,
-		PosTransactionID: pgtype.Int4{Int32: posTxnID, Valid: true},
+		PosTransactionID: pgtype.UUID{Bytes: posTxnID, Valid: posTxnID != uuid.Nil},
 		ConfirmedAt:      order.ConfirmedAt,
 		ServedAt:         order.ServedAt,
 		PaidAt:           pgtype.Timestamp{Time: time.Now(), Valid: true},
@@ -689,20 +690,20 @@ func (uc *RestaurantUseCase) SettleOrder(ctx context.Context, orderID int32, pos
 
 // === Online Orders ===
 
-func (uc *RestaurantUseCase) CreateOnlineOrder(ctx context.Context, storeID int32, customerID *int32, items []repository.CreateRestaurantOrderItemParams) *repository.Response {
+func (uc *RestaurantUseCase) CreateOnlineOrder(ctx context.Context, storeID int32, customerID *uuid.UUID, items []repository.CreateRestaurantOrderItemParams) *repository.Response {
 	if uc.repo == nil {
 		return utils.NewResponse(utils.CodeError, "repository not set", nil)
 	}
 
 	orderParams := repository.CreateRestaurantOrderParams{
 		StoreID:     storeID,
-		OrderNumber: fmt.Sprintf("WEB-%d", time.Now().Unix()),
+		OrderNumber: GenerateTerminalDocNumber("WEB", "ONLINE"),
 		OrderSource: "online",
 		Status:      "pending",
 		OrderedAt:   pgtype.Timestamp{Time: time.Now(), Valid: true},
 	}
-	if customerID != nil {
-		orderParams.CustomerID = pgtype.Int4{Int32: *customerID, Valid: true}
+	if customerID != nil && *customerID != uuid.Nil {
+		orderParams.CustomerID = pgtype.UUID{Bytes: *customerID, Valid: true}
 	}
 
 	order, err := uc.repo.CreateRestaurantOrder(ctx, orderParams)
@@ -721,8 +722,8 @@ func (uc *RestaurantUseCase) CreateOnlineOrder(ctx context.Context, storeID int3
 // === KDS ===
 
 type KdsOrderOutput struct {
-	ID                  int32                                            `json:"id"`
-	OrderID             int32                                            `json:"order_id"`
+	ID                  uuid.UUID                                        `json:"id"`
+	OrderID             uuid.UUID                                        `json:"order_id"`
 	OrderNumber         string                                           `json:"order_number"`
 	StoreID             int32                                            `json:"store_id"`
 	OrderSource         string                                           `json:"order_source"`
@@ -744,7 +745,7 @@ type KdsOrderOutput struct {
 	TableSection        pgtype.Text                                      `json:"table_section"`
 	CashierID           pgtype.Int4                                      `json:"cashier_id"`
 	WaiterName          string                                           `json:"waiter_name"`
-	CustomerID          pgtype.Int4                                      `json:"customer_id"`
+	CustomerID          pgtype.UUID                                      `json:"customer_id"`
 	CustomerName        string                                           `json:"customer_name"`
 	MinutesSinceOrdered int32                                            `json:"minutes_since_ordered"`
 	Items               []repository.ListRestaurantOrderItemsDetailedRow `json:"items"`
@@ -768,7 +769,7 @@ func (uc *RestaurantUseCase) GetKdsOrders(ctx context.Context, storeID int32, st
 	}
 
 	filteredOrders := make([]repository.ListKdsRestaurantOrdersByStoreRow, 0, len(orders))
-	orderIDs := make([]int32, 0, len(orders))
+	orderIDs := make([]uuid.UUID, 0, len(orders))
 	for _, o := range orders {
 		if len(statusMap) > 0 && !statusMap[strings.ToLower(strings.TrimSpace(o.OrderStatus))] {
 			continue
@@ -777,7 +778,7 @@ func (uc *RestaurantUseCase) GetKdsOrders(ctx context.Context, storeID int32, st
 		orderIDs = append(orderIDs, o.OrderID)
 	}
 
-	itemsByOrderID := make(map[int32][]repository.ListRestaurantOrderItemsDetailedRow, len(orderIDs))
+	itemsByOrderID := make(map[uuid.UUID][]repository.ListRestaurantOrderItemsDetailedRow, len(orderIDs))
 	if len(orderIDs) > 0 {
 		allItems, itemsErr := uc.repo.ListRestaurantOrderItemsDetailedByOrderIDs(ctx, orderIDs)
 		if itemsErr != nil {
@@ -841,7 +842,7 @@ func (uc *RestaurantUseCase) CreateWasteLog(ctx context.Context, arg repository.
 	return utils.NewResponse(utils.CodeCreated, "waste log created successfully", log)
 }
 
-func (uc *RestaurantUseCase) GetWasteLog(ctx context.Context, id int32) *repository.Response {
+func (uc *RestaurantUseCase) GetWasteLog(ctx context.Context, id uuid.UUID) *repository.Response {
 	if uc.repo == nil {
 		return utils.NewResponse(utils.CodeError, "repository not set", nil)
 	}
@@ -863,7 +864,7 @@ func (uc *RestaurantUseCase) UpdateWasteLog(ctx context.Context, arg repository.
 	return utils.NewResponse(utils.CodeOK, "waste log updated successfully", log)
 }
 
-func (uc *RestaurantUseCase) DeleteWasteLog(ctx context.Context, id int32) *repository.Response {
+func (uc *RestaurantUseCase) DeleteWasteLog(ctx context.Context, id uuid.UUID) *repository.Response {
 	if uc.repo == nil {
 		return utils.NewResponse(utils.CodeError, "repository not set", nil)
 	}
@@ -1044,7 +1045,7 @@ func (uc *RestaurantUseCase) UpdateKioskSession(ctx context.Context, arg reposit
 	return utils.NewResponse(utils.CodeOK, "kiosk session updated successfully", session)
 }
 
-func (uc *RestaurantUseCase) DeleteKioskSession(ctx context.Context, id int32) *repository.Response {
+func (uc *RestaurantUseCase) DeleteKioskSession(ctx context.Context, id uuid.UUID) *repository.Response {
 	if uc.repo == nil {
 		return utils.NewResponse(utils.CodeError, "repository not set", nil)
 	}
@@ -1055,7 +1056,7 @@ func (uc *RestaurantUseCase) DeleteKioskSession(ctx context.Context, id int32) *
 	return utils.NewResponse(utils.CodeOK, "kiosk session deleted successfully", nil)
 }
 
-func (uc *RestaurantUseCase) GetKioskSessionByID(ctx context.Context, id int32) *repository.Response {
+func (uc *RestaurantUseCase) GetKioskSessionByID(ctx context.Context, id uuid.UUID) *repository.Response {
 	if uc.repo == nil {
 		return utils.NewResponse(utils.CodeError, "repository not set", nil)
 	}

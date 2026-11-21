@@ -299,7 +299,7 @@ func (h *PosHandler) AddProduct(c *gin.Context) {
 // AddPaymentToTransactionRequest captures payment from terminal/mobile clients.
 // Metadata can hold gateway response: gateway_txn_id, masked_card, auth_code for auditing.
 type AddPaymentToTransactionRequest struct {
-	TransactionID   int32       `json:"transaction_id"`
+	TransactionID   uuid.UUID   `json:"transaction_id"`
 	PaymentMethod   string      `json:"payment_method"`
 	PaymentGateway  string      `json:"payment_gateway"`
 	Amount          string      `json:"amount"`
@@ -330,9 +330,10 @@ type CreatePosTransactionRequest struct {
 	TransactionNumber string                            `json:"transaction_number"`
 	StoreID           int32                             `json:"store_id" binding:"required"`
 	PosTerminalID     int32                             `json:"pos_terminal_id" binding:"required"`
-	CashierSessionID  int32                             `json:"cashier_session_id" binding:"required"`
+	TerminalCode      string                            `json:"terminal_code,omitempty"`
+	CashierSessionID  uuid.UUID                         `json:"cashier_session_id" binding:"required"`
 	CashierID         int32                             `json:"cashier_id" binding:"required"`
-	CustomerID        *int32                            `json:"customer_id"`
+	CustomerID        *uuid.UUID                        `json:"customer_id"`
 	PriceListID       *int32                            `json:"price_list_id"`
 	TransactionType   *string                           `json:"transaction_type"`
 	TransactionDate   *string                           `json:"transaction_date"` // RFC3339 (optional)
@@ -487,6 +488,7 @@ func (h *PosHandler) CreateTransaction(c *gin.Context) {
 		TransactionNumber: req.TransactionNumber,
 		StoreID:           req.StoreID,
 		PosTerminalID:     req.PosTerminalID,
+		TerminalCode:      req.TerminalCode,
 		CashierSessionID:  req.CashierSessionID,
 		CashierID:         req.CashierID,
 		CustomerID:        req.CustomerID,
@@ -635,7 +637,7 @@ func (h *PosHandler) MarkTransactionSAPSynced(c *gin.Context) {
 		return
 	}
 	h.useCase.SetRepository(repo)
-	id, err := strconv.ParseInt(c.Param("id"), 10, 32)
+	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid transaction id", nil))
 		return
@@ -648,7 +650,7 @@ func (h *PosHandler) MarkTransactionSAPSynced(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, err.Error(), nil))
 		return
 	}
-	resp := h.useCase.MarkTransactionSAPSynced(c.Request.Context(), int32(id), req.SAPDocEntry, req.SAPDocNum)
+	resp := h.useCase.MarkTransactionSAPSynced(c.Request.Context(), id, req.SAPDocEntry, req.SAPDocNum)
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -669,7 +671,7 @@ func coalesceEmpty(s, fallback string) string {
 // @Param        x-tenant-id         header    string  true   "Tenant identifier"
 // @Param        Authorization       header    string  true   "Bearer token"
 // @Param        cashier_id          query     int     false  "Cashier ID"
-// @Param        cashier_session_id  query     int     false  "Cashier Session ID"
+// @Param        cashier_session_id  query     string  false  "Cashier Session ID (UUID)"
 // @Param        start_date          query     string  false  "Start date (RFC3339)"
 // @Param        end_date            query     string  false  "End date (RFC3339, exclusive)"
 // @Param        page                query     int     false  "Page number" default(1)
@@ -697,15 +699,14 @@ func (h *PosHandler) ListTransactionsByCashierSession(c *gin.Context) {
 		cashierID = &val
 	}
 
-	var cashierSessionID *int32
+	var cashierSessionID *uuid.UUID
 	if s := c.Query("cashier_session_id"); s != "" {
-		id, err := strconv.ParseInt(s, 10, 32)
+		id, err := uuid.Parse(s)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid cashier_session_id", nil))
 			return
 		}
-		val := int32(id)
-		cashierSessionID = &val
+		cashierSessionID = &id
 	}
 
 	var startDate *time.Time
@@ -756,7 +757,7 @@ func (h *PosHandler) ListTransactionsByCashierSession(c *gin.Context) {
 // @Security     BearerAuth
 // @Param        x-tenant-id   header    string  true   "Tenant identifier"
 // @Param        Authorization header    string  true   "Bearer token"
-// @Param        customer_id   path      int     true   "Customer ID"
+// @Param        customer_id   path      string  true   "Customer ID (UUID)"
 // @Param        page          query     int     false  "Page number" default(1)
 // @Param        limit         query     int     false  "Number of records per page" default(50)
 // @Success      200           {object}  SuccessResponse
@@ -771,7 +772,7 @@ func (h *PosHandler) ListTransactionsByCustomer(c *gin.Context) {
 	}
 	h.useCase.SetRepository(repo)
 
-	customerID, err := strconv.ParseInt(c.Param("customer_id"), 10, 32)
+	customerID, err := uuid.Parse(c.Param("customer_id"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid customer_id", nil))
 		return
@@ -782,7 +783,7 @@ func (h *PosHandler) ListTransactionsByCustomer(c *gin.Context) {
 	page, _ := strconv.ParseInt(pageStr, 10, 32)
 	limit, _ := strconv.ParseInt(limitStr, 10, 32)
 
-	resp := h.useCase.ListTransactionsByCustomer(c.Request.Context(), int32(customerID), int32(page), int32(limit))
+	resp := h.useCase.ListTransactionsByCustomer(c.Request.Context(), customerID, int32(page), int32(limit))
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -875,12 +876,11 @@ func (h *PosHandler) GetTransaction(c *gin.Context) {
 		return
 	}
 	h.useCase.SetRepository(repo)
-	id, err := strconv.ParseInt(c.Param("id"), 10, 32)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid transaction id", nil))
+	txID, ok := parseUUIDParam(c, "id")
+	if !ok {
 		return
 	}
-	resp := h.useCase.GetTransaction(c.Request.Context(), int32(id))
+	resp := h.useCase.GetTransaction(c.Request.Context(), txID)
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -905,12 +905,11 @@ func (h *PosHandler) GetTransactionFull(c *gin.Context) {
 		return
 	}
 	h.useCase.SetRepository(repo)
-	id, err := strconv.ParseInt(c.Param("id"), 10, 32)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid transaction id", nil))
+	txID, ok := parseUUIDParam(c, "id")
+	if !ok {
 		return
 	}
-	resp := h.useCase.GetTransactionFull(c.Request.Context(), int32(id))
+	resp := h.useCase.GetTransactionFull(c.Request.Context(), txID)
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -942,9 +941,8 @@ func (h *PosHandler) VoidTransaction(c *gin.Context) {
 		return
 	}
 	h.useCase.SetRepository(repo)
-	id, err := strconv.ParseInt(c.Param("id"), 10, 32)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid transaction id", nil))
+	txID, ok := parseUUIDParam(c, "id")
+	if !ok {
 		return
 	}
 	var req VoidTransactionRequest
@@ -952,7 +950,7 @@ func (h *PosHandler) VoidTransaction(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, err.Error(), nil))
 		return
 	}
-	resp := h.useCase.VoidTransaction(c.Request.Context(), int32(id), req.VoidedBy, req.Reason)
+	resp := h.useCase.VoidTransaction(c.Request.Context(), txID, req.VoidedBy, req.Reason)
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -977,12 +975,11 @@ func (h *PosHandler) GetTransactionPayments(c *gin.Context) {
 		return
 	}
 	h.paymentUseCase.SetRepository(repo)
-	id, err := strconv.ParseInt(c.Param("id"), 10, 32)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid transaction id", nil))
+	txID, ok := parseUUIDParam(c, "id")
+	if !ok {
 		return
 	}
-	resp := h.paymentUseCase.ListPaymentsForTransaction(c.Request.Context(), int32(id))
+	resp := h.paymentUseCase.ListPaymentsForTransaction(c.Request.Context(), txID)
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -1007,12 +1004,11 @@ func (h *PosHandler) GetTransactionPaymentSummary(c *gin.Context) {
 		return
 	}
 	h.paymentUseCase.SetRepository(repo)
-	id, err := strconv.ParseInt(c.Param("id"), 10, 32)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid transaction id", nil))
+	txID, ok := parseUUIDParam(c, "id")
+	if !ok {
 		return
 	}
-	resp := h.paymentUseCase.GetPaymentSummary(c.Request.Context(), int32(id))
+	resp := h.paymentUseCase.GetPaymentSummary(c.Request.Context(), txID)
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -1037,12 +1033,11 @@ func (h *PosHandler) GetPayment(c *gin.Context) {
 		return
 	}
 	h.paymentUseCase.SetRepository(repo)
-	id, err := strconv.ParseInt(c.Param("id"), 10, 32)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid payment id", nil))
+	paymentID, ok := parseUUIDParam(c, "id")
+	if !ok {
 		return
 	}
-	resp := h.paymentUseCase.GetPayment(c.Request.Context(), int32(id))
+	resp := h.paymentUseCase.GetPayment(c.Request.Context(), paymentID)
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -1078,9 +1073,8 @@ func (h *PosHandler) UpdatePayment(c *gin.Context) {
 		return
 	}
 	h.paymentUseCase.SetRepository(repo)
-	id, err := strconv.ParseInt(c.Param("id"), 10, 32)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid payment id", nil))
+	paymentID, ok := parseUUIDParam(c, "id")
+	if !ok {
 		return
 	}
 	var req UpdatePaymentRequest
@@ -1108,7 +1102,7 @@ func (h *PosHandler) UpdatePayment(c *gin.Context) {
 		payRef = &req.PaymentReference
 	}
 	input := &usecase.UpdatePosPaymentInput{
-		ID:               int32(id),
+		ID:               paymentID,
 		PaymentMethod:    req.PaymentMethod,
 		PaymentGateway:   gateway,
 		Amount:           amount,
@@ -1141,11 +1135,10 @@ func (h *PosHandler) DeletePayment(c *gin.Context) {
 		return
 	}
 	h.paymentUseCase.SetRepository(repo)
-	id, err := strconv.ParseInt(c.Param("id"), 10, 32)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid payment id", nil))
+	paymentID, ok := parseUUIDParam(c, "id")
+	if !ok {
 		return
 	}
-	resp := h.paymentUseCase.DeletePayment(c.Request.Context(), int32(id))
+	resp := h.paymentUseCase.DeletePayment(c.Request.Context(), paymentID)
 	c.JSON(resp.StatusCode, resp)
 }

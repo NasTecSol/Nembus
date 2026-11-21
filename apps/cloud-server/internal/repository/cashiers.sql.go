@@ -40,7 +40,7 @@ func (q *Queries) ActivateCashier(ctx context.Context, id int32) (Cashier, error
 }
 
 type BulkCreatePosTransactionLinesParams struct {
-	TransactionID    int32           `json:"transaction_id"`
+	TransactionID    uuid.UUID       `json:"transaction_id"`
 	ProductID        pgtype.Int4     `json:"product_id"`
 	ProductVariantID pgtype.Int4     `json:"product_variant_id"`
 	Quantity         pgtype.Numeric  `json:"quantity"`
@@ -75,7 +75,7 @@ GROUP BY cs.id, cs.opening_balance
 `
 
 type CalculateSessionExpectedBalanceRow struct {
-	ID                int32          `json:"id"`
+	ID                uuid.UUID      `json:"id"`
 	OpeningBalance    pgtype.Numeric `json:"opening_balance"`
 	TotalCashPayments interface{}    `json:"total_cash_payments"`
 	TotalChangeGiven  interface{}    `json:"total_change_given"`
@@ -87,7 +87,7 @@ type CalculateSessionExpectedBalanceRow struct {
 // =====================================================
 // Calculate expected balance for a cashier session
 // Formula: opening_balance + cash_payments - change_given + drawer_actions
-func (q *Queries) CalculateSessionExpectedBalance(ctx context.Context, id int32) (CalculateSessionExpectedBalanceRow, error) {
+func (q *Queries) CalculateSessionExpectedBalance(ctx context.Context, id uuid.UUID) (CalculateSessionExpectedBalanceRow, error) {
 	row := q.db.QueryRow(ctx, calculateSessionExpectedBalance, id)
 	var i CalculateSessionExpectedBalanceRow
 	err := row.Scan(
@@ -383,8 +383,8 @@ RETURNING id, store_id, cashier_id, cashier_session_id, customer_id, pos_termina
 type CreatePosTransactionFromCartParams struct {
 	StoreID           int32            `json:"store_id"`
 	CashierID         int32            `json:"cashier_id"`
-	CashierSessionID  int32            `json:"cashier_session_id"`
-	CustomerID        pgtype.Int4      `json:"customer_id"`
+	CashierSessionID  uuid.UUID        `json:"cashier_session_id"`
+	CustomerID        pgtype.UUID      `json:"customer_id"`
 	PosTerminalID     pgtype.Int4      `json:"pos_terminal_id"`
 	TransactionNumber string           `json:"transaction_number"`
 	TransactionDate   pgtype.Timestamp `json:"transaction_date"`
@@ -981,7 +981,7 @@ ORDER BY cs.opening_time DESC
 `
 
 type GetOpenSessionsForStoreRow struct {
-	ID                   int32            `json:"id"`
+	ID                   uuid.UUID        `json:"id"`
 	CashierID            int32            `json:"cashier_id"`
 	PosTerminalID        int32            `json:"pos_terminal_id"`
 	SessionNumber        string           `json:"session_number"`
@@ -1053,7 +1053,7 @@ WHERE id = $1
 
 // Note: CloseCashierSession query is in cashier_sessions.sql to avoid duplication
 // Get a specific cashier session by ID
-func (q *Queries) GetSessionByID(ctx context.Context, id int32) (CashierSession, error) {
+func (q *Queries) GetSessionByID(ctx context.Context, id uuid.UUID) (CashierSession, error) {
 	row := q.db.QueryRow(ctx, getSessionByID, id)
 	var i CashierSession
 	err := row.Scan(
@@ -1132,7 +1132,7 @@ GROUP BY cs.id, cs.session_number, cs.opening_balance, cs.closing_balance, cs.ex
 `
 
 type GetSessionFinancialSummaryRow struct {
-	ID               int32          `json:"id"`
+	ID               uuid.UUID      `json:"id"`
 	SessionNumber    string         `json:"session_number"`
 	OpeningBalance   pgtype.Numeric `json:"opening_balance"`
 	ClosingBalance   pgtype.Numeric `json:"closing_balance"`
@@ -1150,7 +1150,7 @@ type GetSessionFinancialSummaryRow struct {
 }
 
 // Get comprehensive financial summary for a session
-func (q *Queries) GetSessionFinancialSummary(ctx context.Context, id int32) (GetSessionFinancialSummaryRow, error) {
+func (q *Queries) GetSessionFinancialSummary(ctx context.Context, id uuid.UUID) (GetSessionFinancialSummaryRow, error) {
 	row := q.db.QueryRow(ctx, getSessionFinancialSummary, id)
 	var i GetSessionFinancialSummaryRow
 	err := row.Scan(
@@ -1193,7 +1193,7 @@ type GetSessionPaymentMethodBreakdownRow struct {
 }
 
 // Get payment method breakdown for a session
-func (q *Queries) GetSessionPaymentMethodBreakdown(ctx context.Context, cashierSessionID int32) ([]GetSessionPaymentMethodBreakdownRow, error) {
+func (q *Queries) GetSessionPaymentMethodBreakdown(ctx context.Context, cashierSessionID uuid.UUID) ([]GetSessionPaymentMethodBreakdownRow, error) {
 	rows, err := q.db.Query(ctx, getSessionPaymentMethodBreakdown, cashierSessionID)
 	if err != nil {
 		return nil, err
@@ -1243,7 +1243,7 @@ type GetSessionTransactionSummaryRow struct {
 // TRANSACTION & PERFORMANCE QUERIES
 // =====================================================
 // Get transaction summary for X-Report (mid-shift summary)
-func (q *Queries) GetSessionTransactionSummary(ctx context.Context, cashierSessionID int32) (GetSessionTransactionSummaryRow, error) {
+func (q *Queries) GetSessionTransactionSummary(ctx context.Context, cashierSessionID uuid.UUID) (GetSessionTransactionSummaryRow, error) {
 	row := q.db.QueryRow(ctx, getSessionTransactionSummary, cashierSessionID)
 	var i GetSessionTransactionSummaryRow
 	err := row.Scan(
@@ -1280,7 +1280,7 @@ type GetSessionsByStatusParams struct {
 }
 
 type GetSessionsByStatusRow struct {
-	ID                   int32            `json:"id"`
+	ID                   uuid.UUID        `json:"id"`
 	CashierID            int32            `json:"cashier_id"`
 	PosTerminalID        int32            `json:"pos_terminal_id"`
 	SessionNumber        string           `json:"session_number"`
@@ -1432,11 +1432,11 @@ type GetVoidedTransactionsByDateParams struct {
 }
 
 type GetVoidedTransactionsByDateRow struct {
-	ID                int32            `json:"id"`
+	ID                uuid.UUID        `json:"id"`
 	StoreID           int32            `json:"store_id"`
 	CashierID         int32            `json:"cashier_id"`
-	CashierSessionID  int32            `json:"cashier_session_id"`
-	CustomerID        pgtype.Int4      `json:"customer_id"`
+	CashierSessionID  uuid.UUID        `json:"cashier_session_id"`
+	CustomerID        pgtype.UUID      `json:"customer_id"`
 	PosTerminalID     pgtype.Int4      `json:"pos_terminal_id"`
 	TransactionNumber string           `json:"transaction_number"`
 	TransactionDate   pgtype.Timestamp `json:"transaction_date"`
@@ -1523,11 +1523,11 @@ ORDER BY pt.voided_at DESC
 `
 
 type GetVoidedTransactionsBySessionRow struct {
-	ID                int32            `json:"id"`
+	ID                uuid.UUID        `json:"id"`
 	StoreID           int32            `json:"store_id"`
 	CashierID         int32            `json:"cashier_id"`
-	CashierSessionID  int32            `json:"cashier_session_id"`
-	CustomerID        pgtype.Int4      `json:"customer_id"`
+	CashierSessionID  uuid.UUID        `json:"cashier_session_id"`
+	CustomerID        pgtype.UUID      `json:"customer_id"`
 	PosTerminalID     pgtype.Int4      `json:"pos_terminal_id"`
 	TransactionNumber string           `json:"transaction_number"`
 	TransactionDate   pgtype.Timestamp `json:"transaction_date"`
@@ -1553,7 +1553,7 @@ type GetVoidedTransactionsBySessionRow struct {
 }
 
 // Get all voided transactions for a session
-func (q *Queries) GetVoidedTransactionsBySession(ctx context.Context, cashierSessionID int32) ([]GetVoidedTransactionsBySessionRow, error) {
+func (q *Queries) GetVoidedTransactionsBySession(ctx context.Context, cashierSessionID uuid.UUID) ([]GetVoidedTransactionsBySessionRow, error) {
 	rows, err := q.db.Query(ctx, getVoidedTransactionsBySession, cashierSessionID)
 	if err != nil {
 		return nil, err
@@ -2255,7 +2255,7 @@ RETURNING id, store_id, cashier_id, cashier_session_id, customer_id, pos_termina
 `
 
 type VoidTransactionParams struct {
-	ID       int32       `json:"id"`
+	ID       uuid.UUID   `json:"id"`
 	VoidedBy pgtype.Int4 `json:"voided_by"`
 }
 

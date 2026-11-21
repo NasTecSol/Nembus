@@ -1177,7 +1177,7 @@ func (h *RestaurantHandler) UpdateOrder(c *gin.Context) {
 		return
 	}
 
-	id, err := strconv.ParseInt(c.Param("order_id"), 10, 32)
+	id, err := uuid.Parse(c.Param("order_id"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid id", nil))
 		return
@@ -1194,7 +1194,7 @@ func (h *RestaurantHandler) UpdateOrder(c *gin.Context) {
 		metaRaw = json.RawMessage(req.Metadata)
 	}
 
-	resp := uc.UpdateOrderWithItems(c.Request.Context(), int32(id), usecase.RestaurantDirectOrderInput{
+	resp := uc.UpdateOrderWithItems(c.Request.Context(), id, usecase.RestaurantDirectOrderInput{
 		StoreID:          req.StoreID,
 		TableID:          req.TableID,
 		CashierID:        req.CashierID,
@@ -1231,7 +1231,7 @@ func (h *RestaurantHandler) UpdateOrder(c *gin.Context) {
 // @Produce      json
 // @Security     BearerAuth
 // @Param        x-tenant-id  header    string  true   "Tenant identifier"
-// @Param        order_id     path      int     true   "Order ID"
+// @Param        order_id     path      string  true   "Order ID (UUID)"
 // @Success      200          {object}  SuccessResponse
 // @Failure      400          {object}  ErrorResponse
 // @Failure      401          {object}  ErrorResponse
@@ -1244,13 +1244,13 @@ func (h *RestaurantHandler) DeleteOrder(c *gin.Context) {
 	}
 	h.useCase.SetRepository(repo)
 
-	id, err := strconv.ParseInt(c.Param("order_id"), 10, 32)
+	id, err := uuid.Parse(c.Param("order_id"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid id", nil))
 		return
 	}
 
-	resp := h.useCase.DeleteOrder(c.Request.Context(), int32(id))
+	resp := h.useCase.DeleteOrder(c.Request.Context(), id)
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -1334,13 +1334,12 @@ func (h *RestaurantHandler) GetOrder(c *gin.Context) {
 	}
 	h.useCase.SetRepository(repo)
 
-	id, err := strconv.ParseInt(c.Param("order_id"), 10, 32)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid id", nil))
+	orderID, ok := parseUUIDParam(c, "order_id")
+	if !ok {
 		return
 	}
 
-	resp := h.useCase.GetOrder(c.Request.Context(), int32(id))
+	resp := h.useCase.GetOrder(c.Request.Context(), orderID)
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -1365,9 +1364,8 @@ func (h *RestaurantHandler) UpdateOrderStatus(c *gin.Context) {
 		return
 	}
 
-	id, err := strconv.ParseInt(c.Param("order_id"), 10, 32)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid id", nil))
+	orderID, ok := parseUUIDParam(c, "order_id")
+	if !ok {
 		return
 	}
 
@@ -1377,7 +1375,7 @@ func (h *RestaurantHandler) UpdateOrderStatus(c *gin.Context) {
 		return
 	}
 
-	resp := uc.UpdateOrderStatusWithHistory(c.Request.Context(), int32(id), usecase.RestaurantOrderStatusUpdateInput{
+	resp := uc.UpdateOrderStatusWithHistory(c.Request.Context(), orderID, usecase.RestaurantOrderStatusUpdateInput{
 		Status:          req.Status,
 		Reason:          req.Reason,
 		Notes:           req.Notes,
@@ -1413,9 +1411,8 @@ func (h *RestaurantHandler) SettleOrder(c *gin.Context) {
 		return
 	}
 
-	id, err := strconv.ParseInt(c.Param("order_id"), 10, 32)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid id", nil))
+	orderID, ok := parseUUIDParam(c, "order_id")
+	if !ok {
 		return
 	}
 
@@ -1427,7 +1424,7 @@ func (h *RestaurantHandler) SettleOrder(c *gin.Context) {
 		}
 	}
 
-	resp := uc.SettleOrderWithPosTransaction(c.Request.Context(), int32(id), usecase.RestaurantSettleOrderInput{
+	resp := uc.SettleOrderWithPosTransaction(c.Request.Context(), orderID, usecase.RestaurantSettleOrderInput{
 		PosTransactionID: req.PosTransactionID,
 		CashierID:        req.CashierID,
 		CashierSessionID: req.CashierSessionID,
@@ -1553,13 +1550,12 @@ func (h *RestaurantHandler) GetOrderItem(c *gin.Context) {
 	}
 	h.useCase.SetRepository(repo)
 
-	id, err := strconv.ParseInt(c.Param("order_item_id"), 10, 32)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid id", nil))
+	itemID, ok := parseUUIDParam(c, "order_item_id")
+	if !ok {
 		return
 	}
 
-	resp := h.useCase.GetOrderItem(c.Request.Context(), int32(id))
+	resp := h.useCase.GetOrderItem(c.Request.Context(), itemID)
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -1585,9 +1581,8 @@ func (h *RestaurantHandler) UpdateOrderItem(c *gin.Context) {
 	}
 	h.useCase.SetRepository(repo)
 
-	id, err := strconv.ParseInt(c.Param("order_item_id"), 10, 32)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid id", nil))
+	itemID, ok := parseUUIDParam(c, "order_item_id")
+	if !ok {
 		return
 	}
 
@@ -1605,7 +1600,7 @@ func (h *RestaurantHandler) UpdateOrderItem(c *gin.Context) {
 	sub, _ := repo.ParseNumeric(c.Request.Context(), req.Subtotal)
 
 	params := repository.UpdateRestaurantOrderItemParams{
-		ID:                int32(id),
+		ID:                itemID,
 		MenuItemID:        req.MenuItemID,
 		Quantity:          qty,
 		UnitPrice:         price,
@@ -1651,13 +1646,12 @@ func (h *RestaurantHandler) DeleteOrderItem(c *gin.Context) {
 	}
 	h.useCase.SetRepository(repo)
 
-	id, err := strconv.ParseInt(c.Param("order_item_id"), 10, 32)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid id", nil))
+	itemID, ok := parseUUIDParam(c, "order_item_id")
+	if !ok {
 		return
 	}
 
-	resp := h.useCase.DeleteOrderItem(c.Request.Context(), int32(id))
+	resp := h.useCase.DeleteOrderItem(c.Request.Context(), itemID)
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -1706,7 +1700,7 @@ func (h *RestaurantHandler) CreateWasteLog(c *gin.Context) {
 		TotalCost:   tCost,
 		Reason:      pgtype.Text{String: req.Reason, Valid: req.Reason != ""},
 		LoggedBy:    pgtype.Int4{Int32: utils.DerefInt32(req.LoggedBy), Valid: req.LoggedBy != nil},
-		OrderID:     pgtype.Int4{Int32: utils.DerefInt32(req.OrderID), Valid: req.OrderID != nil},
+		OrderID:     uuidPtr(req.OrderID),
 		WastedAt:    pgtype.Timestamp{Time: time.Now(), Valid: true},
 		Metadata:    []byte(req.Metadata),
 	}
@@ -1740,13 +1734,12 @@ func (h *RestaurantHandler) GetWasteLog(c *gin.Context) {
 	}
 	h.useCase.SetRepository(repo)
 
-	id, err := strconv.ParseInt(c.Param("waste_log_id"), 10, 32)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid id", nil))
+	wasteID, ok := parseUUIDParam(c, "waste_log_id")
+	if !ok {
 		return
 	}
 
-	resp := h.useCase.GetWasteLog(c.Request.Context(), int32(id))
+	resp := h.useCase.GetWasteLog(c.Request.Context(), wasteID)
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -1772,9 +1765,8 @@ func (h *RestaurantHandler) UpdateWasteLog(c *gin.Context) {
 	}
 	h.useCase.SetRepository(repo)
 
-	id, err := strconv.ParseInt(c.Param("waste_log_id"), 10, 32)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid id", nil))
+	wasteID, ok := parseUUIDParam(c, "waste_log_id")
+	if !ok {
 		return
 	}
 
@@ -1789,7 +1781,7 @@ func (h *RestaurantHandler) UpdateWasteLog(c *gin.Context) {
 	tCost, _ := repo.ParseNumeric(c.Request.Context(), req.TotalCost)
 
 	params := repository.UpdateWasteLogParams{
-		ID:          int32(id),
+		ID:          wasteID,
 		ProductID:   pgtype.Int4{Int32: utils.DerefInt32(req.ProductID), Valid: req.ProductID != nil},
 		MenuItemID:  pgtype.Int4{Int32: utils.DerefInt32(req.MenuItemID), Valid: req.MenuItemID != nil},
 		RecipeID:    pgtype.Int4{Int32: utils.DerefInt32(req.RecipeID), Valid: req.RecipeID != nil},
@@ -1800,7 +1792,7 @@ func (h *RestaurantHandler) UpdateWasteLog(c *gin.Context) {
 		TotalCost:   tCost,
 		Reason:      pgtype.Text{String: req.Reason, Valid: req.Reason != ""},
 		LoggedBy:    pgtype.Int4{Int32: utils.DerefInt32(req.LoggedBy), Valid: req.LoggedBy != nil},
-		OrderID:     pgtype.Int4{Int32: utils.DerefInt32(req.OrderID), Valid: req.OrderID != nil},
+		OrderID:     uuidPtr(req.OrderID),
 		WastedAt:    pgtype.Timestamp{Time: time.Now(), Valid: true},
 		Metadata:    []byte(req.Metadata),
 	}
@@ -1833,13 +1825,12 @@ func (h *RestaurantHandler) DeleteWasteLog(c *gin.Context) {
 	}
 	h.useCase.SetRepository(repo)
 
-	id, err := strconv.ParseInt(c.Param("waste_log_id"), 10, 32)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid id", nil))
+	wasteID, ok := parseUUIDParam(c, "waste_log_id")
+	if !ok {
 		return
 	}
 
-	resp := h.useCase.DeleteWasteLog(c.Request.Context(), int32(id))
+	resp := h.useCase.DeleteWasteLog(c.Request.Context(), wasteID)
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -2318,9 +2309,8 @@ func (h *RestaurantHandler) UpdateKioskSession(c *gin.Context) {
 	}
 	h.useCase.SetRepository(repo)
 
-	id, err := strconv.ParseInt(c.Param("session_id"), 10, 32)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid id", nil))
+	sessionID, ok := parseUUIDParam(c, "session_id")
+	if !ok {
 		return
 	}
 
@@ -2331,7 +2321,7 @@ func (h *RestaurantHandler) UpdateKioskSession(c *gin.Context) {
 	}
 
 	params := repository.UpdateKioskSessionParams{
-		ID:       int32(id),
+		ID:       sessionID,
 		Status:   pgtype.Text{String: req.Status, Valid: req.Status != ""},
 		Metadata: []byte(req.Metadata),
 	}
@@ -2364,13 +2354,12 @@ func (h *RestaurantHandler) DeleteKioskSession(c *gin.Context) {
 	}
 	h.useCase.SetRepository(repo)
 
-	id, err := strconv.ParseInt(c.Param("session_id"), 10, 32)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid id", nil))
+	sessionID, ok := parseUUIDParam(c, "session_id")
+	if !ok {
 		return
 	}
 
-	resp := h.useCase.DeleteKioskSession(c.Request.Context(), int32(id))
+	resp := h.useCase.DeleteKioskSession(c.Request.Context(), sessionID)
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -2423,8 +2412,11 @@ func (h *RestaurantHandler) GetKioskSessionByID(c *gin.Context) {
 	}
 	h.useCase.SetRepository(repo)
 
-	id, _ := strconv.ParseInt(c.Param("session_id"), 10, 32)
-	resp := h.useCase.GetKioskSessionByID(c.Request.Context(), int32(id))
+	sessionID, ok := parseUUIDParam(c, "session_id")
+	if !ok {
+		return
+	}
+	resp := h.useCase.GetKioskSessionByID(c.Request.Context(), sessionID)
 	c.JSON(resp.StatusCode, resp)
 }
 

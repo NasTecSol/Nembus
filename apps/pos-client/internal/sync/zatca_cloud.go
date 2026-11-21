@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/NasTecSol/nembus-core/grpc/syncpb"
 	"github.com/NasTecSol/nembus-core/middleware"
 	"github.com/NasTecSol/nembus-core/repository"
 	"github.com/jackc/pgx/v5"
@@ -135,7 +136,11 @@ func (c *ZatcaCloud) Push(ctx context.Context, item OutboxItem, snapshot reposit
 	if json.Unmarshal(snapshot.Device, &device) != nil || device.StoreID <= 0 {
 		return fmt.Errorf("ZATCA snapshot has no store")
 	}
-	data, err := json.Marshal(map[string]any{"store_id": device.StoreID, "items": []any{map[string]any{"id": item.ID, "entity_id": item.EntityID, "entity_type": item.EntityType, "action": item.Action, "payload": snapshot, "created_at": item.CreatedAt}}})
+	var entityIDVal any = item.EntityID
+	if numID, ok := syncpb.ParseNumericEntityID(item.EntityID); ok {
+		entityIDVal = numID
+	}
+	data, err := json.Marshal(map[string]any{"store_id": device.StoreID, "items": []any{map[string]any{"id": item.ID, "entity_id": entityIDVal, "entity_type": item.EntityType, "action": item.Action, "payload": snapshot, "created_at": item.CreatedAt}}})
 	if err != nil {
 		return err
 	}
@@ -185,9 +190,9 @@ func (s *SyncService) pushZatcaItem(ctx context.Context, item OutboxItem, cloud 
 	var err error
 	var snapshot repository.ZatcaSyncSnapshot
 	if item.EntityType == "zatca_device_configs" {
-		err = s.masterPool.QueryRow(ctx, `SELECT row_to_json(d) FROM zatca_device_configs d WHERE id=$1`, item.EntityID).Scan(&snapshot.Device)
+		err = s.masterPool.QueryRow(ctx, `SELECT row_to_json(d) FROM zatca_device_configs d WHERE id=$1::bigint`, item.EntityID).Scan(&snapshot.Device)
 	} else {
-		err = s.masterPool.QueryRow(ctx, `SELECT row_to_json(d),row_to_json(c) FROM zatca_document_chain c JOIN zatca_device_configs d ON d.id=c.device_config_id WHERE c.id=$1`, item.EntityID).Scan(&snapshot.Device, &snapshot.Document)
+		err = s.masterPool.QueryRow(ctx, `SELECT row_to_json(d),row_to_json(c) FROM zatca_document_chain c JOIN zatca_device_configs d ON d.id=c.device_config_id WHERE c.id=$1::bigint`, item.EntityID).Scan(&snapshot.Device, &snapshot.Document)
 	}
 	if err != nil {
 		return fmt.Errorf("read current ZATCA snapshot: %w", err)
@@ -197,12 +202,12 @@ func (s *SyncService) pushZatcaItem(ctx context.Context, item OutboxItem, cloud 
 
 // Re-query after each acknowledgment so a whole chain can drain in one cycle.
 // A failed item is attempted once per cycle; children wait without using retries.
-const pendingZatcaSQL = `SELECT q.id,q.entity_type,q.entity_id,q.action,q.payload,q.created_at,q.correlation_id
+const pendingZatcaSQL = `SELECT q.id,q.entity_type,q.entity_id::text,q.action,q.payload,q.created_at,q.correlation_id
 FROM sync_queue q WHERE q.status='pending' AND q.entity_type IN ('zatca_device_configs','zatca_document_chain') AND NOT(q.id=ANY($1::bigint[]))
 AND NOT EXISTS(SELECT 1 FROM sync_queue parent WHERE parent.status IN ('pending','failed') AND q.entity_type='zatca_document_chain' AND (
- (parent.entity_type='zatca_device_configs' AND parent.entity_id=(q.payload->>'device_config_id')::bigint)
+ (parent.entity_type='zatca_device_configs' AND parent.entity_id=(q.payload->>'device_config_id'))
  OR (parent.entity_type='zatca_document_chain' AND parent.payload->>'device_config_id'=q.payload->>'device_config_id' AND (parent.payload->>'icv')::bigint<(q.payload->>'icv')::bigint)))
-ORDER BY CASE WHEN q.entity_type='zatca_device_configs' THEN 0 ELSE 1 END,COALESCE((q.payload->>'device_config_id')::bigint,q.entity_id),COALESCE((q.payload->>'icv')::bigint,0),q.id LIMIT 1`
+ORDER BY CASE WHEN q.entity_type='zatca_device_configs' THEN 0 ELSE 1 END,COALESCE(NULLIF(q.payload->>'device_config_id','')::bigint,NULLIF(q.entity_id,'')::bigint,0),COALESCE((q.payload->>'icv')::bigint,0),q.id LIMIT 1`
 
 func (s *SyncService) drainZatcaOutbox() {
 	if s.zatcaCloudURL == "" || s.masterPool == nil {
@@ -234,7 +239,7 @@ func (s *SyncService) drainZatcaOutbox() {
 			s.recordOutboxFailure([]OutboxItem{item}, err.Error())
 			continue
 		}
-		_, err = s.masterPool.Exec(ctx, `UPDATE sync_queue SET status='synced',synced_at=NOW(),last_error=NULL WHERE entity_type=$1 AND entity_id=$2 AND id<=$3 AND status IN ('pending','failed')`, item.EntityType, item.EntityID, item.ID)
+		_, err = s.masterPool.Exec(ctx, `UPDATE sync_queue SET status='synced',synced_at=NOW(),last_error=NULL WHERE entity_type=$1 AND entity_id=$2::text AND id<=$3 AND status IN ('pending','failed')`, item.EntityType, item.EntityID, item.ID)
 		if err != nil {
 			log.Printf("[ZATCA SYNC] Could not save acknowledgment for item %d", item.ID)
 			return

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/NasTecSol/nembus-core/repository"
@@ -23,7 +24,7 @@ type ShortageItemInfo struct {
 
 // SAPInvoiceStockPayload carries held invoice information for stock review.
 type SAPInvoiceStockPayload struct {
-	TransactionID     int64              `json:"transaction_id,omitempty"`
+	TransactionID     uuid.UUID          `json:"transaction_id,omitempty"`
 	TransactionNumber string             `json:"transaction_number,omitempty"`
 	SalesOrderID      string             `json:"sales_order_id,omitempty"`
 	OrderNumber       string             `json:"order_number,omitempty"`
@@ -36,7 +37,7 @@ type SAPInvoiceStockPayload struct {
 
 // SAPInvoicePoster defines the interface for triggering an SAP AR Invoice post.
 type SAPInvoicePoster interface {
-	PostHeldInvoiceToSAP(ctx context.Context, transactionID int64, force bool) (docEntry int, docNum int, err error)
+	PostHeldInvoiceToSAP(ctx context.Context, transactionID uuid.UUID, force bool) (docEntry int, docNum int, err error)
 }
 
 // SAPInvoiceStockAccommodator handles governance decisions for stock-held invoices.
@@ -78,7 +79,7 @@ func (a *SAPInvoiceStockAccommodator) Accommodate(ctx context.Context, repo *rep
 		return a.accommodateSalesOrder(ctx, repo, payload, reviewerID)
 	}
 
-	if payload.TransactionID <= 0 {
+	if payload.TransactionID == uuid.Nil {
 		return errors.New("transaction_id or sales_order_id is required in payload")
 	}
 
@@ -96,7 +97,7 @@ func (a *SAPInvoiceStockAccommodator) Accommodate(ctx context.Context, repo *rep
 		}
 		rawMeta, _ := json.Marshal(meta)
 		_ = repo.UpdatePosTransactionMetadata(ctx, repository.UpdatePosTransactionMetadataParams{
-			ID:       int32(payload.TransactionID),
+			ID:       payload.TransactionID,
 			Metadata: rawMeta,
 		})
 	} else {
@@ -107,7 +108,7 @@ func (a *SAPInvoiceStockAccommodator) Accommodate(ctx context.Context, repo *rep
 		}
 		rawMeta, _ := json.Marshal(meta)
 		_ = repo.PatchPosTransactionMetadata(ctx, repository.PatchPosTransactionMetadataParams{
-			ID:      int32(payload.TransactionID),
+			ID:      payload.TransactionID,
 			Column2: rawMeta,
 		})
 	}
@@ -180,7 +181,7 @@ func (a *SAPInvoiceStockAccommodator) Reject(ctx context.Context, repo *reposito
 		})
 	}
 
-	if payload.TransactionID <= 0 {
+	if payload.TransactionID == uuid.Nil {
 		return errors.New("transaction_id is required in payload")
 	}
 
@@ -192,7 +193,7 @@ func (a *SAPInvoiceStockAccommodator) Reject(ctx context.Context, repo *reposito
 		}
 		rawMeta, _ := json.Marshal(meta)
 		_ = repo.PatchPosTransactionMetadata(ctx, repository.PatchPosTransactionMetadataParams{
-			ID:      int32(payload.TransactionID),
+			ID:      payload.TransactionID,
 			Column2: rawMeta,
 		})
 		return nil
@@ -219,7 +220,7 @@ func (a *SAPInvoiceStockAccommodator) Reject(ctx context.Context, repo *reposito
 			_, _ = repo.CreateStockMovement(ctx, repository.CreateStockMovementParams{
 				MovementType:  "adjustment",
 				ReferenceType: pgtype.Text{String: "approval_rejection", Valid: true},
-				ReferenceID:   pgtype.Int4{Int32: int32(req.ID), Valid: true},
+				ReferenceID:   pgtype.Text{String: strconv.FormatInt(req.ID, 10), Valid: true},
 				ProductID:     item.ProductID,
 				FromStoreID:   storeID,
 				Quantity:      qtyNumeric,
@@ -240,7 +241,7 @@ func (a *SAPInvoiceStockAccommodator) Reject(ctx context.Context, repo *reposito
 			}
 			rawMeta, _ := json.Marshal(meta)
 			_ = repo.UpdatePosTransactionMetadata(ctx, repository.UpdatePosTransactionMetadataParams{
-				ID:       int32(payload.TransactionID),
+				ID:       payload.TransactionID,
 				Metadata: rawMeta,
 			})
 			return nil
@@ -254,7 +255,7 @@ func (a *SAPInvoiceStockAccommodator) Reject(ctx context.Context, repo *reposito
 	}
 	rawMeta, _ := json.Marshal(meta)
 	_ = repo.PatchPosTransactionMetadata(ctx, repository.PatchPosTransactionMetadataParams{
-		ID:      int32(payload.TransactionID),
+		ID:      payload.TransactionID,
 		Column2: rawMeta,
 	})
 	return nil

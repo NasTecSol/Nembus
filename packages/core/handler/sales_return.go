@@ -10,6 +10,7 @@ import (
 	"github.com/NasTecSol/nembus-core/utils"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
 
 type SalesReturnHandler struct {
@@ -75,6 +76,8 @@ func (h *SalesReturnHandler) ProcessReturn(c *gin.Context) {
 	}
 	in := usecase.ProcessReturnInput{
 		StoreID:               req.StoreID,
+		PosTerminalID:         req.PosTerminalID,
+		TerminalCode:          req.TerminalCode,
 		CashierID:             req.CashierID,
 		SessionID:             req.SessionID,
 		OriginalTransactionID: req.OriginalTransactionID,
@@ -129,12 +132,12 @@ func (h *SalesReturnHandler) ListSalesReturnLinesForSAP(c *gin.Context) {
 	}
 	h.useCase.SetRepository(repo)
 
-	returnID, err := strconv.ParseInt(c.Param("id"), 10, 32)
+	returnID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid return id", nil))
 		return
 	}
-	resp := h.useCase.ListSalesReturnLinesDetailedForSAP(c.Request.Context(), int32(returnID))
+	resp := h.useCase.ListSalesReturnLinesDetailedForSAP(c.Request.Context(), returnID)
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -146,7 +149,7 @@ func (h *SalesReturnHandler) MarkSalesReturnSAPSynced(c *gin.Context) {
 	}
 	h.useCase.SetRepository(repo)
 
-	returnID, err := strconv.ParseInt(c.Param("id"), 10, 32)
+	returnID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid return id", nil))
 		return
@@ -159,6 +162,6 @@ func (h *SalesReturnHandler) MarkSalesReturnSAPSynced(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, err.Error(), nil))
 		return
 	}
-	resp := h.useCase.MarkSalesReturnSAPSynced(c.Request.Context(), int32(returnID), req.SAPDocEntry, req.SAPDocNum)
+	resp := h.useCase.MarkSalesReturnSAPSynced(c.Request.Context(), returnID, req.SAPDocEntry, req.SAPDocNum)
 	c.JSON(resp.StatusCode, resp)
 }

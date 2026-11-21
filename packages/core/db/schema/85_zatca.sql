@@ -25,7 +25,7 @@ CREATE TABLE invoices (
     store_id INTEGER REFERENCES stores(id) ON DELETE SET NULL,
     
     -- Customer information
-    customer_id INTEGER REFERENCES customers(id) ON DELETE SET NULL, -- nullable to support SAP imports where customer may not yet exist
+    customer_id UUID REFERENCES customers(id) ON DELETE SET NULL, -- nullable to support SAP imports where customer may not yet exist
     customer_name VARCHAR(255) NOT NULL,
     customer_email VARCHAR(255),
     customer_phone VARCHAR(50),
@@ -99,13 +99,13 @@ CREATE TABLE invoices (
 
 -- FIX #7 (P1): New sales_returns and sales_return_lines tables
 CREATE TABLE sales_returns (
-    id                  SERIAL PRIMARY KEY,
+    id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     return_number       VARCHAR(50) UNIQUE NOT NULL,
     store_id            INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
     cashier_id          INTEGER REFERENCES cashiers(id) ON DELETE SET NULL,
-    cashier_session_id  INTEGER REFERENCES cashier_sessions(id) ON DELETE SET NULL,
-    customer_id         INTEGER REFERENCES customers(id) ON DELETE SET NULL,
-    original_transaction_id INTEGER REFERENCES pos_transactions(id) ON DELETE SET NULL,
+    cashier_session_id  UUID REFERENCES cashier_sessions(id) ON DELETE SET NULL,
+    customer_id         UUID REFERENCES customers(id) ON DELETE SET NULL,
+    original_transaction_id UUID REFERENCES pos_transactions(id) ON DELETE SET NULL,
     return_date         TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     return_reason       VARCHAR(255),
     status              VARCHAR(30) DEFAULT 'pending' CHECK (status IN ('pending','approved','completed','cancelled')),
@@ -228,7 +228,7 @@ CREATE TABLE quotes (
     store_id INTEGER REFERENCES stores(id) ON DELETE SET NULL,
     
     -- Customer information
-    customer_id INTEGER REFERENCES customers(id) ON DELETE SET NULL,
+    customer_id UUID REFERENCES customers(id) ON DELETE SET NULL,
     customer_name VARCHAR(255) NOT NULL,
     customer_email VARCHAR(255),
     customer_phone VARCHAR(50),
@@ -321,11 +321,11 @@ CREATE TABLE quote_lines (
 
 
 CREATE TABLE sales_return_lines (
-    id                 SERIAL PRIMARY KEY,
-    return_id          INTEGER NOT NULL REFERENCES sales_returns(id) ON DELETE CASCADE,
+    id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    return_id          UUID NOT NULL REFERENCES sales_returns(id) ON DELETE CASCADE,
     product_id         INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
     product_variant_id INTEGER REFERENCES product_variants(id) ON DELETE SET NULL,
-    original_line_id   INTEGER REFERENCES pos_transaction_lines(id) ON DELETE SET NULL,
+    original_line_id   UUID REFERENCES pos_transaction_lines(id) ON DELETE SET NULL,
     quantity           DECIMAL(15,3) NOT NULL,
     unit_price         DECIMAL(15,4) NOT NULL,
     refund_amount      DECIMAL(15,2) NOT NULL,
@@ -563,7 +563,7 @@ CREATE TABLE sync_inbox (
     store_id        INTEGER NOT NULL,
     batch_id        VARCHAR(100),
     entity_type     VARCHAR(50) NOT NULL,
-    entity_id       BIGINT NOT NULL,
+    entity_id       TEXT NOT NULL,
     applied_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -574,7 +574,7 @@ CREATE INDEX idx_sync_inbox_batch_id ON sync_inbox(batch_id) WHERE batch_id IS N
 CREATE TABLE change_log (
     seq             BIGSERIAL PRIMARY KEY,
     entity_type     VARCHAR(50) NOT NULL,
-    entity_id       BIGINT NOT NULL,
+    entity_id       TEXT NOT NULL,
     op              VARCHAR(10) NOT NULL CHECK (op IN ('INSERT', 'UPDATE', 'DELETE')),
     payload         JSONB,
     changed_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()

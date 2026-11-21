@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -566,10 +567,10 @@ ORDER BY sm.movement_date DESC
 `
 
 type GetSerialNumberHistoryRow struct {
-	ID               int32            `json:"id"`
+	ID               uuid.UUID        `json:"id"`
 	MovementType     string           `json:"movement_type"`
 	ReferenceType    pgtype.Text      `json:"reference_type"`
-	ReferenceID      pgtype.Int4      `json:"reference_id"`
+	ReferenceID      pgtype.Text      `json:"reference_id"`
 	ProductID        int32            `json:"product_id"`
 	ProductVariantID pgtype.Int4      `json:"product_variant_id"`
 	FromStoreID      pgtype.Int4      `json:"from_store_id"`

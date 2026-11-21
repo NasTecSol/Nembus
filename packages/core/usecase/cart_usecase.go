@@ -7,7 +7,6 @@ import (
 	"net/netip"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/NasTecSol/nembus-core/repository"
 	"github.com/NasTecSol/nembus-core/utils"
@@ -51,7 +50,7 @@ type CartOutput struct {
 	CartNumber         string                `json:"cart_number"`
 	OrganizationID     int32                 `json:"organization_id"`
 	StoreID            pgtype.Int4           `json:"store_id"`
-	CustomerID         pgtype.Int4           `json:"customer_id"`
+	CustomerID         pgtype.UUID           `json:"customer_id"`
 	GuestIdentifier    pgtype.Text           `json:"guest_identifier"`
 	GuestEmail         pgtype.Text           `json:"guest_email"`
 	GuestPhone         pgtype.Text           `json:"guest_phone"`
@@ -152,7 +151,7 @@ type ListAbandonedCartOutput struct {
 	CartNumber         string                `json:"cart_number"`
 	OrganizationID     int32                 `json:"organization_id"`
 	StoreID            pgtype.Int4           `json:"store_id"`
-	CustomerID         pgtype.Int4           `json:"customer_id"`
+	CustomerID         pgtype.UUID           `json:"customer_id"`
 	GuestIdentifier    pgtype.Text           `json:"guest_identifier"`
 	GuestEmail         pgtype.Text           `json:"guest_email"`
 	GuestPhone         pgtype.Text           `json:"guest_phone"`
@@ -405,7 +404,7 @@ func (uc *CartUseCase) CreateCart(ctx context.Context, arg repository.CreateCart
 
 // CreateNewCart is a convenience helper that builds CreateCartParams from
 // common inputs, generates a cart number, and calls the repository CreateCart.
-func (uc *CartUseCase) CreateNewCart(ctx context.Context, organizationID int32, storeID pgtype.Int4, customerID pgtype.Int4, guestIdentifier string, guestEmail string, guestPhone string, paymentMethod string, paymentGateway string, createdByUserID pgtype.Int4, cashierID pgtype.Int4, posTerminalID pgtype.Int4, metadata []byte, notes string) *repository.Response {
+func (uc *CartUseCase) CreateNewCart(ctx context.Context, organizationID int32, storeID pgtype.Int4, customerID pgtype.UUID, guestIdentifier string, guestEmail string, guestPhone string, paymentMethod string, paymentGateway string, createdByUserID pgtype.Int4, cashierID pgtype.Int4, posTerminalID pgtype.Int4, metadata []byte, notes string) *repository.Response {
 	if resp := uc.repoOrErr(); resp != nil {
 		return resp
 	}
@@ -986,7 +985,8 @@ func (uc *CartUseCase) ConvertToOrder(ctx context.Context, cartID uuid.UUID) *re
 	}
 
 	// 3. Convert Cart to Order Header using the new generated business logic query
-	orderNumber := fmt.Sprintf("ORD-%s", time.Now().Format("20060102150405"))
+	termCode := LookupTerminalCode(ctx, activeRepo, cart.PosTerminalID.Int32, "")
+	orderNumber := GenerateTerminalDocNumber("ORD", termCode)
 	convertedCart, err := activeRepo.ConvertCartToOrder(ctx, repository.ConvertCartToOrderParams{
 		ID:          cartID,
 		OrderNumber: orderNumber,
@@ -1113,7 +1113,7 @@ func (uc *CartUseCase) ConvertToOrder(ctx context.Context, cartID uuid.UUID) *re
 		})
 	}
 
-	var posTxnID *int32
+	var posTxnID *uuid.UUID
 
 	// 5. If sales_channel is 'pos', sync to POS transaction and record payment when cart was settled.
 	// WhatsApp receipts are enqueued on cloud after upstream gRPC sync only.
@@ -1153,7 +1153,7 @@ func (uc *CartUseCase) ConvertToOrder(ctx context.Context, cartID uuid.UUID) *re
 					Metadata:        order.Metadata,
 				})
 				// Session expected_balance updated for cash payments
-				if strings.EqualFold(strings.TrimSpace(paymentMethod), "cash") && posTxn.CashierSessionID != 0 {
+				if strings.EqualFold(strings.TrimSpace(paymentMethod), "cash") && posTxn.CashierSessionID != uuid.Nil {
 					_ = activeRepo.UpdateSessionExpectedBalance(ctx, repository.UpdateSessionExpectedBalanceParams{
 						ID:              posTxn.CashierSessionID,
 						ExpectedBalance: order.TotalAmount,
@@ -1165,12 +1165,8 @@ func (uc *CartUseCase) ConvertToOrder(ctx context.Context, cartID uuid.UUID) *re
 	}
 
 	if tx != nil {
-		entityRefID := int64(0)
 		if posTxnID != nil {
-			entityRefID = int64(*posTxnID)
-		}
-		if posTxnID != nil {
-			enqueuePOSCheckoutOutboxTx(ctx, tx, corrID, entityRefID, orderID, &cartID)
+			enqueuePOSCheckoutOutboxTx(ctx, tx, corrID, posTxnID.String(), orderID, &cartID)
 		}
 		if err := tx.Commit(ctx); err != nil {
 			return utils.NewResponse(utils.CodeError, "failed to commit cart conversion transaction: "+err.Error(), nil)

@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -42,9 +43,9 @@ type CreateSalesReturnParams struct {
 	ReturnNumber          string           `json:"return_number"`
 	StoreID               int32            `json:"store_id"`
 	CashierID             pgtype.Int4      `json:"cashier_id"`
-	CashierSessionID      pgtype.Int4      `json:"cashier_session_id"`
-	CustomerID            pgtype.Int4      `json:"customer_id"`
-	OriginalTransactionID pgtype.Int4      `json:"original_transaction_id"`
+	CashierSessionID      pgtype.UUID      `json:"cashier_session_id"`
+	CustomerID            pgtype.UUID      `json:"customer_id"`
+	OriginalTransactionID pgtype.UUID      `json:"original_transaction_id"`
 	ReturnDate            pgtype.Timestamp `json:"return_date"`
 	ReturnReason          pgtype.Text      `json:"return_reason"`
 	Status                pgtype.Text      `json:"status"`
@@ -127,10 +128,10 @@ RETURNING id, return_id, product_id, product_variant_id, original_line_id, quant
 `
 
 type CreateSalesReturnLineParams struct {
-	ReturnID         int32           `json:"return_id"`
+	ReturnID         uuid.UUID       `json:"return_id"`
 	ProductID        int32           `json:"product_id"`
 	ProductVariantID pgtype.Int4     `json:"product_variant_id"`
-	OriginalLineID   pgtype.Int4     `json:"original_line_id"`
+	OriginalLineID   pgtype.UUID     `json:"original_line_id"`
 	Quantity         pgtype.Numeric  `json:"quantity"`
 	UnitPrice        pgtype.Numeric  `json:"unit_price"`
 	RefundAmount     pgtype.Numeric  `json:"refund_amount"`
@@ -186,7 +187,7 @@ FROM sales_return_lines
 WHERE original_line_id = $1
 `
 
-func (q *Queries) GetReturnedQuantityByLineID(ctx context.Context, originalLineID pgtype.Int4) (pgtype.Numeric, error) {
+func (q *Queries) GetReturnedQuantityByLineID(ctx context.Context, originalLineID pgtype.UUID) (pgtype.Numeric, error) {
 	row := q.db.QueryRow(ctx, getReturnedQuantityByLineID, originalLineID)
 	var total_returned_qty pgtype.Numeric
 	err := row.Scan(&total_returned_qty)
@@ -198,7 +199,7 @@ SELECT id, return_number, store_id, cashier_id, cashier_session_id, customer_id,
 WHERE id = $1
 `
 
-func (q *Queries) GetSalesReturnByID(ctx context.Context, id int32) (SalesReturn, error) {
+func (q *Queries) GetSalesReturnByID(ctx context.Context, id uuid.UUID) (SalesReturn, error) {
 	row := q.db.QueryRow(ctx, getSalesReturnByID, id)
 	var i SalesReturn
 	err := row.Scan(
@@ -231,7 +232,7 @@ SELECT id, return_id, product_id, product_variant_id, original_line_id, quantity
 WHERE return_id = $1
 `
 
-func (q *Queries) ListSalesReturnLinesByReturnID(ctx context.Context, returnID int32) ([]SalesReturnLine, error) {
+func (q *Queries) ListSalesReturnLinesByReturnID(ctx context.Context, returnID uuid.UUID) ([]SalesReturnLine, error) {
 	rows, err := q.db.Query(ctx, listSalesReturnLinesByReturnID, returnID)
 	if err != nil {
 		return nil, err
@@ -289,11 +290,11 @@ ORDER BY l.id ASC
 `
 
 type ListSalesReturnLinesDetailedForSAPRow struct {
-	ID                  int32            `json:"id"`
-	ReturnID            int32            `json:"return_id"`
+	ID                  uuid.UUID        `json:"id"`
+	ReturnID            uuid.UUID        `json:"return_id"`
 	ProductID           int32            `json:"product_id"`
 	ProductVariantID    pgtype.Int4      `json:"product_variant_id"`
-	OriginalLineID      pgtype.Int4      `json:"original_line_id"`
+	OriginalLineID      pgtype.UUID      `json:"original_line_id"`
 	Quantity            pgtype.Numeric   `json:"quantity"`
 	UnitPrice           pgtype.Numeric   `json:"unit_price"`
 	RefundAmount        pgtype.Numeric   `json:"refund_amount"`
@@ -314,7 +315,7 @@ type ListSalesReturnLinesDetailedForSAPRow struct {
 	SapTaxCode          string           `json:"sap_tax_code"`
 }
 
-func (q *Queries) ListSalesReturnLinesDetailedForSAP(ctx context.Context, returnID int32) ([]ListSalesReturnLinesDetailedForSAPRow, error) {
+func (q *Queries) ListSalesReturnLinesDetailedForSAP(ctx context.Context, returnID uuid.UUID) ([]ListSalesReturnLinesDetailedForSAPRow, error) {
 	rows, err := q.db.Query(ctx, listSalesReturnLinesDetailedForSAP, returnID)
 	if err != nil {
 		return nil, err
@@ -363,7 +364,7 @@ SELECT id, return_number, store_id, cashier_id, cashier_session_id, customer_id,
 WHERE original_transaction_id = $1
 `
 
-func (q *Queries) ListSalesReturnsByTransaction(ctx context.Context, originalTransactionID pgtype.Int4) ([]SalesReturn, error) {
+func (q *Queries) ListSalesReturnsByTransaction(ctx context.Context, originalTransactionID pgtype.UUID) ([]SalesReturn, error) {
 	rows, err := q.db.Query(ctx, listSalesReturnsByTransaction, originalTransactionID)
 	if err != nil {
 		return nil, err
@@ -424,13 +425,13 @@ type ListUnpostedSalesReturnsForSAPParams struct {
 }
 
 type ListUnpostedSalesReturnsForSAPRow struct {
-	ID                    int32            `json:"id"`
+	ID                    uuid.UUID        `json:"id"`
 	ReturnNumber          string           `json:"return_number"`
 	StoreID               int32            `json:"store_id"`
 	CashierID             pgtype.Int4      `json:"cashier_id"`
-	CashierSessionID      pgtype.Int4      `json:"cashier_session_id"`
-	CustomerID            pgtype.Int4      `json:"customer_id"`
-	OriginalTransactionID pgtype.Int4      `json:"original_transaction_id"`
+	CashierSessionID      pgtype.UUID      `json:"cashier_session_id"`
+	CustomerID            pgtype.UUID      `json:"customer_id"`
+	OriginalTransactionID pgtype.UUID      `json:"original_transaction_id"`
 	ReturnDate            pgtype.Timestamp `json:"return_date"`
 	ReturnReason          pgtype.Text      `json:"return_reason"`
 	Status                pgtype.Text      `json:"status"`
@@ -500,12 +501,12 @@ RETURNING id, return_number, metadata
 `
 
 type MarkSalesReturnSAPSyncedParams struct {
-	ID      int32           `json:"id"`
+	ID      uuid.UUID       `json:"id"`
 	Column2 json.RawMessage `json:"column_2"`
 }
 
 type MarkSalesReturnSAPSyncedRow struct {
-	ID           int32           `json:"id"`
+	ID           uuid.UUID       `json:"id"`
 	ReturnNumber string          `json:"return_number"`
 	Metadata     json.RawMessage `json:"metadata"`
 }
@@ -525,7 +526,7 @@ WHERE id = $1
 `
 
 type UpdatePOSTransactionStatusParams struct {
-	ID     int32       `json:"id"`
+	ID     uuid.UUID   `json:"id"`
 	Status pgtype.Text `json:"status"`
 }
 
@@ -539,7 +540,7 @@ UPDATE sales_returns SET metadata = $2, updated_at = CURRENT_TIMESTAMP WHERE id 
 `
 
 type UpdateSalesReturnMetadataParams struct {
-	ID       int32           `json:"id"`
+	ID       uuid.UUID       `json:"id"`
 	Metadata json.RawMessage `json:"metadata"`
 }
 

@@ -10,6 +10,7 @@ import (
 	"github.com/NasTecSol/nembus-core/utils"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -142,8 +143,8 @@ func (h *CustomerHandler) CreateCustomer(c *gin.Context) {
 		}
 		if _, err := tx.Exec(c.Request.Context(), `
 			INSERT INTO sync_queue (entity_type, entity_id, action, payload, status, priority)
-			SELECT 'customers', id, 'INSERT', row_to_json(customers)::jsonb, 'pending', 10
-			FROM customers WHERE id = $1`, customer.ID); err != nil {
+			SELECT 'customers', $1, 'INSERT', row_to_json(customers)::jsonb, 'pending', 10
+			FROM customers WHERE id = $1::uuid`, customer.ID.String()); err != nil {
 			c.JSON(http.StatusInternalServerError, utils.NewResponse(utils.CodeError, "customer sync queue failed: "+err.Error(), nil))
 			return
 		}
@@ -176,8 +177,12 @@ func (h *CustomerHandler) GetCustomerByID(c *gin.Context) {
 	}
 	h.useCase.SetRepository(repo)
 
-	id := c.Param("id")
-	resp := h.useCase.GetCustomerByID(c.Request.Context(), id)
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid customer id", nil))
+		return
+	}
+	resp := h.useCase.GetCustomerByID(c.Request.Context(), id.String())
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -444,7 +449,13 @@ func (h *CustomerHandler) GetCustomerCreditStatus(c *gin.Context) {
 	}
 	h.useCase.SetRepository(repo)
 
-	resp := h.useCase.GetCustomerCreditStatus(c.Request.Context(), c.Param("id"))
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid customer id", nil))
+		return
+	}
+
+	resp := h.useCase.GetCustomerCreditStatus(c.Request.Context(), id.String())
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -472,6 +483,12 @@ func (h *CustomerHandler) UpdateCustomer(c *gin.Context) {
 	}
 	h.useCase.SetRepository(repo)
 
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid customer id", nil))
+		return
+	}
+
 	var req UpdateCustomerRequest
 	if err := c.BindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid request", nil))
@@ -496,7 +513,7 @@ func (h *CustomerHandler) UpdateCustomer(c *gin.Context) {
 
 	resp := h.useCase.UpdateCustomer(
 		c.Request.Context(),
-		c.Param("id"),
+		id.String(),
 		req.Name,
 		req.Email,
 		req.Phone,
@@ -533,6 +550,12 @@ func (h *CustomerHandler) ToggleCustomerActive(c *gin.Context) {
 	}
 	h.useCase.SetRepository(repo)
 
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid customer id", nil))
+		return
+	}
+
 	var req ToggleCustomerActiveRequest
 	if err := c.BindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid request", nil))
@@ -544,7 +567,7 @@ func (h *CustomerHandler) ToggleCustomerActive(c *gin.Context) {
 		isActive = *req.IsActive
 	}
 
-	resp := h.useCase.ToggleCustomerActive(c.Request.Context(), c.Param("id"), isActive)
+	resp := h.useCase.ToggleCustomerActive(c.Request.Context(), id.String(), isActive)
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -571,6 +594,12 @@ func (h *CustomerHandler) UpdateCustomerBalance(c *gin.Context) {
 	}
 	h.useCase.SetRepository(repo)
 
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid customer id", nil))
+		return
+	}
+
 	var req UpdateCustomerBalanceRequest
 	if err := c.BindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid request", nil))
@@ -583,7 +612,7 @@ func (h *CustomerHandler) UpdateCustomerBalance(c *gin.Context) {
 		return
 	}
 
-	resp := h.useCase.UpdateCustomerBalance(c.Request.Context(), c.Param("id"), amount)
+	resp := h.useCase.UpdateCustomerBalance(c.Request.Context(), id.String(), amount)
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -609,6 +638,12 @@ func (h *CustomerHandler) DeleteCustomer(c *gin.Context) {
 	}
 	h.useCase.SetRepository(repo)
 
-	resp := h.useCase.DeleteCustomer(c.Request.Context(), c.Param("id"))
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid customer id", nil))
+		return
+	}
+
+	resp := h.useCase.DeleteCustomer(c.Request.Context(), id.String())
 	c.JSON(resp.StatusCode, resp)
 }

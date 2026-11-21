@@ -6,7 +6,7 @@
 CREATE TABLE draft_cart_templates (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-    customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+    customer_id UUID NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
     
     template_name VARCHAR(255) NOT NULL,
     description TEXT,
@@ -65,7 +65,7 @@ CREATE TABLE sales_orders_v2 (
     store_id INTEGER REFERENCES stores(id) ON DELETE SET NULL,
     
     -- Customer information
-    customer_id INTEGER REFERENCES customers(id) ON DELETE SET NULL,
+    customer_id UUID REFERENCES customers(id) ON DELETE SET NULL,
     customer_name VARCHAR(255),
     customer_email VARCHAR(255),
     customer_phone VARCHAR(50),

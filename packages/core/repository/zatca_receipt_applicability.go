@@ -34,7 +34,7 @@ func (q *Queries) GetReceiptZatcaState(ctx context.Context, organizationID int32
 	}
 	err := q.db.QueryRow(ctx, `/* GetReceiptZatcaState */
  WITH sale_candidates AS (
-   SELECT o.id AS order_id, t.id::bigint AS transaction_id, o.organization_id,
+   SELECT o.id AS order_id, t.id AS transaction_id, o.organization_id,
           COALESCE(t.store_id,o.store_id) AS store_id,
           CASE WHEN t.id IS NOT NULL THEN t.pos_terminal_id ELSE o.pos_terminal_id END AS pos_terminal_id,
           0 AS priority
@@ -49,13 +49,13 @@ func (q *Queries) GetReceiptZatcaState(ctx context.Context, organizationID int32
      (($2::uuid IS NOT NULL AND o.id=$2::uuid) OR
       ($2::uuid IS NULL AND o.order_number=$3))
    UNION ALL
-   SELECT t.sales_order_id, t.id::bigint, s.organization_id, t.store_id, t.pos_terminal_id, 1
+   SELECT t.sales_order_id, t.id, s.organization_id, t.store_id, t.pos_terminal_id, 1
    FROM pos_transactions t JOIN stores s ON s.id=t.store_id
    WHERE s.organization_id=$1 AND $2::uuid IS NULL AND t.transaction_number=$3
  ), sale AS (
    SELECT * FROM sale_candidates ORDER BY priority LIMIT 1
  ), saved_document AS (
-   SELECT c.qr_code_base64, c.id AS sort_id, 0 AS source_priority
+   SELECT c.qr_code_base64, c.id::text AS sort_id, 0 AS source_priority
    FROM zatca_document_chain c JOIN sale s ON s.organization_id=c.organization_id
    WHERE NULLIF(c.qr_code_base64,'') IS NOT NULL
      AND ((c.entity_type='sales_order_v2' AND c.entity_id=s.order_id::text)
@@ -69,11 +69,11 @@ func (q *Queries) GetReceiptZatcaState(ctx context.Context, organizationID int32
    -- POS checkout also persists the signed order QR in transaction metadata.
    -- That snapshot can be available before the document-chain sync reaches
    -- the database serving receipt printing.
-   SELECT NULLIF(t.metadata->>'qr_code_base64',''), t.id::bigint, 1
-   FROM pos_transactions t JOIN sale s ON t.id::bigint=s.transaction_id
+   SELECT NULLIF(t.metadata->>'qr_code_base64',''), t.id::text, 1
+   FROM pos_transactions t JOIN sale s ON t.id=s.transaction_id
    WHERE NULLIF(t.metadata->>'qr_code_base64','') IS NOT NULL
    UNION ALL
-   SELECT NULLIF(t.metadata->>'qr_code_base64',''), t.id::bigint, 1
+   SELECT NULLIF(t.metadata->>'qr_code_base64',''), t.id::text, 1
    FROM pos_transactions t JOIN sale s ON t.sales_order_id=s.order_id
    WHERE NULLIF(t.metadata->>'qr_code_base64','') IS NOT NULL
      AND t.store_id=s.store_id AND t.pos_terminal_id=s.pos_terminal_id

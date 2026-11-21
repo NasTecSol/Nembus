@@ -2,8 +2,10 @@ package utils
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -146,5 +148,81 @@ func BoolToPtr(b pgtype.Bool) *bool {
 	}
 	return &b.Bool
 }
+
+// UUIDToPgUUID converts a uuid.UUID to pgtype.UUID (invalid if uuid.Nil).
+func UUIDToPgUUID(u uuid.UUID) pgtype.UUID {
+	if u == uuid.Nil {
+		return pgtype.UUID{Valid: false}
+	}
+	return pgtype.UUID{Bytes: u, Valid: true}
+}
+
+// UUIDPtrToPgUUID converts a *uuid.UUID to pgtype.UUID.
+func UUIDPtrToPgUUID(u *uuid.UUID) pgtype.UUID {
+	if u == nil || *u == uuid.Nil {
+		return pgtype.UUID{Valid: false}
+	}
+	return pgtype.UUID{Bytes: *u, Valid: true}
+}
+
+// PgUUIDToUUIDPtr converts a pgtype.UUID to *uuid.UUID.
+func PgUUIDToUUIDPtr(u pgtype.UUID) *uuid.UUID {
+	if !u.Valid {
+		return nil
+	}
+	val := uuid.UUID(u.Bytes)
+	return &val
+}
+
+// PgUUIDToUUID converts a pgtype.UUID to uuid.UUID (returns uuid.Nil if invalid).
+func PgUUIDToUUID(u pgtype.UUID) uuid.UUID {
+	if !u.Valid {
+		return uuid.Nil
+	}
+	return uuid.UUID(u.Bytes)
+}
+
+// PgUUIDToStringPtr converts a pgtype.UUID to *string.
+func PgUUIDToStringPtr(u pgtype.UUID) *string {
+	if !u.Valid {
+		return nil
+	}
+	s := uuid.UUID(u.Bytes).String()
+	return &s
+}
+
+// DerefUUID returns the value of a uuid.UUID pointer or uuid.Nil if nil.
+func DerefUUID(u *uuid.UUID) uuid.UUID {
+	if u == nil {
+		return uuid.Nil
+	}
+	return *u
+}
+
+// ParseUUIDOrNil parses a string as uuid.UUID, returning uuid.Nil on error or empty string.
+func ParseUUIDOrNil(s string) uuid.UUID {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return uuid.Nil
+	}
+	u, err := uuid.Parse(s)
+	if err != nil {
+		return uuid.Nil
+	}
+	return u
+}
+
+// ParseUUIDPtr parses a string pointer as *uuid.UUID, returning nil if empty or invalid.
+func ParseUUIDPtr(s *string) *uuid.UUID {
+	if s == nil {
+		return nil
+	}
+	u := ParseUUIDOrNil(*s)
+	if u == uuid.Nil {
+		return nil
+	}
+	return &u
+}
+
 
 

@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -33,7 +34,7 @@ type CreateWasteLogParams struct {
 	TotalCost   pgtype.Numeric   `json:"total_cost"`
 	Reason      pgtype.Text      `json:"reason"`
 	LoggedBy    pgtype.Int4      `json:"logged_by"`
-	OrderID     pgtype.Int4      `json:"order_id"`
+	OrderID     pgtype.UUID      `json:"order_id"`
 	WastedAt    pgtype.Timestamp `json:"wasted_at"`
 	Metadata    json.RawMessage  `json:"metadata"`
 }
@@ -82,7 +83,7 @@ DELETE FROM waste_logs
 WHERE id = $1
 `
 
-func (q *Queries) DeleteWasteLog(ctx context.Context, id int32) error {
+func (q *Queries) DeleteWasteLog(ctx context.Context, id uuid.UUID) error {
 	_, err := q.db.Exec(ctx, deleteWasteLog, id)
 	return err
 }
@@ -94,7 +95,7 @@ WHERE id = $1 LIMIT 1
 `
 
 // waste_logs.sql
-func (q *Queries) GetWasteLog(ctx context.Context, id int32) (WasteLog, error) {
+func (q *Queries) GetWasteLog(ctx context.Context, id uuid.UUID) (WasteLog, error) {
 	row := q.db.QueryRow(ctx, getWasteLog, id)
 	var i WasteLog
 	err := row.Scan(
@@ -182,7 +183,7 @@ RETURNING id, store_id, product_id, menu_item_id, recipe_id, waste_source, quant
 `
 
 type UpdateWasteLogParams struct {
-	ID          int32            `json:"id"`
+	ID          uuid.UUID        `json:"id"`
 	ProductID   pgtype.Int4      `json:"product_id"`
 	MenuItemID  pgtype.Int4      `json:"menu_item_id"`
 	RecipeID    pgtype.Int4      `json:"recipe_id"`
@@ -193,7 +194,7 @@ type UpdateWasteLogParams struct {
 	TotalCost   pgtype.Numeric   `json:"total_cost"`
 	Reason      pgtype.Text      `json:"reason"`
 	LoggedBy    pgtype.Int4      `json:"logged_by"`
-	OrderID     pgtype.Int4      `json:"order_id"`
+	OrderID     pgtype.UUID      `json:"order_id"`
 	WastedAt    pgtype.Timestamp `json:"wasted_at"`
 	Metadata    json.RawMessage  `json:"metadata"`
 }

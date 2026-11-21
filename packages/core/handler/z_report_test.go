@@ -10,21 +10,22 @@ import (
 
 func TestZReportRequestValidation(t *testing.T) {
 	gin.SetMode(gin.TestMode)
+	const validSessionID = "00000000-0000-4000-8000-000000000001"
 	for _, tc := range []struct {
 		name, query, user string
 		org               int32
 		status            int
 	}{
-		{"missing auth", "?cashier_session_id=1", "", 0, 401},
-		{"invalid user", "?cashier_session_id=1", "abc", 1, 401},
+		{"missing auth", "?cashier_session_id=" + validSessionID, "", 0, 401},
+		{"invalid user", "?cashier_session_id=" + validSessionID, "abc", 1, 401},
 		{"missing session", "", "1", 1, 400},
 		{"empty session", "?cashier_session_id=", "1", 1, 400},
 		{"negative session", "?cashier_session_id=-1", "1", 1, 400},
 		{"overflow", "?cashier_session_id=2147483648", "1", 1, 400},
-		{"duplicate", "?cashier_session_id=1&cashier_session_id=2", "1", 1, 400},
-		{"bad optional", "?cashier_session_id=1&store_id=abc", "1", 1, 400},
-		{"zero optional", "?cashier_session_id=1&pos_terminal_id=0", "1", 1, 400},
-		{"missing repository", "?cashier_session_id=1&store_id=3&cashier_id=12&pos_terminal_id=7", "1", 1, 500},
+		{"duplicate", "?cashier_session_id=" + validSessionID + "&cashier_session_id=00000000-0000-4000-8000-000000000002", "1", 1, 400},
+		{"bad optional", "?cashier_session_id=" + validSessionID + "&store_id=abc", "1", 1, 400},
+		{"zero optional", "?cashier_session_id=" + validSessionID + "&pos_terminal_id=0", "1", 1, 400},
+		{"missing repository", "?cashier_session_id=" + validSessionID + "&store_id=3&cashier_id=12&pos_terminal_id=7", "1", 1, 500},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			w := httptest.NewRecorder()

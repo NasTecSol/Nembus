@@ -12,8 +12,11 @@ import (
 	"github.com/NasTecSol/nembus-core/middleware"
 	"github.com/NasTecSol/nembus-core/repository"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 )
+
+const legacyPosTransactionUUID = "00000000-0000-4000-8000-000000000006"
 
 type documentStatusDB struct {
 	repository.DBTX
@@ -34,7 +37,11 @@ func (r documentStatusRow) Scan(dest ...interface{}) error {
 		return r.err
 	}
 	if r.legacy {
-		*dest[0].(*int32) = 6
+		parsed, err := uuid.Parse(legacyPosTransactionUUID)
+		if err != nil {
+			return err
+		}
+		*dest[0].(*uuid.UUID) = parsed
 		return nil
 	}
 	value := reflect.ValueOf(r.entry)
@@ -88,7 +95,7 @@ func TestSalesOrderDocumentStatusReadsSavedTenantResult(t *testing.T) {
 				db.entry.ZatcaResponse = []byte(`{"reportingStatus":"REPORTED"}`)
 			}
 			if tc.legacy {
-				db.entry.EntityType, db.entry.EntityID = "pos_transaction", "6"
+				db.entry.EntityType, db.entry.EntityID = "pos_transaction", legacyPosTransactionUUID
 			}
 			engine := gin.New()
 			engine.Use(func(c *gin.Context) {

@@ -26,7 +26,7 @@ RETURNING id, order_number, status, total_amount
 type CreateSalesOrderHeaderParams struct {
 	OrderNumber    string          `json:"order_number"`
 	OrganizationID int32           `json:"organization_id"`
-	CustomerID     pgtype.Int4     `json:"customer_id"`
+	CustomerID     pgtype.UUID     `json:"customer_id"`
 	StoreID        int32           `json:"store_id"`
 	OrderDate      pgtype.Date     `json:"order_date"`
 	DeliveryDate   pgtype.Date     `json:"delivery_date"`
@@ -108,7 +108,7 @@ type GetSalesOrderFullRow struct {
 	ID               int32            `json:"id"`
 	OrganizationID   int32            `json:"organization_id"`
 	OrderNumber      string           `json:"order_number"`
-	CustomerID       pgtype.Int4      `json:"customer_id"`
+	CustomerID       pgtype.UUID      `json:"customer_id"`
 	StoreID          int32            `json:"store_id"`
 	OrderDate        pgtype.Date      `json:"order_date"`
 	DeliveryDate     pgtype.Date      `json:"delivery_date"`
@@ -251,7 +251,7 @@ WHERE id = $1
 `
 
 type LinkPosTransactionToSalesOrderParams struct {
-	ID           int32       `json:"id"`
+	ID           uuid.UUID   `json:"id"`
 	SalesOrderID pgtype.UUID `json:"sales_order_id"`
 }
 
