@@ -110,7 +110,7 @@ type seededRestaurantFixture struct {
 	OrgID        int32
 	StoreID      int32
 	TableID      int32
-	CustomerID   int32
+	CustomerID   uuid.UUID
 	MenuItemID   int32
 	ModifierID   int32
 	ComboItemID  int32
@@ -383,11 +383,12 @@ func TestRestaurantCartToOrderIntegration(t *testing.T) {
 	}
 	mergedCart := mergeResp.Data.(map[string]interface{})["cart"].(RestaurantCartOutput)
 	if mergedCart.CustomerID == nil || *mergedCart.CustomerID != fix.CustomerID {
-		t.Fatalf("expected merged cart customer_id=%d, got %v", fix.CustomerID, mergedCart.CustomerID)
+		t.Fatalf("expected merged cart customer_id=%s, got %v", fix.CustomerID, mergedCart.CustomerID)
 	}
 
 	// 8. POS Transaction + POS Payment + Cashier Session Balance on POS Checkout & SettleOrder
-	var userID, cashierID, terminalID, sessionID int32
+	var userID, cashierID, terminalID int32
+	var sessionID uuid.UUID
 	if err := pool.QueryRow(ctx, `
 		INSERT INTO users (organization_id, username, email, password_hash)
 		VALUES ($1, 'poscashier', 'poscashier@example.com', 'hash') RETURNING id
@@ -433,12 +434,12 @@ func TestRestaurantCartToOrderIntegration(t *testing.T) {
 		t.Fatalf("pos ConvertToOrder failed: %d %s", posCheckout.StatusCode, posCheckout.Message)
 	}
 	posOut := posCheckout.Data.(map[string]interface{})
-	txnIDVal, ok := posOut["pos_transaction_id"].(int32)
-	if !ok || txnIDVal <= 0 {
-		t.Fatalf("expected pos_transaction_id > 0 in ConvertToOrder output, got %v", posOut["pos_transaction_id"])
+	txnIDVal, ok := posOut["pos_transaction_id"].(uuid.UUID)
+	if !ok || txnIDVal == uuid.Nil {
+		t.Fatalf("expected pos_transaction_id uuid in ConvertToOrder output, got %v", posOut["pos_transaction_id"])
 	}
 	posOrd := posOut["order"].(repository.RestaurantOrder)
-	if !posOrd.PosTransactionID.Valid || posOrd.PosTransactionID.Int32 != txnIDVal || posOrd.PaymentStatus != "paid" {
+	if !posOrd.PosTransactionID.Valid || uuid.UUID(posOrd.PosTransactionID.Bytes) != txnIDVal || posOrd.PaymentStatus != "paid" {
 		t.Fatalf("unexpected linked pos order: pos_txn_id=%v payment_status=%s", posOrd.PosTransactionID, posOrd.PaymentStatus)
 	}
 
@@ -500,9 +501,12 @@ func TestRestaurantCartToOrderIntegration(t *testing.T) {
 		t.Fatalf("SettleOrderWithPosTransaction failed: %d %s", settleResp.StatusCode, settleResp.Message)
 	}
 	settleOut := settleResp.Data.(map[string]interface{})
-	settleTxnID := settleOut["pos_transaction_id"].(int32)
+	settleTxnID, ok := settleOut["pos_transaction_id"].(uuid.UUID)
+	if !ok || settleTxnID == uuid.Nil {
+		t.Fatalf("expected pos_transaction_id uuid from settle, got %v", settleOut["pos_transaction_id"])
+	}
 	settledOrder := settleOut["order"].(*repository.RestaurantOrder)
-	if settledOrder.Status != unpaidOrd.Status || settledOrder.PaymentStatus != "paid" || !settledOrder.PosTransactionID.Valid || settledOrder.PosTransactionID.Int32 != settleTxnID {
+	if settledOrder.Status != unpaidOrd.Status || settledOrder.PaymentStatus != "paid" || !settledOrder.PosTransactionID.Valid || uuid.UUID(settledOrder.PosTransactionID.Bytes) != settleTxnID {
 		t.Fatalf("unexpected settled order: status=%s payment=%s txn=%v", settledOrder.Status, settledOrder.PaymentStatus, settledOrder.PosTransactionID)
 	}
 	if err := pool.QueryRow(ctx, `SELECT expected_balance::float8 FROM cashier_sessions WHERE id = $1`, sessionID).Scan(&expectedBal); err != nil {
@@ -530,10 +534,9 @@ func TestRestaurantCartToOrderIntegration(t *testing.T) {
 	}
 
 	sessionTxns, err := repo.ListPosTransactionsByCashierSession(ctx, repository.ListPosTransactionsByCashierSessionParams{
-		Column1: sessionID,
-		Column2: sessionID,
-		Limit:   10,
-		Offset:  0,
+		CashierSessionID: pgtype.UUID{Bytes: sessionID, Valid: true},
+		Limit:            10,
+		Offset:           0,
 	})
 	if err != nil {
 		t.Fatalf("ListPosTransactionsByCashierSession failed: %v", err)
@@ -821,7 +824,8 @@ func TestRestaurantUnderpaymentRejectedIntegration(t *testing.T) {
 	ctx := context.Background()
 	fix := seedRestaurantTestData(t, ctx, pool)
 
-	var userID, cashierID, terminalID, sessionID int32
+	var userID, cashierID, terminalID int32
+	var sessionID uuid.UUID
 	if err := pool.QueryRow(ctx, `
 		INSERT INTO users (organization_id, username, email, password_hash)
 		VALUES ($1, 'underpaycashier', 'underpaycashier@example.com', 'hash') RETURNING id

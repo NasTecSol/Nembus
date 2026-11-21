@@ -7,7 +7,7 @@ import (
 )
 
 func TestGenerateTerminalDocNumber(t *testing.T) {
-	re := regexp.MustCompile(`^[A-Z]+-[A-Z0-9]+-\d{8}-[0-9A-F]{6}$`)
+	re := regexp.MustCompile(`^[A-Z]+-[A-Z0-9]+-\d{8}-[0-9A-F]{8}$`)
 
 	tests := []struct {
 		name         string

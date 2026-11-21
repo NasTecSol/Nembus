@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"crypto/md5"
 	"fmt"
 	"net/url"
 	"os"
@@ -12,9 +11,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/NasTecSol/nembus-core/utils"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+func detUUID(table string, oldID int64) uuid.UUID {
+	return utils.DetUUIDFromLegacyID(table, oldID)
+}
 
 // migratedTables lists all 15 POS-originated push-synced tables migrated from SERIAL -> UUID.
 var migratedTables = []string{
@@ -426,17 +430,6 @@ func createDisposableDB(t *testing.T, ctx context.Context, baseURL, suffix strin
 	})
 
 	return targetURL, testPool
-}
-
-func detUUID(table string, oldID int64) uuid.UUID {
-	sum := md5.Sum([]byte(fmt.Sprintf("nembus:v1:%s:%d", table, oldID)))
-	sum[6] = (sum[6] & 0x0f) | 0x40
-	sum[8] = (sum[8] & 0x3f) | 0x80
-	u, err := uuid.FromBytes(sum[:])
-	if err != nil {
-		panic(err)
-	}
-	return u
 }
 
 func assertValidUUIDv4(t *testing.T, label string, u uuid.UUID) {

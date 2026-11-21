@@ -1,9 +1,12 @@
 package utils
 
 import (
+	"crypto/md5"
+	"encoding/hex"
 	"fmt"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -222,6 +225,49 @@ func ParseUUIDPtr(s *string) *uuid.UUID {
 		return nil
 	}
 	return &u
+}
+
+// DetUUIDFromLegacyID matches pg_temp.det_uuid in the M1 UUID migration SQL.
+func DetUUIDFromLegacyID(table string, oldID int64) uuid.UUID {
+	sum := md5.Sum([]byte(fmt.Sprintf("nembus:v1:%s:%d", table, oldID)))
+	h := hex.EncodeToString(sum[:])
+	variant := "89ab"[int(sum[8]&3)]
+	s := fmt.Sprintf("%s-%s-4%s-%c%s-%s", h[0:8], h[8:12], h[13:16], variant, h[17:20], h[20:32])
+	return uuid.MustParse(s)
+}
+
+// TruncateRunes returns s truncated to at most max runes without splitting a multibyte rune.
+func TruncateRunes(s string, max int) string {
+	if max <= 0 {
+		return ""
+	}
+	n := 0
+	for i := range s {
+		if n == max {
+			return s[:i]
+		}
+		n++
+	}
+	return s
+}
+
+// SanitizeTerminalCodeForDocNum normalizes a terminal code for document numbers (max 12 runes).
+func SanitizeTerminalCodeForDocNum(terminalCode string) string {
+	trimmed := strings.TrimSpace(terminalCode)
+	if trimmed == "" {
+		return "T00"
+	}
+	var b strings.Builder
+	for _, r := range trimmed {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			b.WriteRune(unicode.ToUpper(r))
+		}
+	}
+	res := b.String()
+	if res == "" {
+		return "T00"
+	}
+	return TruncateRunes(res, 12)
 }
 
 

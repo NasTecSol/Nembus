@@ -8,9 +8,9 @@ import (
 	"regexp"
 	"strings"
 	"time"
-	"unicode"
 
 	"github.com/NasTecSol/nembus-core/repository"
+	"github.com/NasTecSol/nembus-core/utils"
 )
 
 var weakLegacyDocNumRe = regexp.MustCompile(`^(?:SES-\d{8}-\d{1,4}|GUEST-\d+|POS-\d+|RET-\d+|ORD-\d+|WEB-\d+)$`)
@@ -45,24 +45,7 @@ func IsWeakOrEmptyDocNumber(docNum string) bool {
 // document numbers (e.g. "T01", "POS1"). If empty or containing no alphanumeric characters,
 // it falls back to "T00".
 func SanitizeTerminalCode(terminalCode string) string {
-	trimmed := strings.TrimSpace(terminalCode)
-	if trimmed == "" {
-		return "T00"
-	}
-	var b strings.Builder
-	for _, r := range trimmed {
-		if unicode.IsLetter(r) || unicode.IsDigit(r) {
-			b.WriteRune(unicode.ToUpper(r))
-		}
-	}
-	res := b.String()
-	if res == "" {
-		return "T00"
-	}
-	if len(res) > 12 {
-		res = res[:12]
-	}
-	return res
+	return utils.SanitizeTerminalCodeForDocNum(terminalCode)
 }
 
 // GenerateTerminalDocNumber produces a collision-resistant, terminal-scoped business
@@ -76,12 +59,13 @@ func GenerateTerminalDocNumber(prefix, terminalCode string) string {
 	cleanTerminal := SanitizeTerminalCode(terminalCode)
 	datePart := time.Now().UTC().Format("20060102")
 
-	var rnd [3]byte
+	var rnd [4]byte
 	if _, err := rand.Read(rnd[:]); err != nil {
 		ns := uint64(time.Now().UnixNano())
 		rnd[0] = byte(ns)
 		rnd[1] = byte(ns >> 8)
 		rnd[2] = byte(ns >> 16)
+		rnd[3] = byte(ns >> 24)
 	}
 	hexPart := strings.ToUpper(hex.EncodeToString(rnd[:]))
 
