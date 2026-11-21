@@ -13,6 +13,7 @@ import (
 	"github.com/NasTecSol/nembus-sap-agent/config"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -22,11 +23,11 @@ type Client struct {
 }
 
 type POSTransaction struct {
-	ID                int64           `json:"id"`
+	ID                uuid.UUID       `json:"id"`
 	StoreID           int32           `json:"store_id"`
 	CashierID         int32           `json:"cashier_id"`
-	CashierSessionID  int32           `json:"cashier_session_id"`
-	CustomerID        *int32          `json:"customer_id"`
+	CashierSessionID  uuid.UUID       `json:"cashier_session_id"`
+	CustomerID        *uuid.UUID      `json:"customer_id"`
 	CustomerSAPCode   string          `json:"customer_sap_code,omitempty"`
 	TransactionNumber string          `json:"transaction_number"`
 	TransactionDate   time.Time       `json:"transaction_date"`
@@ -40,8 +41,8 @@ type POSTransaction struct {
 }
 
 type POSTransactionLine struct {
-	ID                  int64   `json:"id"`
-	TransactionID       int64   `json:"transaction_id"`
+	ID                  uuid.UUID `json:"id"`
+	TransactionID       uuid.UUID `json:"transaction_id"`
 	ProductID           int32   `json:"product_id"`
 	ProductSKU          string  `json:"product_sku"`
 	ProductName         string  `json:"product_name"`
@@ -61,8 +62,8 @@ type POSTransactionLine struct {
 }
 
 type POSPayment struct {
-	ID            int64     `json:"id"`
-	TransactionID int64     `json:"transaction_id"`
+	ID            uuid.UUID `json:"id"`
+	TransactionID uuid.UUID `json:"transaction_id"`
 	PaymentMethod string    `json:"payment_method"`
 	Amount        float64   `json:"amount"`
 	Reference     *string   `json:"reference"`
@@ -70,13 +71,13 @@ type POSPayment struct {
 }
 
 type SalesReturn struct {
-	ID                    int64           `json:"id"`
+	ID                    uuid.UUID       `json:"id"`
 	ReturnNumber          string          `json:"return_number"`
 	StoreID               int32           `json:"store_id"`
 	CashierID             *int32          `json:"cashier_id"`
-	CustomerID            *int32          `json:"customer_id"`
+	CustomerID            *uuid.UUID      `json:"customer_id"`
 	CustomerSAPCode       string          `json:"customer_sap_code,omitempty"`
-	OriginalTransactionID *int32          `json:"original_transaction_id"`
+	OriginalTransactionID *uuid.UUID      `json:"original_transaction_id"`
 	OriginalSAPDocEntry   int             `json:"original_sap_doc_entry,omitempty"`
 	ReturnDate            time.Time       `json:"return_date"`
 	ReturnReason          *string         `json:"return_reason"`
@@ -88,12 +89,12 @@ type SalesReturn struct {
 }
 
 type SalesReturnLine struct {
-	ID                  int64   `json:"id"`
-	ReturnID            int64   `json:"return_id"`
-	ProductID           int32   `json:"product_id"`
-	ProductSKU          string  `json:"product_sku"`
-	ProductName         string  `json:"product_name"`
-	OriginalLineID      *int32  `json:"original_line_id"`
+	ID                  uuid.UUID  `json:"id"`
+	ReturnID            uuid.UUID  `json:"return_id"`
+	ProductID           int32      `json:"product_id"`
+	ProductSKU          string     `json:"product_sku"`
+	ProductName         string     `json:"product_name"`
+	OriginalLineID      *uuid.UUID `json:"original_line_id"`
 	Quantity            float64 `json:"quantity"`
 	UnitPrice           float64 `json:"unit_price"`
 	RefundAmount        float64 `json:"refund_amount"`
@@ -118,7 +119,7 @@ type SalesOrderV2 struct {
 	ID              uuid.UUID
 	OrderNumber     string
 	StoreID         int32
-	CustomerID      *int32
+	CustomerID      *uuid.UUID
 	CustomerSAPCode string
 	OrderDate       time.Time
 	TotalAmount     float64
@@ -319,7 +320,7 @@ func (c *Client) FetchUnpostedPOSTransactions(ctx context.Context, limit int) ([
 	return c.scanPOSTransactions(ctx, query, limit)
 }
 
-func (c *Client) FetchTransactionLines(ctx context.Context, transactionID int64) ([]POSTransactionLine, error) {
+func (c *Client) FetchTransactionLines(ctx context.Context, transactionID uuid.UUID) ([]POSTransactionLine, error) {
 	query := `
 		SELECT l.id, l.transaction_id, l.product_id, p.sku, p.name,
 		       l.quantity, l.uom_id, l.unit_price, l.discount_amount,
@@ -363,7 +364,7 @@ func (c *Client) FetchTransactionLines(ctx context.Context, transactionID int64)
 	return lines, rows.Err()
 }
 
-func (c *Client) FetchTransactionPayments(ctx context.Context, transactionID int64) ([]POSPayment, error) {
+func (c *Client) FetchTransactionPayments(ctx context.Context, transactionID uuid.UUID) ([]POSPayment, error) {
 	query := `
 		SELECT id, transaction_id, payment_method, amount, reference_number, payment_date
 		FROM pos_payments
@@ -386,7 +387,7 @@ func (c *Client) FetchTransactionPayments(ctx context.Context, transactionID int
 	return payments, rows.Err()
 }
 
-func (c *Client) MarkTransactionPostedToSAP(ctx context.Context, transactionID int64, sapDocEntry, sapDocNum int) error {
+func (c *Client) MarkTransactionPostedToSAP(ctx context.Context, transactionID uuid.UUID, sapDocEntry, sapDocNum int) error {
 	metaPatch, _ := json.Marshal(map[string]any{
 		"sap_doc_entry":  sapDocEntry,
 		"sap_doc_num":    sapDocNum,
@@ -440,7 +441,7 @@ func (c *Client) FetchUnpostedSalesReturns(ctx context.Context, limit int) ([]Sa
 	return list, rows.Err()
 }
 
-func (c *Client) FetchSalesReturnLines(ctx context.Context, returnID int64) ([]SalesReturnLine, error) {
+func (c *Client) FetchSalesReturnLines(ctx context.Context, returnID uuid.UUID) ([]SalesReturnLine, error) {
 	query := `
 		SELECT l.id, l.return_id, l.product_id, p.sku, p.name,
 		       l.original_line_id, l.quantity, l.unit_price, l.refund_amount,
@@ -485,7 +486,7 @@ func (c *Client) FetchSalesReturnLines(ctx context.Context, returnID int64) ([]S
 	return lines, rows.Err()
 }
 
-func (c *Client) MarkSalesReturnPostedToSAP(ctx context.Context, returnID int64, sapDocEntry, sapDocNum int) error {
+func (c *Client) MarkSalesReturnPostedToSAP(ctx context.Context, returnID uuid.UUID, sapDocEntry, sapDocNum int) error {
 	metaPatch, _ := json.Marshal(map[string]any{
 		"sap_doc_entry":  sapDocEntry,
 		"sap_doc_num":    sapDocNum,
@@ -502,7 +503,7 @@ func (c *Client) MarkSalesReturnPostedToSAP(ctx context.Context, returnID int64,
 	return err
 }
 
-func (c *Client) FetchOriginalSAPDocEntry(ctx context.Context, originalTxID int32) (int, error) {
+func (c *Client) FetchOriginalSAPDocEntry(ctx context.Context, originalTxID uuid.UUID) (int, error) {
 	var docEntry int
 	query := `SELECT COALESCE(NULLIF(metadata->>'sap_doc_entry', '')::int, 0) FROM pos_transactions WHERE id = $1`
 	err := c.pool.QueryRow(ctx, query, originalTxID).Scan(&docEntry)
@@ -511,7 +512,7 @@ func (c *Client) FetchOriginalSAPDocEntry(ctx context.Context, originalTxID int3
 
 // FetchCustomerSAPCode looks up the SAP CardCode for a given Nembus customer ID.
 // Reads from customers.customer_code or metadata->>'sap_card_code'.
-func (c *Client) FetchCustomerSAPCode(ctx context.Context, customerID int32) (string, error) {
+func (c *Client) FetchCustomerSAPCode(ctx context.Context, customerID uuid.UUID) (string, error) {
 	var code string
 	query := `
 		SELECT COALESCE(NULLIF(customer_code, ''), NULLIF(metadata->>'sap_card_code', ''), '')
@@ -524,7 +525,7 @@ func (c *Client) FetchCustomerSAPCode(ctx context.Context, customerID int32) (st
 }
 
 // HoldTransactionForStockReview marks a transaction as held in Nembus and submits an approval request.
-func (c *Client) HoldTransactionForStockReview(ctx context.Context, txID int64, txNum string, storeID int32, whCode string, totalAmount float64, shortageItems []ShortageItem, summary string) error {
+func (c *Client) HoldTransactionForStockReview(ctx context.Context, txID uuid.UUID, txNum string, storeID int32, whCode string, totalAmount float64, shortageItems []ShortageItem, summary string) error {
 	metaPatch, _ := json.Marshal(map[string]any{
 		"sap_sync_state": "held_stock",
 		"held_reason":    summary,
@@ -540,7 +541,7 @@ func (c *Client) HoldTransactionForStockReview(ctx context.Context, txID int64, 
 	}
 
 	payload, _ := json.Marshal(map[string]any{
-		"transaction_id":     txID,
+		"transaction_id":     txID.String(),
 		"transaction_number": txNum,
 		"store_id":           storeID,
 		"warehouse_code":     whCode,
@@ -554,7 +555,7 @@ func (c *Client) HoldTransactionForStockReview(ctx context.Context, txID int64, 
 		return err
 	}
 
-	entityID := fmt.Sprintf("%d", txID)
+	entityID := txID.String()
 	query := `
 		INSERT INTO approval_requests (
 			organization_id, domain, action, entity_type, entity_id,
@@ -776,11 +777,14 @@ func (c *Client) FetchUnpostedSalesOrdersV2(ctx context.Context, limit int) ([]S
 	var list []SalesOrderV2
 	for rows.Next() {
 		var o SalesOrderV2
-		var customerID *int32
+		var customerID pgtype.UUID
 		if err := rows.Scan(&o.ID, &o.OrderNumber, &o.StoreID, &customerID, &o.CustomerSAPCode, &o.OrderDate, &o.TotalAmount, &o.PaymentStatus, &o.Metadata); err != nil {
 			return nil, err
 		}
-		o.CustomerID = customerID
+		if customerID.Valid {
+			u := uuid.UUID(customerID.Bytes)
+			o.CustomerID = &u
+		}
 		list = append(list, o)
 	}
 	return list, rows.Err()
@@ -812,11 +816,14 @@ func (c *Client) FetchApprovedPendingSalesOrdersV2(ctx context.Context, limit in
 	var list []SalesOrderV2
 	for rows.Next() {
 		var o SalesOrderV2
-		var customerID *int32
+		var customerID pgtype.UUID
 		if err := rows.Scan(&o.ID, &o.OrderNumber, &o.StoreID, &customerID, &o.CustomerSAPCode, &o.OrderDate, &o.TotalAmount, &o.PaymentStatus, &o.Metadata); err != nil {
 			return nil, err
 		}
-		o.CustomerID = customerID
+		if customerID.Valid {
+			u := uuid.UUID(customerID.Bytes)
+			o.CustomerID = &u
+		}
 		list = append(list, o)
 	}
 	return list, rows.Err()

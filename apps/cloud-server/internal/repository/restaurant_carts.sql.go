@@ -152,7 +152,7 @@ RETURNING id, cart_number, organization_id, store_id, table_id, order_type, cust
 
 type ConvertRestaurantCartToOrderParams struct {
 	ID                 uuid.UUID   `json:"id"`
-	ConvertedToOrderID pgtype.Int4 `json:"converted_to_order_id"`
+	ConvertedToOrderID pgtype.UUID `json:"converted_to_order_id"`
 }
 
 func (q *Queries) ConvertRestaurantCartToOrder(ctx context.Context, arg ConvertRestaurantCartToOrderParams) (RestaurantCart, error) {
@@ -240,7 +240,7 @@ type CreateRestaurantCartParams struct {
 	StoreID         int32            `json:"store_id"`
 	TableID         pgtype.Int4      `json:"table_id"`
 	OrderType       string           `json:"order_type"`
-	CustomerID      pgtype.Int4      `json:"customer_id"`
+	CustomerID      pgtype.UUID      `json:"customer_id"`
 	GuestIdentifier pgtype.Text      `json:"guest_identifier"`
 	GuestName       pgtype.Text      `json:"guest_name"`
 	GuestEmail      pgtype.Text      `json:"guest_email"`
@@ -253,7 +253,7 @@ type CreateRestaurantCartParams struct {
 	CreatedByUserID pgtype.Int4      `json:"created_by_user_id"`
 	CashierID       pgtype.Int4      `json:"cashier_id"`
 	PosTerminalID   pgtype.Int4      `json:"pos_terminal_id"`
-	KioskSessionID  pgtype.Int4      `json:"kiosk_session_id"`
+	KioskSessionID  pgtype.UUID      `json:"kiosk_session_id"`
 	CouponCode      pgtype.Text      `json:"coupon_code"`
 	DiscountCode    pgtype.Text      `json:"discount_code"`
 	DeliveryAddress json.RawMessage  `json:"delivery_address"`
@@ -526,7 +526,7 @@ LIMIT 1
 `
 
 type GetRestaurantCartByCustomerParams struct {
-	CustomerID pgtype.Int4 `json:"customer_id"`
+	CustomerID pgtype.UUID `json:"customer_id"`
 	StoreID    int32       `json:"store_id"`
 }
 
@@ -1216,7 +1216,7 @@ WHERE converted_to_order_id = $1
 RETURNING id, cart_number, organization_id, store_id, table_id, order_type, customer_id, guest_identifier, guest_name, guest_email, guest_phone, cart_status, channel, payment_method, payment_gateway, device_info, created_by_user_id, cashier_id, pos_terminal_id, kiosk_session_id, subtotal, discount_amount, tax_amount, total_amount, coupon_code, discount_code, delivery_address, converted_to_order_id, converted_at, last_activity_at, expires_at, notes, metadata, created_at, updated_at
 `
 
-func (q *Queries) ReopenRestaurantCart(ctx context.Context, convertedToOrderID pgtype.Int4) (RestaurantCart, error) {
+func (q *Queries) ReopenRestaurantCart(ctx context.Context, convertedToOrderID pgtype.UUID) (RestaurantCart, error) {
 	row := q.db.QueryRow(ctx, reopenRestaurantCart, convertedToOrderID)
 	var i RestaurantCart
 	err := row.Scan(
@@ -1342,7 +1342,7 @@ type UpdateRestaurantCartParams struct {
 	ID              uuid.UUID       `json:"id"`
 	TableID         pgtype.Int4     `json:"table_id"`
 	OrderType       string          `json:"order_type"`
-	CustomerID      pgtype.Int4     `json:"customer_id"`
+	CustomerID      pgtype.UUID     `json:"customer_id"`
 	GuestIdentifier pgtype.Text     `json:"guest_identifier"`
 	GuestName       pgtype.Text     `json:"guest_name"`
 	GuestEmail      pgtype.Text     `json:"guest_email"`
@@ -1430,7 +1430,7 @@ RETURNING id, cart_number, organization_id, store_id, table_id, order_type, cust
 
 type UpdateRestaurantCartCustomerParams struct {
 	ID         uuid.UUID   `json:"id"`
-	CustomerID pgtype.Int4 `json:"customer_id"`
+	CustomerID pgtype.UUID `json:"customer_id"`
 }
 
 func (q *Queries) UpdateRestaurantCartCustomer(ctx context.Context, arg UpdateRestaurantCartCustomerParams) (RestaurantCart, error) {

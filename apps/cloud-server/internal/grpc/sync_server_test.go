@@ -42,11 +42,11 @@ func TestCheckoutParentsBeforePOS(t *testing.T) {
 	_, err = pool.Exec(ctx, `
 		CREATE TABLE carts (id uuid PRIMARY KEY);
 		CREATE TABLE sales_orders_v2 (id uuid PRIMARY KEY, source_cart_id uuid REFERENCES carts(id));
-		CREATE TABLE cashier_sessions (id integer PRIMARY KEY);
-		CREATE TABLE pos_transactions (id integer PRIMARY KEY, cashier_session_id integer REFERENCES cashier_sessions(id),
+		CREATE TABLE cashier_sessions (id uuid PRIMARY KEY, pos_terminal_id integer);
+		CREATE TABLE pos_transactions (id uuid PRIMARY KEY, store_id integer, pos_terminal_id integer, cashier_session_id uuid REFERENCES cashier_sessions(id),
 			sales_order_id uuid REFERENCES sales_orders_v2(id), source_cart_id uuid REFERENCES carts(id), total_amount numeric);
-		CREATE TABLE pos_transaction_lines (id integer PRIMARY KEY, transaction_id integer REFERENCES pos_transactions(id));
-		CREATE TABLE pos_payments (id integer PRIMARY KEY, transaction_id integer REFERENCES pos_transactions(id), amount numeric);
+		CREATE TABLE pos_transaction_lines (id uuid PRIMARY KEY, transaction_id uuid REFERENCES pos_transactions(id));
+		CREATE TABLE pos_payments (id uuid PRIMARY KEY, transaction_id uuid REFERENCES pos_transactions(id), amount numeric);
 	`)
 	if err != nil {
 		t.Fatal(err)
@@ -55,10 +55,10 @@ func TestCheckoutParentsBeforePOS(t *testing.T) {
 	upsert := func(table, payload string) error {
 		return s.upsertEntityJSON(ctx, pool, table, "INSERT", []byte(payload))
 	}
-	if err := upsert("cashier_sessions", `{"id":1}`); err != nil {
+	if err := upsert("cashier_sessions", `{"id":"00000000-0000-0000-0000-000000000010","pos_terminal_id":1}`); err != nil {
 		t.Fatal(err)
 	}
-	transaction := `{"id":1,"cashier_session_id":1,"sales_order_id":"00000000-0000-0000-0000-000000000002","source_cart_id":"00000000-0000-0000-0000-000000000001","total_amount":10}`
+	transaction := `{"id":"00000000-0000-0000-0000-000000000020","store_id":1,"pos_terminal_id":1,"cashier_session_id":"00000000-0000-0000-0000-000000000010","sales_order_id":"00000000-0000-0000-0000-000000000002","source_cart_id":"00000000-0000-0000-0000-000000000001","total_amount":10}`
 	// Reproduce the real queue error even with an already synced session.
 	err = upsert("pos_transactions", transaction)
 	var pgErr *pgconn.PgError
@@ -69,8 +69,8 @@ func TestCheckoutParentsBeforePOS(t *testing.T) {
 		{"carts", `{"id":"00000000-0000-0000-0000-000000000001"}`},
 		{"sales_orders_v2", `{"id":"00000000-0000-0000-0000-000000000002","source_cart_id":"00000000-0000-0000-0000-000000000001"}`},
 		{"pos_transactions", transaction},
-		{"pos_transaction_lines", `{"id":1,"transaction_id":1}`},
-		{"pos_payments", `{"id":1,"transaction_id":1,"amount":10}`},
+		{"pos_transaction_lines", `{"id":"00000000-0000-0000-0000-000000000030","transaction_id":"00000000-0000-0000-0000-000000000020"}`},
+		{"pos_payments", `{"id":"00000000-0000-0000-0000-000000000040","transaction_id":"00000000-0000-0000-0000-000000000020","amount":10}`},
 	} {
 		for attempt := 0; attempt < 2; attempt++ {
 			if err := upsert(event.table, event.payload); err != nil {
@@ -79,11 +79,11 @@ func TestCheckoutParentsBeforePOS(t *testing.T) {
 		}
 	}
 	var count int
-	if err := pool.QueryRow(ctx, "SELECT count(*) FROM pos_payments WHERE transaction_id=1 AND amount=10").Scan(&count); err != nil || count != 1 {
+	if err := pool.QueryRow(ctx, "SELECT count(*) FROM pos_payments WHERE transaction_id='00000000-0000-0000-0000-000000000020' AND amount=10").Scan(&count); err != nil || count != 1 {
 		t.Fatalf("payment was not persisted exactly once: count=%d err=%v", count, err)
 	}
 	// An invalid retry must fail, rather than being acknowledged by DO NOTHING.
-	if err := upsert("pos_payments", `{"id":1,"transaction_id":999,"amount":20}`); err == nil {
+	if err := upsert("pos_payments", `{"id":"00000000-0000-0000-0000-000000000040","transaction_id":"00000000-0000-0000-0000-000000000999","amount":20}`); err == nil {
 		t.Fatal("invalid conflicting update was silently accepted")
 	}
 }
@@ -115,17 +115,19 @@ func TestCustomerCreationSyncPreservesIdentity(t *testing.T) {
 	}
 	defer pool.Close()
 	if _, err := pool.Exec(ctx, `CREATE TABLE customers (
-		id integer PRIMARY KEY, organization_id integer NOT NULL,
+		id uuid PRIMARY KEY, organization_id integer NOT NULL,
 		customer_code text NOT NULL, name text NOT NULL,
 		UNIQUE (organization_id, customer_code))`); err != nil {
 		t.Fatal(err)
 	}
 	s := &SyncServer{}
-	created := []byte(`{"id":101,"organization_id":1,"customer_code":"POS-101","name":"From POS"}`)
+	const cust101 = "00000000-0000-0000-0000-000000000101"
+	const cust102 = "00000000-0000-0000-0000-000000000102"
+	created := []byte(`{"id":"` + cust101 + `","organization_id":1,"customer_code":"POS-101","name":"From POS"}`)
 	if err := s.upsertEntityJSON(ctx, pool, "customers", "INSERT", created); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := pool.Exec(ctx, `UPDATE customers SET name='Edited in cloud' WHERE id=101`); err != nil {
+	if _, err := pool.Exec(ctx, `UPDATE customers SET name='Edited in cloud' WHERE id='`+cust101+`'::uuid`); err != nil {
 		t.Fatal(err)
 	}
 	// Retrying creation acknowledges the same identity without reverting a
@@ -134,13 +136,13 @@ func TestCustomerCreationSyncPreservesIdentity(t *testing.T) {
 		t.Fatal(err)
 	}
 	var name string
-	if err := pool.QueryRow(ctx, `SELECT name FROM customers WHERE id=101`).Scan(&name); err != nil || name != "Edited in cloud" {
+	if err := pool.QueryRow(ctx, `SELECT name FROM customers WHERE id='`+cust101+`'::uuid`).Scan(&name); err != nil || name != "Edited in cloud" {
 		t.Fatalf("customer creation retry changed cloud data: name=%q err=%v", name, err)
 	}
-	if err := s.upsertEntityJSON(ctx, pool, "customers", "INSERT", []byte(`{"id":101,"organization_id":1,"customer_code":"OTHER","name":"Collision"}`)); err == nil || !strings.Contains(err.Error(), "ID collision") {
+	if err := s.upsertEntityJSON(ctx, pool, "customers", "INSERT", []byte(`{"id":"`+cust101+`","organization_id":1,"customer_code":"OTHER","name":"Collision"}`)); err == nil || !strings.Contains(err.Error(), "ID collision") {
 		t.Fatalf("expected customer ID collision, got %v", err)
 	}
-	if err := s.upsertEntityJSON(ctx, pool, "customers", "INSERT", []byte(`{"id":102,"organization_id":1,"customer_code":"POS-101","name":"Duplicate"}`)); err == nil {
+	if err := s.upsertEntityJSON(ctx, pool, "customers", "INSERT", []byte(`{"id":"`+cust102+`","organization_id":1,"customer_code":"POS-101","name":"Duplicate"}`)); err == nil {
 		t.Fatal("duplicate customer code was accepted under a different ID")
 	}
 	if err := s.upsertEntityJSON(ctx, pool, "customers", "UPDATE", created); err == nil {
@@ -203,7 +205,8 @@ func TestSyncServerUpsertReturnsAndMovements(t *testing.T) {
 
 	_, err = pool.Exec(ctx, `
 		CREATE TABLE sales_returns (
-			id bigint PRIMARY KEY,
+			id uuid PRIMARY KEY,
+			store_id integer,
 			return_number text,
 			status text,
 			subtotal numeric,
@@ -212,15 +215,15 @@ func TestSyncServerUpsertReturnsAndMovements(t *testing.T) {
 			updated_at timestamp DEFAULT now()
 		);
 		CREATE TABLE sales_return_lines (
-			id bigint PRIMARY KEY,
-			return_id bigint REFERENCES sales_returns(id),
+			id uuid PRIMARY KEY,
+			return_id uuid REFERENCES sales_returns(id),
 			quantity numeric,
 			refund_amount numeric,
 			created_at timestamp DEFAULT now(),
 			updated_at timestamp DEFAULT now()
 		);
 		CREATE TABLE stock_movements (
-			id bigint PRIMARY KEY,
+			id uuid PRIMARY KEY,
 			movement_type text,
 			quantity numeric,
 			status text,
@@ -237,43 +240,47 @@ func TestSyncServerUpsertReturnsAndMovements(t *testing.T) {
 		return s.upsertEntityJSON(ctx, pool, table, "INSERT", []byte(payload))
 	}
 
+	const retUUID = "00000000-0000-0000-0000-000000000100"
+	const lineUUID = "00000000-0000-0000-0000-000000000200"
+	const smUUID = "00000000-0000-0000-0000-000000000300"
+
 	// 1. Upsert sales_returns
-	retPayload := `{"id":100,"return_number":"RET-001","status":"pending","subtotal":50.00,"total_refund_amount":57.50}`
+	retPayload := `{"id":"` + retUUID + `","store_id":1,"return_number":"RET-001","status":"pending","subtotal":50.00,"total_refund_amount":57.50}`
 	if err := upsert("sales_returns", retPayload); err != nil {
 		t.Fatalf("upsert sales_returns: %v", err)
 	}
 
 	// 2. Upsert sales_return_lines
-	linePayload := `{"id":200,"return_id":100,"quantity":1.000,"refund_amount":57.50}`
+	linePayload := `{"id":"` + lineUUID + `","return_id":"` + retUUID + `","quantity":1.000,"refund_amount":57.50}`
 	if err := upsert("sales_return_lines", linePayload); err != nil {
 		t.Fatalf("upsert sales_return_lines: %v", err)
 	}
 
 	// 3. Upsert stock_movements
-	smPayload := `{"id":300,"movement_type":"waste","quantity":-1.000,"status":"completed"}`
+	smPayload := `{"id":"` + smUUID + `","movement_type":"waste","quantity":-1.000,"status":"completed"}`
 	if err := upsert("stock_movements", smPayload); err != nil {
 		t.Fatalf("upsert stock_movements: %v", err)
 	}
 
 	// Verify records in database
 	var retCount, lineCount, smCount int
-	if err := pool.QueryRow(ctx, "SELECT count(*) FROM sales_returns WHERE id=100 AND status='pending'").Scan(&retCount); err != nil || retCount != 1 {
+	if err := pool.QueryRow(ctx, "SELECT count(*) FROM sales_returns WHERE id='"+retUUID+"'::uuid AND status='pending'").Scan(&retCount); err != nil || retCount != 1 {
 		t.Fatalf("sales_returns not inserted correctly: count=%d, err=%v", retCount, err)
 	}
-	if err := pool.QueryRow(ctx, "SELECT count(*) FROM sales_return_lines WHERE id=200 AND return_id=100").Scan(&lineCount); err != nil || lineCount != 1 {
+	if err := pool.QueryRow(ctx, "SELECT count(*) FROM sales_return_lines WHERE id='"+lineUUID+"'::uuid AND return_id='"+retUUID+"'::uuid").Scan(&lineCount); err != nil || lineCount != 1 {
 		t.Fatalf("sales_return_lines not inserted correctly: count=%d, err=%v", lineCount, err)
 	}
-	if err := pool.QueryRow(ctx, "SELECT count(*) FROM stock_movements WHERE id=300 AND movement_type='waste'").Scan(&smCount); err != nil || smCount != 1 {
+	if err := pool.QueryRow(ctx, "SELECT count(*) FROM stock_movements WHERE id='"+smUUID+"'::uuid AND movement_type='waste'").Scan(&smCount); err != nil || smCount != 1 {
 		t.Fatalf("stock_movements not inserted correctly: count=%d, err=%v", smCount, err)
 	}
 
 	// Update existing record via upsert (idempotent / on conflict)
-	retUpdate := `{"id":100,"return_number":"RET-001","status":"completed","subtotal":50.00,"total_refund_amount":57.50}`
+	retUpdate := `{"id":"` + retUUID + `","store_id":1,"return_number":"RET-001","status":"completed","subtotal":50.00,"total_refund_amount":57.50}`
 	if err := upsert("sales_returns", retUpdate); err != nil {
 		t.Fatalf("upsert sales_returns update: %v", err)
 	}
 	var newStatus string
-	if err := pool.QueryRow(ctx, "SELECT status FROM sales_returns WHERE id=100").Scan(&newStatus); err != nil || newStatus != "completed" {
+	if err := pool.QueryRow(ctx, "SELECT status FROM sales_returns WHERE id='"+retUUID+"'::uuid").Scan(&newStatus); err != nil || newStatus != "completed" {
 		t.Fatalf("sales_returns status not updated: status=%s, err=%v", newStatus, err)
 	}
 }

@@ -20,11 +20,12 @@ const changeLogSchemaDDL = `
 CREATE TABLE IF NOT EXISTS change_log (
 	seq         BIGSERIAL PRIMARY KEY,
 	entity_type VARCHAR(50) NOT NULL,
-	entity_id   BIGINT NOT NULL,
+	entity_id   TEXT NOT NULL,
 	op          VARCHAR(10) NOT NULL CHECK (op IN ('INSERT', 'UPDATE', 'DELETE')),
 	payload     JSONB,
 	changed_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+ALTER TABLE IF EXISTS change_log ALTER COLUMN entity_id TYPE TEXT USING entity_id::text;
 CREATE INDEX IF NOT EXISTS idx_change_log_entity_seq ON change_log (entity_type, entity_id, seq DESC);
 
 CREATE TABLE IF NOT EXISTS change_log_meta (
@@ -143,7 +144,7 @@ func (s *SyncServer) StreamChanges(req *syncpb.StreamChangesRequest, stream sync
 			deleteFilter = "AND op <> 'DELETE'"
 		}
 		query := fmt.Sprintf(`
-			SELECT seq, entity_type, entity_id, op, COALESCE(payload::text, ''), changed_at
+			SELECT seq, entity_type, entity_id::text, op, COALESCE(payload::text, ''), changed_at
 			FROM change_log
 			WHERE seq > $1 AND seq <= $2 %s
 			ORDER BY %s ASC, seq ASC
@@ -151,7 +152,7 @@ func (s *SyncServer) StreamChanges(req *syncpb.StreamChangesRequest, stream sync
 		rows, err = tx.Query(ctx, query, req.FromSeq, maxSeq)
 	} else {
 		rows, err = tx.Query(ctx, `
-			SELECT seq, entity_type, entity_id, op, COALESCE(payload::text, ''), changed_at
+			SELECT seq, entity_type, entity_id::text, op, COALESCE(payload::text, ''), changed_at
 			FROM change_log
 			WHERE seq > $1
 			ORDER BY seq ASC
@@ -167,12 +168,12 @@ func (s *SyncServer) StreamChanges(req *syncpb.StreamChangesRequest, stream sync
 		var (
 			seq        int64
 			entityType string
-			entityID   int64
+			entityKey  string
 			op         string
 			payloadStr string
 			changedAt  time.Time
 		)
-		if err := rows.Scan(&seq, &entityType, &entityID, &op, &payloadStr, &changedAt); err != nil {
+		if err := rows.Scan(&seq, &entityType, &entityKey, &op, &payloadStr, &changedAt); err != nil {
 			return status.Errorf(codes.Internal, "scan change_log row: %v", err)
 		}
 		if !syncpb.IsPullEntity(entityType) {
@@ -188,12 +189,15 @@ func (s *SyncServer) StreamChanges(req *syncpb.StreamChangesRequest, stream sync
 		ev := &syncpb.ChangeEvent{
 			Seq:            seq,
 			EntityType:     entityType,
-			EntityId:       entityID,
+			EntityKey:      entityKey,
 			Op:             op,
 			PayloadJson:    payloadBytes,
 			Sha256:         shaHex,
 			ChangedAt:      timestamppb.New(changedAt),
 			IsSnapshotMode: isSnapshotMode,
+		}
+		if numID, ok := syncpb.ParseNumericEntityID(entityKey); ok {
+			ev.EntityId = numID
 		}
 		if isSnapshotMode {
 			ev.SnapshotMaxSeq = maxSeq

@@ -81,7 +81,7 @@ WHERE sales_order_id = $2
 `
 
 type SyncTransactionLinesFromOrderParams struct {
-	TransactionID int32     `json:"transaction_id"`
+	TransactionID uuid.UUID `json:"transaction_id"`
 	SalesOrderID  uuid.UUID `json:"sales_order_id"`
 }
 

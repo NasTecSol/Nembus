@@ -67,9 +67,13 @@ if (Test-Path $CoreMigrations) {
         # Normalize to Unix LF line endings
         $content = $content -replace "`r`n", "`n" -replace "`r", "`n"
 
-        # Wrap PL/pgSQL CREATE FUNCTION blocks with -- +goose StatementBegin and -- +goose StatementEnd
-        $funcPattern = '(?ms)(CREATE (?:OR REPLACE )?FUNCTION (?:(?:"public"|public)\.)?"?[^"\(]+"?[ ]*\([^\)]*\)[^\$]*?\$\$.*?\$\$;)'
+        # Wrap PL/pgSQL CREATE FUNCTION blocks with -- +goose StatementBegin / StatementEnd (avoid double-wrapping)
+        $funcPattern = '(?ms)(?<!StatementBegin\n)(^CREATE (?:OR REPLACE )?FUNCTION (?:(?:"public"|public|"pg_temp"|pg_temp)\.)?"?[^"\(]+"?[ ]*\([^\)]*\)[^\$]*?\$\$.*?\$\$(?:\s*LANGUAGE\s+\w+)?;)'
         $content = [System.Text.RegularExpressions.Regex]::Replace($content, $funcPattern, "-- +goose StatementBegin`n`$1`n-- +goose StatementEnd")
+
+        # Wrap top-level PL/pgSQL DO $$ ... END $$; blocks with -- +goose StatementBegin / StatementEnd (avoid double-wrapping)
+        $doPattern = '(?ms)(?<!StatementBegin\n)(^DO \$\$[\s\S]*?^END \$\$;)'
+        $content = [System.Text.RegularExpressions.Regex]::Replace($content, $doPattern, "-- +goose StatementBegin`n`$1`n-- +goose StatementEnd")
 
         # Add Goose Up header if not present
         if (-not ($content.StartsWith("-- +goose Up"))) {

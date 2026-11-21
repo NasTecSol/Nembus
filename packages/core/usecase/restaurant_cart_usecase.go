@@ -3,8 +3,6 @@ package usecase
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -145,7 +143,7 @@ func restaurantCartNotFoundOrErr(err error, action string) *repository.Response 
 
 // lockAndGetRestaurantOrderByID acquires the order's FOR UPDATE row lock before
 // reading its status, payments, or recipe movements.
-func lockAndGetRestaurantOrderByID(ctx context.Context, q *repository.Queries, orderID int32) (repository.RestaurantOrder, error) {
+func lockAndGetRestaurantOrderByID(ctx context.Context, q *repository.Queries, orderID uuid.UUID) (repository.RestaurantOrder, error) {
 	if _, err := q.LockRestaurantOrder(ctx, orderID); err != nil {
 		return repository.RestaurantOrder{}, err
 	}
@@ -197,7 +195,7 @@ type RestaurantCreateCartInput struct {
 	StoreID         int32                     `json:"store_id"`
 	TableID         *int32                    `json:"table_id"`
 	OrderType       string                    `json:"order_type"`
-	CustomerID      *int32                    `json:"customer_id"`
+	CustomerID      *uuid.UUID                `json:"customer_id"`
 	GuestIdentifier string                    `json:"guest_identifier"`
 	GuestName       string                    `json:"guest_name"`
 	GuestEmail      string                    `json:"guest_email"`
@@ -210,7 +208,7 @@ type RestaurantCreateCartInput struct {
 	CreatedByUserID *int32                    `json:"created_by_user_id"`
 	CashierID       *int32                    `json:"cashier_id"`
 	PosTerminalID   *int32                    `json:"pos_terminal_id"`
-	KioskSessionID  *int32                    `json:"kiosk_session_id"`
+	KioskSessionID  *uuid.UUID                `json:"kiosk_session_id"`
 	CouponCode      string                    `json:"coupon_code"`
 	DiscountCode    string                    `json:"discount_code"`
 	DeliveryAddress json.RawMessage           `json:"delivery_address"`
@@ -226,7 +224,7 @@ type RestaurantAddToCartInput struct {
 	StoreID              int32                                  `json:"store_id"`
 	TableID              *int32                                 `json:"table_id"`
 	OrderType            string                                 `json:"order_type"`
-	CustomerID           *int32                                 `json:"customer_id"`
+	CustomerID           *uuid.UUID                             `json:"customer_id"`
 	GuestIdentifier      string                                 `json:"guest_identifier"`
 	GuestName            string                                 `json:"guest_name"`
 	GuestEmail           string                                 `json:"guest_email"`
@@ -234,7 +232,7 @@ type RestaurantAddToCartInput struct {
 	Channel              string                                 `json:"channel"`
 	CashierID            *int32                                 `json:"cashier_id"`
 	PosTerminalID        *int32                                 `json:"pos_terminal_id"`
-	KioskSessionID       *int32                                 `json:"kiosk_session_id"`
+	KioskSessionID       *uuid.UUID                             `json:"kiosk_session_id"`
 	CreatedByUserID      *int32                                 `json:"created_by_user_id"`
 	MenuItemID           int32                                  `json:"menu_item_id"`
 	Quantity             float64                                `json:"quantity"`
@@ -271,10 +269,10 @@ type RestaurantCheckoutInput struct {
 	OrderType        string          `json:"order_type"`
 	TableID          *int32          `json:"table_id"`
 	CashierID        *int32          `json:"cashier_id"`
-	CashierSessionID *int32          `json:"cashier_session_id"`
-	CustomerID       *int32          `json:"customer_id"`
+	CashierSessionID *uuid.UUID      `json:"cashier_session_id"`
+	CustomerID       *uuid.UUID      `json:"customer_id"`
 	PosTerminalID    *int32          `json:"pos_terminal_id"`
-	KioskSessionID   *int32          `json:"kiosk_session_id"`
+	KioskSessionID   *uuid.UUID      `json:"kiosk_session_id"`
 	CreatedByUserID  *int32          `json:"created_by_user_id"`
 	CustomerName     string          `json:"customer_name"`
 	CustomerEmail    string          `json:"customer_email"`
@@ -285,7 +283,7 @@ type RestaurantCheckoutInput struct {
 	PaymentGateway   string          `json:"payment_gateway"`
 	ReferenceNumber  string          `json:"reference_number"`
 	AmountPaid       float64         `json:"amount_paid"`
-	PosTransactionID *int32          `json:"pos_transaction_id"`
+	PosTransactionID *uuid.UUID      `json:"pos_transaction_id"`
 	CouponCode       string          `json:"coupon_code"`
 	DiscountCode     string          `json:"discount_code"`
 	Notes            string          `json:"notes"`
@@ -302,9 +300,9 @@ type RestaurantOrderStatusUpdateInput struct {
 }
 
 type RestaurantSettleOrderInput struct {
-	PosTransactionID *int32          `json:"pos_transaction_id"`
+	PosTransactionID *uuid.UUID      `json:"pos_transaction_id"`
 	CashierID        *int32          `json:"cashier_id"`
-	CashierSessionID *int32          `json:"cashier_session_id"`
+	CashierSessionID *uuid.UUID      `json:"cashier_session_id"`
 	PosTerminalID    *int32          `json:"pos_terminal_id"`
 	PaymentMethod    string          `json:"payment_method"`
 	PaymentGateway   string          `json:"payment_gateway"`
@@ -318,10 +316,10 @@ type RestaurantDirectOrderInput struct {
 	StoreID          int32                     `json:"store_id"`
 	TableID          *int32                    `json:"table_id"`
 	CashierID        *int32                    `json:"cashier_id"`
-	CashierSessionID *int32                    `json:"cashier_session_id"`
-	CustomerID       *int32                    `json:"customer_id"`
+	CashierSessionID *uuid.UUID                `json:"cashier_session_id"`
+	CustomerID       *uuid.UUID                `json:"customer_id"`
 	PosTerminalID    *int32                    `json:"pos_terminal_id"`
-	KioskSessionID   *int32                    `json:"kiosk_session_id"`
+	KioskSessionID   *uuid.UUID                `json:"kiosk_session_id"`
 	CreatedByUserID  *int32                    `json:"created_by_user_id"`
 	SourceCartID     *uuid.UUID                `json:"source_cart_id"`
 	OrderNumber      string                    `json:"order_number"`
@@ -342,7 +340,7 @@ type RestaurantDirectOrderInput struct {
 	CouponCode       string                    `json:"coupon_code"`
 	DiscountCode     string                    `json:"discount_code"`
 	Notes            string                    `json:"notes"`
-	PosTransactionID *int32                    `json:"pos_transaction_id"`
+	PosTransactionID *uuid.UUID                `json:"pos_transaction_id"`
 	Metadata         json.RawMessage           `json:"metadata"`
 	Items            []RestaurantLineItemInput `json:"items"`
 }
@@ -356,7 +354,7 @@ type RestaurantCartOutput struct {
 	StoreID            int32           `json:"store_id"`
 	TableID            *int32          `json:"table_id"`
 	OrderType          string          `json:"order_type"`
-	CustomerID         *int32          `json:"customer_id"`
+	CustomerID         *uuid.UUID      `json:"customer_id"`
 	GuestIdentifier    *string         `json:"guest_identifier"`
 	GuestName          *string         `json:"guest_name"`
 	GuestEmail         *string         `json:"guest_email"`
@@ -369,7 +367,7 @@ type RestaurantCartOutput struct {
 	CreatedByUserID    *int32          `json:"created_by_user_id"`
 	CashierID          *int32          `json:"cashier_id"`
 	PosTerminalID      *int32          `json:"pos_terminal_id"`
-	KioskSessionID     *int32          `json:"kiosk_session_id"`
+	KioskSessionID     *uuid.UUID      `json:"kiosk_session_id"`
 	Subtotal           float64         `json:"subtotal"`
 	DiscountAmount     float64         `json:"discount_amount"`
 	TaxAmount          float64         `json:"tax_amount"`
@@ -377,7 +375,7 @@ type RestaurantCartOutput struct {
 	CouponCode         *string         `json:"coupon_code"`
 	DiscountCode       *string         `json:"discount_code"`
 	DeliveryAddress    json.RawMessage `json:"delivery_address"`
-	ConvertedToOrderID *int32          `json:"converted_to_order_id"`
+	ConvertedToOrderID *uuid.UUID      `json:"converted_to_order_id"`
 	ConvertedAt        *time.Time      `json:"converted_at"`
 	LastActivityAt     *time.Time      `json:"last_activity_at"`
 	ExpiresAt          *time.Time      `json:"expires_at"`
@@ -526,10 +524,9 @@ func ensureJSONArray(raw json.RawMessage) json.RawMessage {
 	return raw
 }
 
-func generateRestaurantRef(prefix string) string {
-	b := make([]byte, 3)
-	_, _ = rand.Read(b)
-	return fmt.Sprintf("%s-%s-%s", prefix, time.Now().Format("20060102-150405"), strings.ToUpper(hex.EncodeToString(b)))
+func generateRestaurantRef(ctx context.Context, q *repository.Queries, prefix string, posTerminalID int32) string {
+	term := LookupTerminalCode(ctx, q, posTerminalID, "POS")
+	return GenerateTerminalDocNumber(prefix, term)
 }
 
 func restaurantCartToOutput(c repository.RestaurantCart) RestaurantCartOutput {
@@ -540,7 +537,7 @@ func restaurantCartToOutput(c repository.RestaurantCart) RestaurantCartOutput {
 		StoreID:            c.StoreID,
 		TableID:            utils.Int4ToPtr(c.TableID),
 		OrderType:          c.OrderType,
-		CustomerID:         utils.Int4ToPtr(c.CustomerID),
+		CustomerID:         utils.PgUUIDToUUIDPtr(c.CustomerID),
 		GuestIdentifier:    utils.TextToPtr(c.GuestIdentifier),
 		GuestName:          utils.TextToPtr(c.GuestName),
 		GuestEmail:         utils.TextToPtr(c.GuestEmail),
@@ -553,7 +550,7 @@ func restaurantCartToOutput(c repository.RestaurantCart) RestaurantCartOutput {
 		CreatedByUserID:    utils.Int4ToPtr(c.CreatedByUserID),
 		CashierID:          utils.Int4ToPtr(c.CashierID),
 		PosTerminalID:      utils.Int4ToPtr(c.PosTerminalID),
-		KioskSessionID:     utils.Int4ToPtr(c.KioskSessionID),
+		KioskSessionID:     utils.PgUUIDToUUIDPtr(c.KioskSessionID),
 		Subtotal:           roundMoney(numericToFloat(c.Subtotal)),
 		DiscountAmount:     roundMoney(numericToFloat(c.DiscountAmount)),
 		TaxAmount:          roundMoney(numericToFloat(c.TaxAmount)),
@@ -561,7 +558,7 @@ func restaurantCartToOutput(c repository.RestaurantCart) RestaurantCartOutput {
 		CouponCode:         utils.TextToPtr(c.CouponCode),
 		DiscountCode:       utils.TextToPtr(c.DiscountCode),
 		DeliveryAddress:    c.DeliveryAddress,
-		ConvertedToOrderID: utils.Int4ToPtr(c.ConvertedToOrderID),
+		ConvertedToOrderID: utils.PgUUIDToUUIDPtr(c.ConvertedToOrderID),
 		ConvertedAt:        pgTimestampToPtr(c.ConvertedAt),
 		LastActivityAt:     pgTimestampToPtr(c.LastActivityAt),
 		ExpiresAt:          pgTimestampToPtr(c.ExpiresAt),
@@ -951,7 +948,7 @@ func (uc *RestaurantCartUseCase) CreateCart(ctx context.Context, input Restauran
 	return uc.withTx(ctx, func(q *repository.Queries) *repository.Response {
 		cartNumber := strings.TrimSpace(input.CartNumber)
 		if cartNumber == "" {
-			cartNumber = generateRestaurantRef("RCART")
+			cartNumber = generateRestaurantRef(ctx, q, "RCART", utils.DerefInt32(input.PosTerminalID))
 		}
 		orderType := strings.TrimSpace(input.OrderType)
 		if orderType == "" {
@@ -983,7 +980,7 @@ func (uc *RestaurantCartUseCase) CreateCart(ctx context.Context, input Restauran
 			StoreID:         input.StoreID,
 			TableID:         utils.Int32ToPgInt4(input.TableID),
 			OrderType:       orderType,
-			CustomerID:      utils.Int32ToPgInt4(input.CustomerID),
+			CustomerID:      utils.UUIDPtrToPgUUID(input.CustomerID),
 			GuestIdentifier: nullableText(input.GuestIdentifier),
 			GuestName:       nullableText(input.GuestName),
 			GuestEmail:      nullableText(input.GuestEmail),
@@ -996,7 +993,7 @@ func (uc *RestaurantCartUseCase) CreateCart(ctx context.Context, input Restauran
 			CreatedByUserID: utils.Int32ToPgInt4(input.CreatedByUserID),
 			CashierID:       utils.Int32ToPgInt4(input.CashierID),
 			PosTerminalID:   utils.Int32ToPgInt4(input.PosTerminalID),
-			KioskSessionID:  utils.Int32ToPgInt4(input.KioskSessionID),
+			KioskSessionID:  utils.UUIDPtrToPgUUID(input.KioskSessionID),
 			CouponCode:      nullableText(input.CouponCode),
 			DiscountCode:    nullableText(input.DiscountCode),
 			DeliveryAddress: input.DeliveryAddress,
@@ -1057,7 +1054,7 @@ func (uc *RestaurantCartUseCase) GetCart(ctx context.Context, cartID uuid.UUID) 
 	return utils.NewResponse(utils.CodeOK, "restaurant cart retrieved successfully", payload)
 }
 
-func (uc *RestaurantCartUseCase) GetActiveCart(ctx context.Context, storeID int32, customerID *int32, guestIdentifier string, tableID *int32) *repository.Response {
+func (uc *RestaurantCartUseCase) GetActiveCart(ctx context.Context, storeID int32, customerID *uuid.UUID, guestIdentifier string, tableID *int32) *repository.Response {
 	if errResp := uc.repoOrErr(); errResp != nil {
 		return errResp
 	}
@@ -1073,9 +1070,9 @@ func (uc *RestaurantCartUseCase) GetActiveCart(ctx context.Context, storeID int3
 			TableID: pgtype.Int4{Int32: *tableID, Valid: true},
 			StoreID: storeID,
 		})
-	case customerID != nil && *customerID > 0:
+	case customerID != nil && *customerID != uuid.Nil:
 		cart, err = uc.repo.GetRestaurantCartByCustomer(ctx, repository.GetRestaurantCartByCustomerParams{
-			CustomerID: pgtype.Int4{Int32: *customerID, Valid: true},
+			CustomerID: pgtype.UUID{Bytes: *customerID, Valid: true},
 			StoreID:    storeID,
 		})
 	case strings.TrimSpace(guestIdentifier) != "":
@@ -1320,8 +1317,8 @@ func (uc *RestaurantCartUseCase) AddToCart(ctx context.Context, input Restaurant
 			switch {
 			case input.TableID != nil && *input.TableID > 0:
 				scopeKey = fmt.Sprintf("rest_cart:store:%d:table:%d", input.StoreID, *input.TableID)
-			case input.CustomerID != nil && *input.CustomerID > 0:
-				scopeKey = fmt.Sprintf("rest_cart:store:%d:customer:%d", input.StoreID, *input.CustomerID)
+			case input.CustomerID != nil && *input.CustomerID != uuid.Nil:
+				scopeKey = fmt.Sprintf("rest_cart:store:%d:customer:%s", input.StoreID, input.CustomerID.String())
 			case strings.TrimSpace(input.GuestIdentifier) != "":
 				scopeKey = fmt.Sprintf("rest_cart:store:%d:guest:%s", input.StoreID, strings.TrimSpace(input.GuestIdentifier))
 			}
@@ -1347,9 +1344,9 @@ func (uc *RestaurantCartUseCase) AddToCart(ctx context.Context, input Restaurant
 					tryLockActive(existing)
 				}
 			}
-			if !found && input.CustomerID != nil && *input.CustomerID > 0 {
+			if !found && input.CustomerID != nil && *input.CustomerID != uuid.Nil {
 				if existing, findErr := q.GetRestaurantCartByCustomer(ctx, repository.GetRestaurantCartByCustomerParams{
-					CustomerID: pgtype.Int4{Int32: *input.CustomerID, Valid: true},
+					CustomerID: pgtype.UUID{Bytes: *input.CustomerID, Valid: true},
 					StoreID:    input.StoreID,
 				}); findErr == nil {
 					tryLockActive(existing)
@@ -1379,12 +1376,12 @@ func (uc *RestaurantCartUseCase) AddToCart(ctx context.Context, input Restaurant
 				}
 				orgID := resolveStoreOrganizationID(ctx, q, input.StoreID, input.OrganizationID)
 				cart, err = q.CreateRestaurantCart(ctx, repository.CreateRestaurantCartParams{
-					CartNumber:      pgtype.Text{String: generateRestaurantRef("RCART"), Valid: true},
+					CartNumber:      pgtype.Text{String: generateRestaurantRef(ctx, q, "RCART", utils.DerefInt32(input.PosTerminalID)), Valid: true},
 					OrganizationID:  orgID,
 					StoreID:         input.StoreID,
 					TableID:         utils.Int32ToPgInt4(input.TableID),
 					OrderType:       orderType,
-					CustomerID:      utils.Int32ToPgInt4(input.CustomerID),
+					CustomerID:      utils.UUIDPtrToPgUUID(input.CustomerID),
 					GuestIdentifier: nullableText(input.GuestIdentifier),
 					GuestName:       nullableText(input.GuestName),
 					GuestEmail:      nullableText(input.GuestEmail),
@@ -1395,7 +1392,7 @@ func (uc *RestaurantCartUseCase) AddToCart(ctx context.Context, input Restaurant
 					CreatedByUserID: utils.Int32ToPgInt4(input.CreatedByUserID),
 					CashierID:       utils.Int32ToPgInt4(input.CashierID),
 					PosTerminalID:   utils.Int32ToPgInt4(input.PosTerminalID),
-					KioskSessionID:  utils.Int32ToPgInt4(input.KioskSessionID),
+					KioskSessionID:  utils.UUIDPtrToPgUUID(input.KioskSessionID),
 					Metadata:        json.RawMessage("{}"),
 				})
 				if err != nil {
@@ -1653,8 +1650,8 @@ func (uc *RestaurantCartUseCase) ClearCart(ctx context.Context, cartID uuid.UUID
 	})
 }
 
-func (uc *RestaurantCartUseCase) MergeGuestCart(ctx context.Context, storeID int32, guestIdentifier string, customerID int32) *repository.Response {
-	if storeID <= 0 || strings.TrimSpace(guestIdentifier) == "" || customerID <= 0 {
+func (uc *RestaurantCartUseCase) MergeGuestCart(ctx context.Context, storeID int32, guestIdentifier string, customerID uuid.UUID) *repository.Response {
+	if storeID <= 0 || strings.TrimSpace(guestIdentifier) == "" || customerID == uuid.Nil {
 		return utils.NewResponse(utils.CodeBadReq, "store_id, guest_identifier, and customer_id are required", nil)
 	}
 
@@ -1668,7 +1665,7 @@ func (uc *RestaurantCartUseCase) MergeGuestCart(ctx context.Context, storeID int
 		}
 
 		custCart, custErr := q.GetRestaurantCartByCustomer(ctx, repository.GetRestaurantCartByCustomerParams{
-			CustomerID: pgtype.Int4{Int32: customerID, Valid: true},
+			CustomerID: pgtype.UUID{Bytes: customerID, Valid: true},
 			StoreID:    storeID,
 		})
 		if custErr != nil {
@@ -1682,7 +1679,7 @@ func (uc *RestaurantCartUseCase) MergeGuestCart(ctx context.Context, storeID int
 			// Assign guest cart directly to customer
 			updated, err := q.UpdateRestaurantCartCustomer(ctx, repository.UpdateRestaurantCartCustomerParams{
 				ID:         lockedGuest.ID,
-				CustomerID: pgtype.Int4{Int32: customerID, Valid: true},
+				CustomerID: pgtype.UUID{Bytes: customerID, Valid: true},
 			})
 			if err != nil {
 				return utils.NewResponse(utils.CodeError, "failed to assign guest cart to customer: "+err.Error(), nil)
@@ -1803,7 +1800,7 @@ func (uc *RestaurantCartUseCase) ConvertToOrder(ctx context.Context, input Resta
 
 		customerID := cart.CustomerID
 		if input.CustomerID != nil {
-			customerID = utils.Int32ToPgInt4(input.CustomerID)
+			customerID = utils.UUIDPtrToPgUUID(input.CustomerID)
 			cart.CustomerID = customerID
 		}
 
@@ -1843,7 +1840,7 @@ func (uc *RestaurantCartUseCase) ConvertToOrder(ctx context.Context, input Resta
 		}
 		kioskSessionID := cart.KioskSessionID
 		if input.KioskSessionID != nil {
-			kioskSessionID = utils.Int32ToPgInt4(input.KioskSessionID)
+			kioskSessionID = utils.UUIDPtrToPgUUID(input.KioskSessionID)
 		}
 		createdByUserID := cart.CreatedByUserID
 		if input.CreatedByUserID != nil {
@@ -1852,7 +1849,11 @@ func (uc *RestaurantCartUseCase) ConvertToOrder(ctx context.Context, input Resta
 
 		orderNumber := strings.TrimSpace(input.OrderNumber)
 		if orderNumber == "" {
-			orderNumber = generateRestaurantRef("RORD")
+			termID := int32(0)
+			if posTerminalID.Valid {
+				termID = posTerminalID.Int32
+			}
+			orderNumber = generateRestaurantRef(ctx, q, "RORD", termID)
 		}
 		orderSource := strings.TrimSpace(input.OrderSource)
 		if orderSource == "" {
@@ -1913,7 +1914,7 @@ func (uc *RestaurantCartUseCase) ConvertToOrder(ctx context.Context, input Resta
 			customerPhone = cart.GuestPhone.String
 		}
 		if customerName == "" && customerID.Valid {
-			if cust, cErr := q.GetCustomer(ctx, customerID.Int32); cErr == nil {
+			if cust, cErr := q.GetCustomer(ctx, uuid.UUID(customerID.Bytes)); cErr == nil {
 				customerName = cust.Name
 				if customerEmail == "" && cust.Email.Valid {
 					customerEmail = cust.Email.String
@@ -1942,7 +1943,7 @@ func (uc *RestaurantCartUseCase) ConvertToOrder(ctx context.Context, input Resta
 			StoreID:          cart.StoreID,
 			TableID:          tableID,
 			CashierID:        cashierID,
-			CashierSessionID: utils.Int32ToPgInt4(input.CashierSessionID),
+			CashierSessionID: utils.UUIDPtrToPgUUID(input.CashierSessionID),
 			CustomerID:       customerID,
 			PosTerminalID:    posTerminalID,
 			KioskSessionID:   kioskSessionID,
@@ -1964,7 +1965,7 @@ func (uc *RestaurantCartUseCase) ConvertToOrder(ctx context.Context, input Resta
 			AmountPaid:       utils.Float64ToPgNumeric(amountPaid),
 			ChangeGiven:      utils.Float64ToPgNumeric(changeGiven),
 			Notes:            nullableText(notes),
-			PosTransactionID: utils.Int32ToPgInt4(input.PosTransactionID),
+			PosTransactionID: utils.UUIDPtrToPgUUID(input.PosTransactionID),
 			Metadata:         ensureJSONObject(meta),
 			OrderedAt:        pgtype.Timestamp{Time: time.Now(), Valid: true},
 			CouponCode:       cart.CouponCode,
@@ -2028,16 +2029,18 @@ func (uc *RestaurantCartUseCase) ConvertToOrder(ctx context.Context, input Resta
 
 		convertedCart, err := q.ConvertRestaurantCartToOrder(ctx, repository.ConvertRestaurantCartToOrderParams{
 			ID:                 cart.ID,
-			ConvertedToOrderID: pgtype.Int4{Int32: order.ID, Valid: true},
+			ConvertedToOrderID: pgtype.UUID{Bytes: order.ID, Valid: true},
 		})
 		if err != nil {
 			return utils.NewResponse(utils.CodeError, "failed to mark restaurant cart as converted: "+err.Error(), nil)
 		}
 
-		var posTxnID *int32
-		if order.PosTransactionID.Valid && order.PosTransactionID.Int32 > 0 {
-			v := order.PosTransactionID.Int32
-			posTxnID = &v
+		var posTxnID *uuid.UUID
+		if order.PosTransactionID.Valid {
+			v := uuid.UUID(order.PosTransactionID.Bytes)
+			if v != uuid.Nil {
+				posTxnID = &v
+			}
 		} else if input.PosTransactionID == nil && strings.EqualFold(orderSource, "pos") && !strings.EqualFold(strings.TrimSpace(input.PaymentStatus), "unpaid") {
 			pm := strings.TrimSpace(input.PaymentMethod)
 			if pm == "" && cart.PaymentMethod.Valid {
@@ -2097,13 +2100,13 @@ func (uc *RestaurantCartUseCase) ConvertToOrder(ctx context.Context, input Resta
 
 // ReopenOrderToCart reverts an unpaid/unfulfilled restaurant order back into an active
 // restaurant cart so the cashier/customer can continue editing items.
-func (uc *RestaurantCartUseCase) ReopenOrderToCart(ctx context.Context, orderID int32) *repository.Response {
+func (uc *RestaurantCartUseCase) ReopenOrderToCart(ctx context.Context, orderID uuid.UUID) *repository.Response {
 	return uc.withTx(ctx, func(q *repository.Queries) *repository.Response {
 		return reopenOrderToCartInTx(ctx, q, orderID)
 	})
 }
 
-func reopenOrderToCartInTx(ctx context.Context, q *repository.Queries, orderID int32) *repository.Response {
+func reopenOrderToCartInTx(ctx context.Context, q *repository.Queries, orderID uuid.UUID) *repository.Response {
 	order, err := lockAndGetRestaurantOrderByID(ctx, q, orderID)
 	if err != nil {
 		return restaurantOrderNotFoundOrErr(err, "lock restaurant order")
@@ -2155,7 +2158,7 @@ func reopenOrderToCartInTx(ctx context.Context, q *repository.Queries, orderID i
 
 	if reopenedCart.ID == uuid.Nil {
 		c, err := q.CreateRestaurantCart(ctx, repository.CreateRestaurantCartParams{
-			CartNumber:      pgtype.Text{String: generateRestaurantRef("RCART"), Valid: true},
+			CartNumber:      pgtype.Text{String: generateRestaurantRef(ctx, q, "RCART", utils.DerefInt32(utils.Int4ToPtr(order.PosTerminalID))), Valid: true},
 			OrganizationID:  orgID,
 			StoreID:         order.StoreID,
 			TableID:         order.TableID,
@@ -2240,21 +2243,21 @@ func reopenOrderToCartInTx(ctx context.Context, q *repository.Queries, orderID i
 }
 
 func (uc *RestaurantCartUseCase) ReopenCartByCartID(ctx context.Context, cartID uuid.UUID) *repository.Response {
-	var delegateOrderID int32
+	var delegateOrderID uuid.UUID
 	resp := uc.withTx(ctx, func(q *repository.Queries) *repository.Response {
 		peekCart, err := q.GetRestaurantCartByID(ctx, cartID)
 		if err != nil {
 			return utils.NewResponse(utils.CodeNotFound, "restaurant cart not found", nil)
 		}
 		if peekCart.ConvertedToOrderID.Valid {
-			return reopenOrderToCartInTx(ctx, q, peekCart.ConvertedToOrderID.Int32)
+			return reopenOrderToCartInTx(ctx, q, uuid.UUID(peekCart.ConvertedToOrderID.Bytes))
 		}
 		cart, err := lockAndGetRestaurantCartByID(ctx, q, cartID)
 		if err != nil {
 			return restaurantCartNotFoundOrErr(err, "lock restaurant cart")
 		}
 		if cart.ConvertedToOrderID.Valid {
-			delegateOrderID = cart.ConvertedToOrderID.Int32
+			delegateOrderID = uuid.UUID(cart.ConvertedToOrderID.Bytes)
 			return nil
 		}
 		reopened, err := q.ReopenRestaurantCartByID(ctx, cartID)
@@ -2267,7 +2270,7 @@ func (uc *RestaurantCartUseCase) ReopenCartByCartID(ctx context.Context, cartID 
 		}
 		return utils.NewResponse(utils.CodeOK, "restaurant cart reopened", payload)
 	})
-	if delegateOrderID > 0 {
+	if delegateOrderID != uuid.Nil {
 		return uc.ReopenOrderToCart(ctx, delegateOrderID)
 	}
 	return resp
@@ -2285,7 +2288,7 @@ func (uc *RestaurantCartUseCase) CreateOrderWithItems(ctx context.Context, input
 
 		orderNumber := strings.TrimSpace(input.OrderNumber)
 		if orderNumber == "" {
-			orderNumber = generateRestaurantRef("RORD")
+			orderNumber = generateRestaurantRef(ctx, q, "RORD", utils.DerefInt32(input.PosTerminalID))
 		}
 		orderSource := strings.TrimSpace(input.OrderSource)
 		if orderSource == "" {
@@ -2352,10 +2355,10 @@ func (uc *RestaurantCartUseCase) CreateOrderWithItems(ctx context.Context, input
 			StoreID:          input.StoreID,
 			TableID:          utils.Int32ToPgInt4(input.TableID),
 			CashierID:        utils.Int32ToPgInt4(input.CashierID),
-			CashierSessionID: utils.Int32ToPgInt4(input.CashierSessionID),
-			CustomerID:       utils.Int32ToPgInt4(input.CustomerID),
+			CashierSessionID: utils.UUIDPtrToPgUUID(input.CashierSessionID),
+			CustomerID:       utils.UUIDPtrToPgUUID(input.CustomerID),
 			PosTerminalID:    utils.Int32ToPgInt4(input.PosTerminalID),
-			KioskSessionID:   utils.Int32ToPgInt4(input.KioskSessionID),
+			KioskSessionID:   utils.UUIDPtrToPgUUID(input.KioskSessionID),
 			CreatedByUserID:  utils.Int32ToPgInt4(input.CreatedByUserID),
 			SourceCartID:     sourceCartUUID,
 			OrderNumber:      orderNumber,
@@ -2374,7 +2377,7 @@ func (uc *RestaurantCartUseCase) CreateOrderWithItems(ctx context.Context, input
 			AmountPaid:       utils.Float64ToPgNumeric(input.AmountPaid),
 			ChangeGiven:      utils.Float64ToPgNumeric(input.ChangeGiven),
 			Notes:            nullableText(input.Notes),
-			PosTransactionID: utils.Int32ToPgInt4(input.PosTransactionID),
+			PosTransactionID: utils.UUIDPtrToPgUUID(input.PosTransactionID),
 			Metadata:         ensureJSONObject(input.Metadata),
 			OrderedAt:        pgtype.Timestamp{Time: time.Now(), Valid: true},
 			CouponCode:       nullableText(input.CouponCode),
@@ -2425,7 +2428,7 @@ func (uc *RestaurantCartUseCase) CreateOrderWithItems(ctx context.Context, input
 	})
 }
 
-func (uc *RestaurantCartUseCase) UpdateOrderWithItems(ctx context.Context, orderID int32, input RestaurantDirectOrderInput, replaceItems bool) *repository.Response {
+func (uc *RestaurantCartUseCase) UpdateOrderWithItems(ctx context.Context, orderID uuid.UUID, input RestaurantDirectOrderInput, replaceItems bool) *repository.Response {
 	return uc.withTx(ctx, func(q *repository.Queries) *repository.Response {
 		existing, err := lockAndGetRestaurantOrderByID(ctx, q, orderID)
 		if err != nil {
@@ -2519,15 +2522,15 @@ func (uc *RestaurantCartUseCase) UpdateOrderWithItems(ctx context.Context, order
 		}
 		cashierSessionID := existing.CashierSessionID
 		if input.CashierSessionID != nil {
-			cashierSessionID = utils.Int32ToPgInt4(input.CashierSessionID)
+			cashierSessionID = utils.UUIDPtrToPgUUID(input.CashierSessionID)
 		}
 		customerID := existing.CustomerID
 		if input.CustomerID != nil {
-			customerID = utils.Int32ToPgInt4(input.CustomerID)
+			customerID = utils.UUIDPtrToPgUUID(input.CustomerID)
 		}
 		posTxnID := existing.PosTransactionID
 		if input.PosTransactionID != nil {
-			posTxnID = utils.Int32ToPgInt4(input.PosTransactionID)
+			posTxnID = utils.UUIDPtrToPgUUID(input.PosTransactionID)
 		}
 
 		notes := existing.Notes
@@ -2641,7 +2644,7 @@ func (uc *RestaurantCartUseCase) UpdateOrderWithItems(ctx context.Context, order
 	})
 }
 
-func (uc *RestaurantCartUseCase) AddOrderItem(ctx context.Context, orderID int32, input RestaurantLineItemInput) *repository.Response {
+func (uc *RestaurantCartUseCase) AddOrderItem(ctx context.Context, orderID uuid.UUID, input RestaurantLineItemInput) *repository.Response {
 	return uc.withTx(ctx, func(q *repository.Queries) *repository.Response {
 		order, err := lockAndGetRestaurantOrderByID(ctx, q, orderID)
 		if err != nil {
@@ -2721,7 +2724,7 @@ func validateFullRestaurantPayment(paidFloat, totalFloat float64) error {
 	return nil
 }
 
-func (uc *RestaurantCartUseCase) UpdateOrderPaymentStatus(ctx context.Context, orderID int32, paymentStatus string, amountPaid, changeGiven *float64) *repository.Response {
+func (uc *RestaurantCartUseCase) UpdateOrderPaymentStatus(ctx context.Context, orderID uuid.UUID, paymentStatus string, amountPaid, changeGiven *float64) *repository.Response {
 	if strings.TrimSpace(paymentStatus) == "" {
 		return utils.NewResponse(utils.CodeBadReq, "payment_status is required", nil)
 	}
@@ -2779,7 +2782,7 @@ func (uc *RestaurantCartUseCase) createPosTransactionForRestaurantOrder(
 	q *repository.Queries,
 	order repository.RestaurantOrder,
 	explicitCashierID *int32,
-	explicitSessionID *int32,
+	explicitSessionID *uuid.UUID,
 	explicitTerminalID *int32,
 	paymentMethod string,
 	paymentGateway string,
@@ -2796,7 +2799,7 @@ func (uc *RestaurantCartUseCase) createPosTransactionForRestaurantOrder(
 	}
 	sessionID := order.CashierSessionID
 	if explicitSessionID != nil {
-		sessionID = utils.Int32ToPgInt4(explicitSessionID)
+		sessionID = utils.UUIDPtrToPgUUID(explicitSessionID)
 	}
 	terminalID := order.PosTerminalID
 	if explicitTerminalID != nil {
@@ -2820,21 +2823,22 @@ func (uc *RestaurantCartUseCase) createPosTransactionForRestaurantOrder(
 	}
 
 	if sessionID.Valid {
-		sess, err := q.ValidateRestaurantCashierSession(ctx, sessionID.Int32)
+		sessUUID := uuid.UUID(sessionID.Bytes)
+		sess, err := q.ValidateRestaurantCashierSession(ctx, sessUUID)
 		if err != nil {
-			return nil, nil, fmt.Errorf("cashier session %d not found", sessionID.Int32)
+			return nil, nil, fmt.Errorf("cashier session %s not found", sessUUID.String())
 		}
 		if !sess.Status.Valid || !strings.EqualFold(sess.Status.String, "open") || sess.ClosingTime.Valid {
-			return nil, nil, fmt.Errorf("cashier session %d is closed", sessionID.Int32)
+			return nil, nil, fmt.Errorf("cashier session %s is closed", sessUUID.String())
 		}
 		if sess.StoreID != order.StoreID {
-			return nil, nil, fmt.Errorf("cashier session %d does not belong to store %d", sessionID.Int32, order.StoreID)
+			return nil, nil, fmt.Errorf("cashier session %s does not belong to store %d", sessUUID.String(), order.StoreID)
 		}
 		if cashierID.Valid && sess.CashierID != cashierID.Int32 {
-			return nil, nil, fmt.Errorf("cashier session %d does not belong to cashier %d", sessionID.Int32, cashierID.Int32)
+			return nil, nil, fmt.Errorf("cashier session %s does not belong to cashier %d", sessUUID.String(), cashierID.Int32)
 		}
 		if terminalID.Valid && sess.PosTerminalID != terminalID.Int32 {
-			return nil, nil, fmt.Errorf("cashier session %d does not belong to terminal %d", sessionID.Int32, terminalID.Int32)
+			return nil, nil, fmt.Errorf("cashier session %s does not belong to terminal %d", sessUUID.String(), terminalID.Int32)
 		}
 		if !cashierID.Valid {
 			cashierID = pgtype.Int4{Int32: sess.CashierID, Valid: true}
@@ -2854,7 +2858,7 @@ func (uc *RestaurantCartUseCase) createPosTransactionForRestaurantOrder(
 			}
 			return nil, nil, nil
 		}
-		sessionID = pgtype.Int4{Int32: openSess.ID, Valid: true}
+		sessionID = pgtype.UUID{Bytes: openSess.ID, Valid: true}
 		if !cashierID.Valid {
 			cashierID = pgtype.Int4{Int32: openSess.CashierID, Valid: true}
 		}
@@ -2898,7 +2902,7 @@ func (uc *RestaurantCartUseCase) createPosTransactionForRestaurantOrder(
 	txn, err := q.CreatePosTransactionForRestaurantOrder(ctx, repository.CreatePosTransactionForRestaurantOrderParams{
 		StoreID:           order.StoreID,
 		CashierID:         cashierID.Int32,
-		CashierSessionID:  sessionID.Int32,
+		CashierSessionID:  uuid.UUID(sessionID.Bytes),
 		CustomerID:        order.CustomerID,
 		PosTerminalID:     terminalID,
 		TransactionNumber: "TXN-" + order.OrderNumber,
@@ -2994,7 +2998,7 @@ func (uc *RestaurantCartUseCase) createPosTransactionForRestaurantOrder(
 
 	if pm == "cash" {
 		if err := q.UpdateSessionExpectedBalance(ctx, repository.UpdateSessionExpectedBalanceParams{
-			ID:              sessionID.Int32,
+			ID:              uuid.UUID(sessionID.Bytes),
 			ExpectedBalance: utils.Float64ToPgNumeric(netPaid),
 		}); err != nil {
 			return nil, nil, err
@@ -3010,7 +3014,7 @@ func (uc *RestaurantCartUseCase) createPosTransactionForRestaurantOrder(
 
 	updatedOrder, err := q.LinkRestaurantOrderToPosTransaction(ctx, repository.LinkRestaurantOrderToPosTransactionParams{
 		ID:               order.ID,
-		PosTransactionID: pgtype.Int4{Int32: txn.ID, Valid: true},
+		PosTransactionID: pgtype.UUID{Bytes: txn.ID, Valid: true},
 		Status:           targetOrderStatus,
 		PaymentStatus:    targetPaymentStatus,
 		AmountPaid:       utils.Float64ToPgNumeric(paidFloat),
@@ -3026,7 +3030,7 @@ func (uc *RestaurantCartUseCase) createPosTransactionForRestaurantOrder(
 // SettleOrderWithPosTransaction settles a restaurant order, creating a POS transaction,
 // POS payment, and updating the active cashier session expected balance automatically when
 // pos_transaction_id is omitted (or linking the provided pos_transaction_id).
-func (uc *RestaurantCartUseCase) SettleOrderWithPosTransaction(ctx context.Context, orderID int32, input RestaurantSettleOrderInput) *repository.Response {
+func (uc *RestaurantCartUseCase) SettleOrderWithPosTransaction(ctx context.Context, orderID uuid.UUID, input RestaurantSettleOrderInput) *repository.Response {
 	return uc.withTx(ctx, func(q *repository.Queries) *repository.Response {
 		order, err := lockAndGetRestaurantOrderByID(ctx, q, orderID)
 		if err != nil {
@@ -3057,14 +3061,14 @@ func (uc *RestaurantCartUseCase) SettleOrderWithPosTransaction(ctx context.Conte
 			return paidAmt, changeAmt, nil
 		}
 
-		if input.PosTransactionID != nil && *input.PosTransactionID > 0 {
+		if input.PosTransactionID != nil && *input.PosTransactionID != uuid.Nil {
 			paidAmt, changeAmt, err := calcPaidAndChange(order)
 			if err != nil {
 				return utils.NewResponse(utils.CodeBadReq, err.Error(), nil)
 			}
 			updated, err := q.LinkRestaurantOrderToPosTransaction(ctx, repository.LinkRestaurantOrderToPosTransactionParams{
 				ID:               orderID,
-				PosTransactionID: pgtype.Int4{Int32: *input.PosTransactionID, Valid: true},
+				PosTransactionID: pgtype.UUID{Bytes: *input.PosTransactionID, Valid: true},
 				Status:           order.Status,
 				PaymentStatus:    "paid",
 				AmountPaid:       utils.Float64ToPgNumeric(paidAmt),
@@ -3084,31 +3088,34 @@ func (uc *RestaurantCartUseCase) SettleOrderWithPosTransaction(ctx context.Conte
 			})
 		}
 
-		if order.PosTransactionID.Valid && order.PosTransactionID.Int32 > 0 {
-			paidAmt, changeAmt, err := calcPaidAndChange(order)
-			if err != nil {
-				return utils.NewResponse(utils.CodeBadReq, err.Error(), nil)
+		if order.PosTransactionID.Valid {
+			existingTxnID := uuid.UUID(order.PosTransactionID.Bytes)
+			if existingTxnID != uuid.Nil {
+				paidAmt, changeAmt, err := calcPaidAndChange(order)
+				if err != nil {
+					return utils.NewResponse(utils.CodeBadReq, err.Error(), nil)
+				}
+				updated, err := q.LinkRestaurantOrderToPosTransaction(ctx, repository.LinkRestaurantOrderToPosTransactionParams{
+					ID:               orderID,
+					PosTransactionID: order.PosTransactionID,
+					Status:           order.Status,
+					PaymentStatus:    "paid",
+					AmountPaid:       utils.Float64ToPgNumeric(paidAmt),
+					ChangeGiven:      utils.Float64ToPgNumeric(changeAmt),
+				})
+				if err != nil {
+					return utils.NewResponse(utils.CodeError, "failed to settle restaurant order: "+err.Error(), nil)
+				}
+				if order.Status != updated.Status {
+					from := order.Status
+					recordRestaurantOrderStatusHistory(ctx, q, orderID, updated.StoreID, &from, updated.Status, "order_settled", "Order settled", updated.CreatedByUserID, nil)
+				}
+				return utils.NewResponse(utils.CodeOK, "order settled successfully", map[string]interface{}{
+					"order":              updated,
+					"pos_transaction_id": existingTxnID,
+					"transaction_id":     existingTxnID,
+				})
 			}
-			updated, err := q.LinkRestaurantOrderToPosTransaction(ctx, repository.LinkRestaurantOrderToPosTransactionParams{
-				ID:               orderID,
-				PosTransactionID: order.PosTransactionID,
-				Status:           order.Status,
-				PaymentStatus:    "paid",
-				AmountPaid:       utils.Float64ToPgNumeric(paidAmt),
-				ChangeGiven:      utils.Float64ToPgNumeric(changeAmt),
-			})
-			if err != nil {
-				return utils.NewResponse(utils.CodeError, "failed to settle restaurant order: "+err.Error(), nil)
-			}
-			if order.Status != updated.Status {
-				from := order.Status
-				recordRestaurantOrderStatusHistory(ctx, q, orderID, updated.StoreID, &from, updated.Status, "order_settled", "Order settled", updated.CreatedByUserID, nil)
-			}
-			return utils.NewResponse(utils.CodeOK, "order settled successfully", map[string]interface{}{
-				"order":              updated,
-				"pos_transaction_id": order.PosTransactionID.Int32,
-				"transaction_id":     order.PosTransactionID.Int32,
-			})
 		}
 
 		updatedOrder, txn, err := uc.createPosTransactionForRestaurantOrder(
@@ -3315,7 +3322,7 @@ func applyRestaurantCouponInTx(ctx context.Context, q *repository.Queries, cart 
 		}
 		if lockErr := q.LockCustomerRestaurantCouponUsage(ctx, repository.LockCustomerRestaurantCouponUsageParams{
 			StoreID:    cart.StoreID,
-			CustomerID: cart.CustomerID.Int32,
+			CustomerID: uuid.UUID(cart.CustomerID.Bytes),
 			CouponCode: code,
 		}); lockErr != nil {
 			return cart, emptyPromo, utils.NewResponse(utils.CodeError, "failed to lock customer coupon usage: "+lockErr.Error(), nil)
@@ -3338,7 +3345,7 @@ func applyRestaurantCouponInTx(ctx context.Context, q *repository.Queries, cart 
 		if !cart.CustomerID.Valid {
 			return cart, emptyPromo, utils.NewResponse(utils.CodeBadReq, "customer_id is required for this restaurant promotion", nil)
 		}
-		cust, custErr := q.GetCustomer(ctx, cart.CustomerID.Int32)
+		cust, custErr := q.GetCustomer(ctx, uuid.UUID(cart.CustomerID.Bytes))
 		if custErr != nil {
 			return cart, emptyPromo, utils.NewResponse(utils.CodeBadReq, "customer not found for restaurant promotion", nil)
 		}
@@ -3590,7 +3597,8 @@ func applyRestaurantCouponInTx(ctx context.Context, q *repository.Queries, cart 
 func recordRestaurantOrderStatusHistory(
 	ctx context.Context,
 	q *repository.Queries,
-	orderID, storeID int32,
+	orderID uuid.UUID,
+	storeID int32,
 	fromStatus *string,
 	toStatus, reason, notes string,
 	changedBy pgtype.Int4,
@@ -3612,7 +3620,7 @@ func recordRestaurantOrderStatusHistory(
 	})
 }
 
-func (uc *RestaurantCartUseCase) UpdateOrderStatusWithHistory(ctx context.Context, orderID int32, input RestaurantOrderStatusUpdateInput) *repository.Response {
+func (uc *RestaurantCartUseCase) UpdateOrderStatusWithHistory(ctx context.Context, orderID uuid.UUID, input RestaurantOrderStatusUpdateInput) *repository.Response {
 	toStatus := strings.TrimSpace(input.Status)
 	if toStatus == "" {
 		return utils.NewResponse(utils.CodeBadReq, "status is required", nil)
@@ -3663,7 +3671,7 @@ func (uc *RestaurantCartUseCase) UpdateOrderStatusWithHistory(ctx context.Contex
 	})
 }
 
-func (uc *RestaurantCartUseCase) GetOrderStatusHistory(ctx context.Context, orderID int32) *repository.Response {
+func (uc *RestaurantCartUseCase) GetOrderStatusHistory(ctx context.Context, orderID uuid.UUID) *repository.Response {
 	if errResp := uc.repoOrErr(); errResp != nil {
 		return errResp
 	}
@@ -3692,7 +3700,7 @@ func deductRecipeIngredientsForOrderItems(
 	type recipeDemand struct {
 		recipeID   int32
 		menuItemID int32
-		orderItem  int32
+		orderItem  uuid.UUID
 		multiplier float64
 	}
 
@@ -3790,7 +3798,7 @@ func deductRecipeIngredientsForOrderItems(
 			})
 			if _, err := q.CreateRestaurantIngredientStockMovement(ctx, repository.CreateRestaurantIngredientStockMovementParams{
 				MovementType:     "recipe_deduction",
-				ReferenceID:      pgtype.Int4{Int32: order.ID, Valid: true},
+				ReferenceID:      pgtype.Text{String: order.ID.String(), Valid: true},
 				ProductID:        ing.ProductID,
 				ProductVariantID: ing.ProductVariantID,
 				FromStoreID:      pgtype.Int4{Int32: order.StoreID, Valid: true},
@@ -3817,7 +3825,7 @@ func reverseRecipeIngredientsForOrder(
 	if _, err := q.LockRestaurantOrder(ctx, order.ID); err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return err
 	}
-	movements, err := q.ListRestaurantOrderRecipeMovements(ctx, pgtype.Int4{Int32: order.ID, Valid: true})
+	movements, err := q.ListRestaurantOrderRecipeMovements(ctx, pgtype.Text{String: order.ID.String(), Valid: true})
 	if err != nil {
 		return err
 	}
@@ -3898,7 +3906,7 @@ func reverseRecipeIngredientsForOrder(
 		})
 		if _, err := q.CreateRestaurantIngredientStockMovement(ctx, repository.CreateRestaurantIngredientStockMovementParams{
 			MovementType:     "recipe_reversal",
-			ReferenceID:      pgtype.Int4{Int32: order.ID, Valid: true},
+			ReferenceID:      pgtype.Text{String: order.ID.String(), Valid: true},
 			ProductID:        k.productID,
 			ProductVariantID: varPg,
 			FromStoreID:      pgtype.Int4{Int32: order.StoreID, Valid: true},

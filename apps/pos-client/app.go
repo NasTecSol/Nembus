@@ -838,7 +838,39 @@ func (a *App) LoadDeviceConfig() string {
 		// No config yet — normal on first launch
 		return ""
 	}
-	return string(data)
+	raw := string(data)
+	if a.masterRepo != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if pool := a.activeTenantPool(ctx); pool != nil {
+			raw = sync.EnrichDeviceConfigJSON(ctx, pool, raw)
+		}
+	}
+	return raw
+}
+
+func (a *App) activeTenantPool(ctx context.Context) *pgxpool.Pool {
+	if a.masterRepo == nil {
+		return nil
+	}
+	if a.tenantManager == nil {
+		a.tenantManager = manager.NewManager(a.masterRepo)
+	}
+	var slug string
+	if a.syncService != nil {
+		slug = a.syncService.TenantSlug()
+	} else {
+		tenants, err := a.masterRepo.ListActiveTenants(ctx)
+		if err != nil || len(tenants) != 1 {
+			return nil
+		}
+		slug = tenants[0].Slug
+	}
+	pool, err := a.tenantManager.GetPool(ctx, slug)
+	if err != nil {
+		return nil
+	}
+	return pool
 }
 
 // SaveDeviceConfig writes the device configuration to disk so it persists
@@ -878,6 +910,7 @@ func (a *App) SaveDeviceConfig(configJSON string) string {
 			log.Printf("SaveDeviceConfig: database save failed: %v", err)
 			return fmt.Sprintf("Error: %v", err)
 		}
+		configJSON = sync.EnrichDeviceConfigJSON(ctx, pool, configJSON)
 		log.Printf("SaveDeviceConfig: saved local_device_config for tenant %s, store %d", slug, identity.StoreID)
 	}
 	home, err := os.UserHomeDir()

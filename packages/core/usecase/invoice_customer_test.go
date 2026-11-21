@@ -2,9 +2,11 @@ package usecase
 
 import (
 	"encoding/json"
+	"fmt"
 	"testing"
 
 	"github.com/NasTecSol/nembus-core/repository"
+	"github.com/NasTecSol/nembus-core/utils"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -15,12 +17,12 @@ func TestInvoiceCustomerNullScanAndResponse(t *testing.T) {
 		want   string
 	}{
 		{"no customer", nil, "null"},
-		{"existing customer", []byte("42"), "42"},
+		{"existing customer", []byte(utils.DetUUIDFromLegacyID("customers", 42).String()), fmt.Sprintf("%q", utils.DetUUIDFromLegacyID("customers", 42).String())},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var invoice repository.Invoice
 			// Exercise the PostgreSQL driver's NULL scanning path used by ListInvoices.
-			if err := pgtype.NewMap().Scan(pgtype.Int4OID, pgtype.TextFormatCode, tc.source, &invoice.CustomerID); err != nil {
+			if err := pgtype.NewMap().Scan(pgtype.UUIDOID, pgtype.TextFormatCode, tc.source, &invoice.CustomerID); err != nil {
 				t.Fatalf("scan invoice customer: %v", err)
 			}
 			output := invoiceToOutput(invoice, nil, nil)

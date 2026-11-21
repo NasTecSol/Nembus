@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -105,7 +106,7 @@ ORDER BY ubt.id ASC
 `
 
 type ListActiveBiometricTemplatesByOrgRow struct {
-	ID               int32            `json:"id"`
+	ID               uuid.UUID        `json:"id"`
 	OrganizationID   int32            `json:"organization_id"`
 	UserID           int32            `json:"user_id"`
 	FingerIndex      int16            `json:"finger_index"`
@@ -180,7 +181,7 @@ ORDER BY ubt.id ASC
 `
 
 type ListAllActiveBiometricTemplatesRow struct {
-	ID               int32            `json:"id"`
+	ID               uuid.UUID        `json:"id"`
 	OrganizationID   int32            `json:"organization_id"`
 	UserID           int32            `json:"user_id"`
 	FingerIndex      int16            `json:"finger_index"`
@@ -259,7 +260,7 @@ ORDER BY finger_index ASC
 `
 
 type ListUserBiometricTemplatesRow struct {
-	ID               int32            `json:"id"`
+	ID               uuid.UUID        `json:"id"`
 	OrganizationID   int32            `json:"organization_id"`
 	UserID           int32            `json:"user_id"`
 	FingerIndex      int16            `json:"finger_index"`
@@ -315,7 +316,7 @@ WHERE id = $1
 `
 
 type SetCashierSessionClosedSupervisorParams struct {
-	ID                   int32       `json:"id"`
+	ID                   uuid.UUID   `json:"id"`
 	ClosedBySupervisorID pgtype.Int4 `json:"closed_by_supervisor_id"`
 }
 
@@ -333,7 +334,7 @@ WHERE id = $1
 `
 
 type SetCashierSessionOpenedSupervisorParams struct {
-	ID                   int32       `json:"id"`
+	ID                   uuid.UUID   `json:"id"`
 	OpenedBySupervisorID pgtype.Int4 `json:"opened_by_supervisor_id"`
 }
 

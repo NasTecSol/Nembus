@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/NasTecSol/nembus-core/repository"
+	"github.com/NasTecSol/nembus-core/utils"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -16,8 +17,8 @@ func TestStockMovementReadPreservesResponse(t *testing.T) {
 		t.Fatal(err)
 	}
 	legacy := repository.StockMovement{
-		ID: 42, MovementType: "sale", ReferenceType: pgtype.Text{String: "invoice", Valid: true},
-		ReferenceID: pgtype.Int4{Int32: 123, Valid: true}, ProductID: 7,
+		ID: utils.DetUUIDFromLegacyID("stock_movements", 42), MovementType: "sale", ReferenceType: pgtype.Text{String: "invoice", Valid: true},
+		ReferenceID: pgtype.Text{String: "123", Valid: true}, ProductID: 7,
 		ProductVariantID: pgtype.Int4{Int32: 8, Valid: true},
 		FromStoreID:      pgtype.Int4{Int32: 9, Valid: true}, ToStoreID: pgtype.Int4{Int32: 10, Valid: true},
 		FromLocationID: pgtype.Int4{Int32: 11, Valid: true}, ToLocationID: pgtype.Int4{Int32: 12, Valid: true},

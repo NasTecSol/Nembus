@@ -19,7 +19,7 @@ CREATE INDEX IF NOT EXISTS idx_users_must_reset ON users(must_reset_password) WH
 -- Customer Addresses table (sourced from SAP CRD1)
 CREATE TABLE IF NOT EXISTS customer_addresses (
     id SERIAL PRIMARY KEY,
-    customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+    customer_id UUID NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
     address_type VARCHAR(20) NOT NULL DEFAULT 'shipping' CHECK (address_type IN ('bill_to', 'ship_to', 'both', 'billing', 'shipping')),
     address_line VARCHAR(255),
     street VARCHAR(255),

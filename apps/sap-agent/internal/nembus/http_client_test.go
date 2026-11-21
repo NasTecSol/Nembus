@@ -87,7 +87,8 @@ func TestHoldForStockReview_SubmitsRequiredFieldsAndChecksStatus(t *testing.T) {
 		Quantity:    5,
 		SAPOnHand:   1,
 	}}
-	if err := client.HoldTransactionForStockReview(ctx, 123, "INV-123", 3, "01", 99.5, shortages, "shortage"); err != nil {
+	txHoldID := uuid.MustParse("00000000-0000-4000-8000-00000000007b")
+	if err := client.HoldTransactionForStockReview(ctx, txHoldID, "INV-123", 3, "01", 99.5, shortages, "shortage"); err != nil {
 		t.Fatalf("HoldTransactionForStockReview: %v", err)
 	}
 
@@ -100,7 +101,7 @@ func TestHoldForStockReview_SubmitsRequiredFieldsAndChecksStatus(t *testing.T) {
 	if capturedBody["domain"] != "sap_invoice" || capturedBody["action"] != "stock_hold" {
 		t.Fatalf("unexpected domain/action: %v / %v", capturedBody["domain"], capturedBody["action"])
 	}
-	if capturedBody["entity_type"] != "pos_transaction" || capturedBody["entity_id"] != "123" {
+	if capturedBody["entity_type"] != "pos_transaction" || capturedBody["entity_id"] != txHoldID.String() {
 		t.Fatalf("unexpected entity: %v / %v", capturedBody["entity_type"], capturedBody["entity_id"])
 	}
 
@@ -209,6 +210,9 @@ func TestHTTPClient_UnpostedTransactionsLinesAndSapSync(t *testing.T) {
 	token := testJWT(1, "1")
 	var syncPayload map[string]int
 	var syncPath string
+	txID := uuid.MustParse("00000000-0000-4000-8000-000000000002")
+	custID := uuid.MustParse("00000000-0000-4000-8000-0000000001da")
+	sessID := uuid.MustParse("00000000-0000-4000-8000-000000000007")
 
 	client := NewHTTPClient(&legacyconfig.Config{
 		NembusAPIURL:         "https://nembus.example.test",
@@ -221,17 +225,17 @@ func TestHTTPClient_UnpostedTransactionsLinesAndSapSync(t *testing.T) {
 			case r.Method == http.MethodPost && r.URL.Path == "/api/auth/login":
 				return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{"token":"` + token + `"}`)), Header: make(http.Header)}, nil
 			case r.Method == http.MethodGet && r.URL.Path == "/api/pos/stores/2/transactions/unposted":
-				body := `{"data":[
-					{"id":1,"store_id":2,"cashier_id":3,"cashier_session_id":7,"customer_id":474,"customer_sap_code":"C474","transaction_number":"TXN-OLD-1","transaction_date":"2026-11-19T10:00:00Z","total_amount":"100.00","amount_paid":"100.00","status":"completed"},
-					{"id":2,"store_id":2,"cashier_id":3,"cashier_session_id":7,"customer_id":474,"customer_sap_code":"C474","transaction_number":"TXN-NEW-2","transaction_date":"2026-11-19T11:00:00Z","total_amount":"345.00","amount_paid":"0.00","status":"completed","metadata":{"source":"pos"}}
-				]}`
+				body := fmt.Sprintf(`{"data":[
+					{"id":"00000000-0000-4000-8000-000000000001","store_id":2,"cashier_id":3,"cashier_session_id":"00000000-0000-4000-8000-000000000007","customer_id":"%s","customer_sap_code":"C474","transaction_number":"TXN-OLD-1","transaction_date":"2026-11-19T10:00:00Z","total_amount":"100.00","amount_paid":"100.00","status":"completed"},
+					{"id":"%s","store_id":2,"cashier_id":3,"cashier_session_id":"%s","customer_id":"%s","customer_sap_code":"C474","transaction_number":"TXN-NEW-2","transaction_date":"2026-11-19T11:00:00Z","total_amount":"345.00","amount_paid":"0.00","status":"completed","metadata":{"source":"pos"}}
+				]}`, custID, txID, sessID, custID)
 				return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header)}, nil
-			case r.Method == http.MethodGet && r.URL.Path == "/api/pos/transactions/2/full":
+			case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/api/pos/transactions/") && strings.HasSuffix(r.URL.Path, "/full"):
 				body := `{"data":[
 					{"line_id":11,"product_id":99,"uom_id":5,"sku":"INV00683","product_name":"Espresso","quantity":"1.000","unit_price":"300.0000","discount_amount_2":"0.00","line_tax_amount":"45.00","line_subtotal":"300.00","line_total":"345.00","sap_uom_entry":"2","sap_ugp_entry":"-1","uom_conversion_factor":"2","is_base_uom":false,"sap_tax_code":"O15"}
 				]}`
 				return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header)}, nil
-			case r.Method == http.MethodPost && r.URL.Path == "/api/pos/transactions/2/sap-sync":
+			case r.Method == http.MethodPost && r.URL.Path == "/api/pos/transactions/"+txID.String()+"/sap-sync":
 				syncPath = r.URL.Path
 				raw, _ := io.ReadAll(r.Body)
 				_ = json.Unmarshal(raw, &syncPayload)
@@ -249,11 +253,11 @@ func TestHTTPClient_UnpostedTransactionsLinesAndSapSync(t *testing.T) {
 	if len(txs) != 1 || txs[0].TransactionNumber != "TXN-NEW-2" {
 		t.Fatalf("expected only TXN-NEW-2 (TXN-OLD-1 skipped beyond 500 cap), got %+v", txs)
 	}
-	if txs[0].CustomerID == nil || *txs[0].CustomerID != 474 || txs[0].CustomerSAPCode != "C474" || txs[0].CashierSessionID != 7 {
+	if txs[0].CustomerID == nil || *txs[0].CustomerID != custID || txs[0].CustomerSAPCode != "C474" || txs[0].CashierSessionID != sessID {
 		t.Fatalf("unexpected parsed customer/session fields: %+v", txs[0])
 	}
 
-	lines, err := client.FetchTransactionLines(ctx, 2)
+	lines, err := client.FetchTransactionLines(ctx, txID)
 	if err != nil {
 		t.Fatalf("FetchTransactionLines: %v", err)
 	}
@@ -265,10 +269,10 @@ func TestHTTPClient_UnpostedTransactionsLinesAndSapSync(t *testing.T) {
 		t.Fatalf("unexpected parsed line metadata: %+v", l)
 	}
 
-	if err := client.MarkTransactionPostedToSAP(ctx, 2, 20025, 2600018); err != nil {
+	if err := client.MarkTransactionPostedToSAP(ctx, txID, 20025, 2600018); err != nil {
 		t.Fatalf("MarkTransactionPostedToSAP: %v", err)
 	}
-	if syncPath != "/api/pos/transactions/2/sap-sync" || syncPayload["sap_doc_entry"] != 20025 || syncPayload["sap_doc_num"] != 2600018 {
+	if syncPath != "/api/pos/transactions/"+txID.String()+"/sap-sync" || syncPayload["sap_doc_entry"] != 20025 || syncPayload["sap_doc_num"] != 2600018 {
 		t.Fatalf("unexpected sap-sync call path=%s payload=%+v", syncPath, syncPayload)
 	}
 }

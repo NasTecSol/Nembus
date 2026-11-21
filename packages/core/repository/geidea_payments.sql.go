@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -28,7 +29,7 @@ INSERT INTO pos_payments (
 `
 
 type CreateGeideaPaymentParams struct {
-	TransactionID  int32           `json:"transaction_id"`
+	TransactionID  uuid.UUID       `json:"transaction_id"`
 	PaymentMethod  string          `json:"payment_method"`
 	PaymentGateway pgtype.Text     `json:"payment_gateway"`
 	Amount         pgtype.Numeric  `json:"amount"`
@@ -129,7 +130,7 @@ RETURNING id, transaction_id, payment_method, payment_gateway, amount, payment_r
 `
 
 type UpdateGeideaPaymentApprovedParams struct {
-	ID          int32           `json:"id"`
+	ID          uuid.UUID       `json:"id"`
 	Rrn         pgtype.Text     `json:"rrn"`
 	AuthCode    pgtype.Text     `json:"auth_code"`
 	Tid         pgtype.Text     `json:"tid"`
@@ -190,7 +191,7 @@ RETURNING id, transaction_id, payment_method, payment_gateway, amount, payment_r
 `
 
 type UpdateGeideaPaymentStatusParams struct {
-	ID          int32           `json:"id"`
+	ID          uuid.UUID       `json:"id"`
 	Status      pgtype.Text     `json:"status"`
 	RawResponse json.RawMessage `json:"raw_response"`
 }

@@ -1,9 +1,14 @@
 package utils
 
 import (
+	"crypto/md5"
+	"encoding/hex"
 	"fmt"
+	"strings"
 	"time"
+	"unicode"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -146,5 +151,124 @@ func BoolToPtr(b pgtype.Bool) *bool {
 	}
 	return &b.Bool
 }
+
+// UUIDToPgUUID converts a uuid.UUID to pgtype.UUID (invalid if uuid.Nil).
+func UUIDToPgUUID(u uuid.UUID) pgtype.UUID {
+	if u == uuid.Nil {
+		return pgtype.UUID{Valid: false}
+	}
+	return pgtype.UUID{Bytes: u, Valid: true}
+}
+
+// UUIDPtrToPgUUID converts a *uuid.UUID to pgtype.UUID.
+func UUIDPtrToPgUUID(u *uuid.UUID) pgtype.UUID {
+	if u == nil || *u == uuid.Nil {
+		return pgtype.UUID{Valid: false}
+	}
+	return pgtype.UUID{Bytes: *u, Valid: true}
+}
+
+// PgUUIDToUUIDPtr converts a pgtype.UUID to *uuid.UUID.
+func PgUUIDToUUIDPtr(u pgtype.UUID) *uuid.UUID {
+	if !u.Valid {
+		return nil
+	}
+	val := uuid.UUID(u.Bytes)
+	return &val
+}
+
+// PgUUIDToUUID converts a pgtype.UUID to uuid.UUID (returns uuid.Nil if invalid).
+func PgUUIDToUUID(u pgtype.UUID) uuid.UUID {
+	if !u.Valid {
+		return uuid.Nil
+	}
+	return uuid.UUID(u.Bytes)
+}
+
+// PgUUIDToStringPtr converts a pgtype.UUID to *string.
+func PgUUIDToStringPtr(u pgtype.UUID) *string {
+	if !u.Valid {
+		return nil
+	}
+	s := uuid.UUID(u.Bytes).String()
+	return &s
+}
+
+// DerefUUID returns the value of a uuid.UUID pointer or uuid.Nil if nil.
+func DerefUUID(u *uuid.UUID) uuid.UUID {
+	if u == nil {
+		return uuid.Nil
+	}
+	return *u
+}
+
+// ParseUUIDOrNil parses a string as uuid.UUID, returning uuid.Nil on error or empty string.
+func ParseUUIDOrNil(s string) uuid.UUID {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return uuid.Nil
+	}
+	u, err := uuid.Parse(s)
+	if err != nil {
+		return uuid.Nil
+	}
+	return u
+}
+
+// ParseUUIDPtr parses a string pointer as *uuid.UUID, returning nil if empty or invalid.
+func ParseUUIDPtr(s *string) *uuid.UUID {
+	if s == nil {
+		return nil
+	}
+	u := ParseUUIDOrNil(*s)
+	if u == uuid.Nil {
+		return nil
+	}
+	return &u
+}
+
+// DetUUIDFromLegacyID matches pg_temp.det_uuid in the M1 UUID migration SQL.
+func DetUUIDFromLegacyID(table string, oldID int64) uuid.UUID {
+	sum := md5.Sum([]byte(fmt.Sprintf("nembus:v1:%s:%d", table, oldID)))
+	h := hex.EncodeToString(sum[:])
+	variant := "89ab"[int(sum[8]&3)]
+	s := fmt.Sprintf("%s-%s-4%s-%c%s-%s", h[0:8], h[8:12], h[13:16], variant, h[17:20], h[20:32])
+	return uuid.MustParse(s)
+}
+
+// TruncateRunes returns s truncated to at most max runes without splitting a multibyte rune.
+func TruncateRunes(s string, max int) string {
+	if max <= 0 {
+		return ""
+	}
+	n := 0
+	for i := range s {
+		if n == max {
+			return s[:i]
+		}
+		n++
+	}
+	return s
+}
+
+// SanitizeTerminalCodeForDocNum normalizes a terminal code for document numbers (max 12 runes).
+func SanitizeTerminalCodeForDocNum(terminalCode string) string {
+	trimmed := strings.TrimSpace(terminalCode)
+	if trimmed == "" {
+		return "T00"
+	}
+	var b strings.Builder
+	for _, r := range trimmed {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			b.WriteRune(unicode.ToUpper(r))
+		}
+	}
+	res := b.String()
+	if res == "" {
+		return "T00"
+	}
+	return TruncateRunes(res, 12)
+}
+
 
 

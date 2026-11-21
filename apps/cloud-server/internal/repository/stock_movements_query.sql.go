@@ -81,7 +81,7 @@ WHERE stock_movements.reference_type = $1 AND stock_movements.reference_id = $2
 
 type CountStockMovementsByReferenceParams struct {
 	ReferenceType pgtype.Text `json:"reference_type"`
-	ReferenceID   pgtype.Int4 `json:"reference_id"`
+	ReferenceID   pgtype.Text `json:"reference_id"`
 }
 
 func (q *Queries) CountStockMovementsByReference(ctx context.Context, arg CountStockMovementsByReferenceParams) (int64, error) {
@@ -146,7 +146,7 @@ INSERT INTO stock_movements (
 type CreateStockMovementParams struct {
 	MovementType     string           `json:"movement_type"`
 	ReferenceType    pgtype.Text      `json:"reference_type"`
-	ReferenceID      pgtype.Int4      `json:"reference_id"`
+	ReferenceID      pgtype.Text      `json:"reference_id"`
 	ProductID        int32            `json:"product_id"`
 	ProductVariantID pgtype.Int4      `json:"product_variant_id"`
 	FromStoreID      pgtype.Int4      `json:"from_store_id"`
@@ -259,7 +259,7 @@ INSERT INTO stock_movements (
 `
 
 type CreateStockMovementFromPurchaseOrderParams struct {
-	ReferenceID      pgtype.Int4    `json:"reference_id"`
+	ReferenceID      pgtype.Text    `json:"reference_id"`
 	ProductID        int32          `json:"product_id"`
 	ProductVariantID pgtype.Int4    `json:"product_variant_id"`
 	ToStoreID        pgtype.Int4    `json:"to_store_id"`
@@ -364,7 +364,7 @@ INSERT INTO stock_movements (
 `
 
 type CreateStockMovementFromSalesOrderParams struct {
-	ReferenceID      pgtype.Int4    `json:"reference_id"`
+	ReferenceID      pgtype.Text    `json:"reference_id"`
 	ProductID        int32          `json:"product_id"`
 	ProductVariantID pgtype.Int4    `json:"product_variant_id"`
 	FromStoreID      pgtype.Int4    `json:"from_store_id"`
@@ -453,7 +453,7 @@ INSERT INTO stock_movements (
 SELECT 
     'sale' AS movement_type,
     'sales_order' AS reference_type,
-    sol.sales_order_id AS reference_id,
+    sol.sales_order_id::text AS reference_id,
     sol.product_id,
     sol.product_variant_id,
     so.store_id AS from_store_id,
@@ -524,7 +524,7 @@ FROM stock_movements
 WHERE stock_movements.id = $1
 `
 
-func (q *Queries) GetStockMovement(ctx context.Context, id int32) (StockMovement, error) {
+func (q *Queries) GetStockMovement(ctx context.Context, id uuid.UUID) (StockMovement, error) {
 	row := q.db.QueryRow(ctx, getStockMovement, id)
 	var i StockMovement
 	err := row.Scan(
@@ -666,7 +666,7 @@ WHERE stock_movements.reference_type = 'purchase_order'
 ORDER BY stock_movements.movement_date DESC
 `
 
-func (q *Queries) GetStockMovementsByPurchaseOrder(ctx context.Context, referenceID pgtype.Int4) ([]StockMovement, error) {
+func (q *Queries) GetStockMovementsByPurchaseOrder(ctx context.Context, referenceID pgtype.Text) ([]StockMovement, error) {
 	rows, err := q.db.Query(ctx, getStockMovementsByPurchaseOrder, referenceID)
 	if err != nil {
 		return nil, err
@@ -717,7 +717,7 @@ WHERE stock_movements.reference_type = 'sales_order'
 ORDER BY stock_movements.movement_date DESC
 `
 
-func (q *Queries) GetStockMovementsBySalesOrder(ctx context.Context, referenceID pgtype.Int4) ([]StockMovement, error) {
+func (q *Queries) GetStockMovementsBySalesOrder(ctx context.Context, referenceID pgtype.Text) ([]StockMovement, error) {
 	rows, err := q.db.Query(ctx, getStockMovementsBySalesOrder, referenceID)
 	if err != nil {
 		return nil, err
@@ -961,10 +961,10 @@ type ListStockMovementsByProductWithDateRangeParams struct {
 }
 
 type ListStockMovementsByProductWithDateRangeRow struct {
-	ID               int32            `json:"id"`
+	ID               uuid.UUID        `json:"id"`
 	MovementType     string           `json:"movement_type"`
 	ReferenceType    pgtype.Text      `json:"reference_type"`
-	ReferenceID      pgtype.Int4      `json:"reference_id"`
+	ReferenceID      pgtype.Text      `json:"reference_id"`
 	ProductID        int32            `json:"product_id"`
 	ProductVariantID pgtype.Int4      `json:"product_variant_id"`
 	FromStoreID      pgtype.Int4      `json:"from_store_id"`
@@ -1050,7 +1050,7 @@ LIMIT $3 OFFSET $4
 
 type ListStockMovementsByReferenceParams struct {
 	ReferenceType pgtype.Text `json:"reference_type"`
-	ReferenceID   pgtype.Int4 `json:"reference_id"`
+	ReferenceID   pgtype.Text `json:"reference_id"`
 	Limit         int32       `json:"limit"`
 	Offset        int32       `json:"offset"`
 }
@@ -1254,7 +1254,7 @@ RETURNING inventory_stock.id, inventory_stock.product_id, inventory_stock.produc
 // =====================================================
 // INVENTORY STOCK UPDATES FROM STOCK MOVEMENTS
 // =====================================================
-func (q *Queries) UpdateInventoryStockFromMovement(ctx context.Context, id int32) (InventoryStock, error) {
+func (q *Queries) UpdateInventoryStockFromMovement(ctx context.Context, id uuid.UUID) (InventoryStock, error) {
 	row := q.db.QueryRow(ctx, updateInventoryStockFromMovement, id)
 	var i InventoryStock
 	err := row.Scan(
@@ -1287,7 +1287,7 @@ RETURNING stock_movements.id, stock_movements.movement_type, stock_movements.ref
 `
 
 type UpdateStockMovementStatusParams struct {
-	ID     int32       `json:"id"`
+	ID     uuid.UUID   `json:"id"`
 	Status pgtype.Text `json:"status"`
 }
 
@@ -1384,7 +1384,7 @@ WHERE NOT EXISTS (SELECT 1 FROM existing_stock)
 RETURNING inventory_stock.id, inventory_stock.product_id, inventory_stock.product_variant_id, inventory_stock.store_id, inventory_stock.storage_location_id, inventory_stock.quantity_on_hand, inventory_stock.quantity_allocated, inventory_stock.quantity_available, inventory_stock.quantity_on_order, inventory_stock.quantity_in_transit, inventory_stock.reorder_level, inventory_stock.reorder_quantity, inventory_stock.max_stock_level, inventory_stock.last_counted_at, inventory_stock.metadata, inventory_stock.created_at, inventory_stock.updated_at
 `
 
-func (q *Queries) UpsertInventoryStockFromMovement(ctx context.Context, id int32) (InventoryStock, error) {
+func (q *Queries) UpsertInventoryStockFromMovement(ctx context.Context, id uuid.UUID) (InventoryStock, error) {
 	row := q.db.QueryRow(ctx, upsertInventoryStockFromMovement, id)
 	var i InventoryStock
 	err := row.Scan(

@@ -251,7 +251,7 @@ INSERT INTO stock_movements (
 SELECT 
     'sale' AS movement_type,
     'sales_order' AS reference_type,
-    sol.sales_order_id AS reference_id,
+    sol.sales_order_id::text AS reference_id,
     sol.product_id,
     sol.product_variant_id,
     so.store_id AS from_store_id,

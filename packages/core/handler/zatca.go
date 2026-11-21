@@ -16,6 +16,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 // DeviceOnboarder abstracts device onboarding functionality across cloud server.
@@ -235,25 +236,26 @@ func (h *ZatcaHandler) GetReceiptQR(c *gin.Context) {
 		c.JSON(500, utils.NewResponse(500, "tenant repository is required", nil))
 		return
 	}
-	transactionID := int64(0)
 	orderID := c.Query("sales_order_id")
-	if raw := c.Query("transaction_id"); raw != "" {
-		var err error
-		transactionID, err = strconv.ParseInt(raw, 10, 32)
-		if err != nil || transactionID <= 0 {
+	txIDRaw := strings.TrimSpace(c.Query("transaction_id"))
+	var txID pgtype.UUID
+	if txIDRaw != "" {
+		parsed, err := uuid.Parse(txIDRaw)
+		if err != nil {
 			c.JSON(400, utils.NewResponse(400, "invalid transaction_id", nil))
 			return
 		}
+		txID = pgtype.UUID{Bytes: parsed, Valid: true}
 	} else if _, err := uuid.Parse(orderID); err != nil {
 		c.JSON(400, utils.NewResponse(400, "transaction_id or a valid sales_order_id is required", nil))
 		return
 	}
 	var qr string
 	var err error
-	if transactionID == 0 {
+	if !txID.Valid {
 		qr, err = repo.GetZatcaSalesOrderQR(c.Request.Context(), orderID)
 	} else {
-		qr, err = repo.GetZatcaReceiptQR(c.Request.Context(), int32(transactionID), "")
+		qr, err = repo.GetZatcaReceiptQR(c.Request.Context(), txID, "")
 	}
 	if errors.Is(err, pgx.ErrNoRows) {
 		c.JSON(404, utils.NewResponse(404, "receipt transaction not found", nil))

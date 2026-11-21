@@ -467,7 +467,7 @@ WHERE customer_id = $1
 `
 
 type CountCustomerInvoicesParams struct {
-	CustomerID     pgtype.Int4 `json:"customer_id"`
+	CustomerID     pgtype.UUID `json:"customer_id"`
 	OrganizationID int32       `json:"organization_id"`
 }
 
@@ -562,7 +562,7 @@ type CreateCartParams struct {
 	CartNumber      string           `json:"cart_number"`
 	OrganizationID  int32            `json:"organization_id"`
 	StoreID         pgtype.Int4      `json:"store_id"`
-	CustomerID      pgtype.Int4      `json:"customer_id"`
+	CustomerID      pgtype.UUID      `json:"customer_id"`
 	GuestIdentifier pgtype.Text      `json:"guest_identifier"`
 	GuestEmail      pgtype.Text      `json:"guest_email"`
 	GuestPhone      pgtype.Text      `json:"guest_phone"`
@@ -838,7 +838,7 @@ INSERT INTO draft_cart_templates (
 
 type CreateDraftCartTemplateParams struct {
 	OrganizationID       int32           `json:"organization_id"`
-	CustomerID           int32           `json:"customer_id"`
+	CustomerID           uuid.UUID       `json:"customer_id"`
 	TemplateName         string          `json:"template_name"`
 	Description          pgtype.Text     `json:"description"`
 	TemplateType         pgtype.Text     `json:"template_type"`
@@ -997,7 +997,7 @@ type CreateInvoiceParams struct {
 	InvoiceNumber     string          `json:"invoice_number"`
 	OrganizationID    int32           `json:"organization_id"`
 	StoreID           pgtype.Int4     `json:"store_id"`
-	CustomerID        pgtype.Int4     `json:"customer_id"`
+	CustomerID        pgtype.UUID     `json:"customer_id"`
 	CustomerName      string          `json:"customer_name"`
 	CustomerEmail     pgtype.Text     `json:"customer_email"`
 	CustomerPhone     pgtype.Text     `json:"customer_phone"`
@@ -1739,7 +1739,7 @@ type CreateQuoteParams struct {
 	QuoteNumber        string          `json:"quote_number"`
 	OrganizationID     int32           `json:"organization_id"`
 	StoreID            pgtype.Int4     `json:"store_id"`
-	CustomerID         pgtype.Int4     `json:"customer_id"`
+	CustomerID         pgtype.UUID     `json:"customer_id"`
 	CustomerName       string          `json:"customer_name"`
 	CustomerEmail      pgtype.Text     `json:"customer_email"`
 	CustomerPhone      pgtype.Text     `json:"customer_phone"`
@@ -2071,7 +2071,7 @@ type CreateSalesOrderV2Params struct {
 	OrderNumber          string            `json:"order_number"`
 	OrganizationID       int32             `json:"organization_id"`
 	StoreID              pgtype.Int4       `json:"store_id"`
-	CustomerID           pgtype.Int4       `json:"customer_id"`
+	CustomerID           pgtype.UUID       `json:"customer_id"`
 	CustomerName         pgtype.Text       `json:"customer_name"`
 	CustomerEmail        pgtype.Text       `json:"customer_email"`
 	CustomerPhone        pgtype.Text       `json:"customer_phone"`
@@ -2362,7 +2362,7 @@ LIMIT 1
 `
 
 type GetCartByCustomerParams struct {
-	CustomerID pgtype.Int4 `json:"customer_id"`
+	CustomerID pgtype.UUID `json:"customer_id"`
 	StoreID    pgtype.Int4 `json:"store_id"`
 }
 
@@ -2712,7 +2712,7 @@ GROUP BY c.id, c.name
 `
 
 type GetCustomerLifetimeValueRow struct {
-	ID                int32       `json:"id"`
+	ID                uuid.UUID   `json:"id"`
 	Name              string      `json:"name"`
 	TotalOrders       int64       `json:"total_orders"`
 	LifetimeValue     interface{} `json:"lifetime_value"`
@@ -2720,7 +2720,7 @@ type GetCustomerLifetimeValueRow struct {
 	AverageOrderValue interface{} `json:"average_order_value"`
 }
 
-func (q *Queries) GetCustomerLifetimeValue(ctx context.Context, id int32) (GetCustomerLifetimeValueRow, error) {
+func (q *Queries) GetCustomerLifetimeValue(ctx context.Context, id uuid.UUID) (GetCustomerLifetimeValueRow, error) {
 	row := q.db.QueryRow(ctx, getCustomerLifetimeValue, id)
 	var i GetCustomerLifetimeValueRow
 	err := row.Scan(
@@ -3748,7 +3748,7 @@ type ListAbandonedCartsRow struct {
 	CartNumber         string           `json:"cart_number"`
 	OrganizationID     int32            `json:"organization_id"`
 	StoreID            pgtype.Int4      `json:"store_id"`
-	CustomerID         pgtype.Int4      `json:"customer_id"`
+	CustomerID         pgtype.UUID      `json:"customer_id"`
 	GuestIdentifier    pgtype.Text      `json:"guest_identifier"`
 	GuestEmail         pgtype.Text      `json:"guest_email"`
 	GuestPhone         pgtype.Text      `json:"guest_phone"`
@@ -4100,7 +4100,7 @@ LIMIT $3 OFFSET $4
 `
 
 type ListCustomerInvoicesParams struct {
-	CustomerID     pgtype.Int4 `json:"customer_id"`
+	CustomerID     pgtype.UUID `json:"customer_id"`
 	OrganizationID int32       `json:"organization_id"`
 	Limit          int32       `json:"limit"`
 	Offset         int32       `json:"offset"`
@@ -4187,7 +4187,7 @@ LIMIT $3 OFFSET $4
 `
 
 type ListCustomerOrdersParams struct {
-	CustomerID     pgtype.Int4 `json:"customer_id"`
+	CustomerID     pgtype.UUID `json:"customer_id"`
 	OrganizationID int32       `json:"organization_id"`
 	Limit          int32       `json:"limit"`
 	Offset         int32       `json:"offset"`
@@ -4284,7 +4284,7 @@ LIMIT $3 OFFSET $4
 `
 
 type ListCustomerQuotesParams struct {
-	CustomerID     pgtype.Int4 `json:"customer_id"`
+	CustomerID     pgtype.UUID `json:"customer_id"`
 	OrganizationID int32       `json:"organization_id"`
 	Limit          int32       `json:"limit"`
 	Offset         int32       `json:"offset"`
@@ -4422,16 +4422,16 @@ LIMIT $3 OFFSET $4
 `
 
 type ListDraftCartTemplatesParams struct {
-	CustomerID     int32 `json:"customer_id"`
-	OrganizationID int32 `json:"organization_id"`
-	Limit          int32 `json:"limit"`
-	Offset         int32 `json:"offset"`
+	CustomerID     uuid.UUID `json:"customer_id"`
+	OrganizationID int32     `json:"organization_id"`
+	Limit          int32     `json:"limit"`
+	Offset         int32     `json:"offset"`
 }
 
 type ListDraftCartTemplatesRow struct {
 	ID                   uuid.UUID        `json:"id"`
 	OrganizationID       int32            `json:"organization_id"`
-	CustomerID           int32            `json:"customer_id"`
+	CustomerID           uuid.UUID        `json:"customer_id"`
 	TemplateName         string           `json:"template_name"`
 	Description          pgtype.Text      `json:"description"`
 	TemplateType         pgtype.Text      `json:"template_type"`
@@ -4635,8 +4635,8 @@ ORDER BY updated_at DESC
 `
 
 type ListFavoriteDraftTemplatesParams struct {
-	CustomerID     int32 `json:"customer_id"`
-	OrganizationID int32 `json:"organization_id"`
+	CustomerID     uuid.UUID `json:"customer_id"`
+	OrganizationID int32     `json:"organization_id"`
 }
 
 func (q *Queries) ListFavoriteDraftTemplates(ctx context.Context, arg ListFavoriteDraftTemplatesParams) ([]DraftCartTemplate, error) {
@@ -5153,7 +5153,7 @@ type ListOrdersByStatusRow struct {
 	OrderNumber          string            `json:"order_number"`
 	OrganizationID       int32             `json:"organization_id"`
 	StoreID              pgtype.Int4       `json:"store_id"`
-	CustomerID           pgtype.Int4       `json:"customer_id"`
+	CustomerID           pgtype.UUID       `json:"customer_id"`
 	CustomerName         pgtype.Text       `json:"customer_name"`
 	CustomerEmail        pgtype.Text       `json:"customer_email"`
 	CustomerPhone        pgtype.Text       `json:"customer_phone"`
@@ -5316,7 +5316,7 @@ type ListOverdueInvoicesRow struct {
 	InvoiceNumber      string           `json:"invoice_number"`
 	OrganizationID     int32            `json:"organization_id"`
 	StoreID            pgtype.Int4      `json:"store_id"`
-	CustomerID         pgtype.Int4      `json:"customer_id"`
+	CustomerID         pgtype.UUID      `json:"customer_id"`
 	CustomerName       string           `json:"customer_name"`
 	CustomerEmail      pgtype.Text      `json:"customer_email"`
 	CustomerPhone      pgtype.Text      `json:"customer_phone"`
@@ -5998,7 +5998,7 @@ type ListUnpostedSalesOrdersV2ForSAPRow struct {
 	OrderNumber          string            `json:"order_number"`
 	OrganizationID       int32             `json:"organization_id"`
 	StoreID              pgtype.Int4       `json:"store_id"`
-	CustomerID           pgtype.Int4       `json:"customer_id"`
+	CustomerID           pgtype.UUID       `json:"customer_id"`
 	CustomerName         pgtype.Text       `json:"customer_name"`
 	CustomerEmail        pgtype.Text       `json:"customer_email"`
 	CustomerPhone        pgtype.Text       `json:"customer_phone"`
@@ -6694,7 +6694,7 @@ RETURNING id, cart_number, organization_id, store_id, customer_id, guest_identif
 
 type UpdateCartCustomerParams struct {
 	ID         uuid.UUID   `json:"id"`
-	CustomerID pgtype.Int4 `json:"customer_id"`
+	CustomerID pgtype.UUID `json:"customer_id"`
 }
 
 func (q *Queries) UpdateCartCustomer(ctx context.Context, arg UpdateCartCustomerParams) (Cart, error) {
@@ -8681,7 +8681,7 @@ RETURNING id, order_number, organization_id, store_id, customer_id, customer_nam
 
 type UpdateSalesOrderV2Params struct {
 	ID                   uuid.UUID       `json:"id"`
-	CustomerID           pgtype.Int4     `json:"customer_id"`
+	CustomerID           pgtype.UUID     `json:"customer_id"`
 	CustomerName         pgtype.Text     `json:"customer_name"`
 	CustomerEmail        pgtype.Text     `json:"customer_email"`
 	CustomerPhone        pgtype.Text     `json:"customer_phone"`

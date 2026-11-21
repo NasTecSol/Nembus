@@ -111,5 +111,5 @@ SELECT
 FROM restaurant_order_items roi
 JOIN menu_items mi ON roi.menu_item_id = mi.id
 LEFT JOIN menu_categories mc ON mi.menu_category_id = mc.id
-WHERE roi.order_id = ANY(sqlc.arg(order_ids)::int[])
+WHERE roi.order_id = ANY(sqlc.arg(order_ids)::uuid[])
 ORDER BY roi.order_id, roi.line_number, roi.id;

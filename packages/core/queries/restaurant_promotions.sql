@@ -101,7 +101,7 @@ WHERE id = $1
 RETURNING *;
 
 -- name: LockCustomerRestaurantCouponUsage :exec
-SELECT pg_advisory_xact_lock(hashtext('restaurant_coupon:' || sqlc.arg(store_id)::int::text || ':' || sqlc.arg(customer_id)::int::text || ':' || LOWER(TRIM(sqlc.arg(coupon_code)::text))));
+SELECT pg_advisory_xact_lock(hashtext('restaurant_coupon:' || sqlc.arg(store_id)::int::text || ':' || sqlc.arg(customer_id)::uuid::text || ':' || LOWER(TRIM(sqlc.arg(coupon_code)::text))));
 
 -- name: CountCustomerRestaurantCouponUses :one
 SELECT COUNT(*)::int AS usage_count

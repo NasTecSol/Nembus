@@ -47,8 +47,8 @@ func (q *Queries) LockZatcaChainEntry(ctx context.Context, id int64) error {
 
 // Find an older issued POS invoice for this order. Never issue it again under a
 // new entity type, even if it has not yet been reported.
-func (q *Queries) GetLegacyZatcaOrderTransaction(ctx context.Context, id uuid.UUID) (int32, error) {
-	var transactionID int32
+func (q *Queries) GetLegacyZatcaOrderTransaction(ctx context.Context, id uuid.UUID) (uuid.UUID, error) {
+	var transactionID uuid.UUID
 	err := q.db.QueryRow(ctx, `/* GetLegacyZatcaOrderTransaction */
  SELECT t.id FROM pos_transactions t JOIN zatca_document_chain c
  ON c.entity_type='pos_transaction' AND c.entity_id=t.id::text

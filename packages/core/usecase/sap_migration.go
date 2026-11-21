@@ -62,7 +62,7 @@ func ensureMigrationSchema(pool *pgxpool.Pool) {
 				id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 				organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
 				payment_number VARCHAR(50) UNIQUE NOT NULL,
-				customer_id INTEGER REFERENCES customers(id) ON DELETE SET NULL,
+				customer_id UUID REFERENCES customers(id) ON DELETE SET NULL,
 				customer_code VARCHAR(50),
 				payment_date DATE NOT NULL,
 				payment_amount DECIMAL(15,2) NOT NULL CHECK (payment_amount > 0),
@@ -1325,7 +1325,7 @@ func (uc *SAPMigrationUseCase) IngestBatch(ctx context.Context, orgID int, paylo
 	case contracts.DomainStockMovements:
 		productCache := make(map[string]*int64)
 		storeCache := make(map[string]*int64)
-		refIDCache := make(map[string]*int64)
+		refIDCache := make(map[string]*string)
 		invIDCache := make(map[string]string)
 
 		for idx, sm := range payload.StockMovements {
@@ -1372,7 +1372,7 @@ func (uc *SAPMigrationUseCase) IngestBatch(ctx context.Context, orgID int, paylo
 
 			// A27: resolve reference_id by document type so the movement ledger
 			// (vw_stock_movement_ledger) is not left with dangling references.
-			var referenceID *int64
+			var referenceID *string
 			if sm.ReferenceNumber != "" {
 				cacheKey := sm.ReferenceType + ":" + sm.ReferenceNumber
 				switch sm.ReferenceType {
@@ -1381,7 +1381,7 @@ func (uc *SAPMigrationUseCase) IngestBatch(ctx context.Context, orgID int, paylo
 					referenceID, rCached = refIDCache[cacheKey]
 					if !rCached {
 						_ = queryRowWithSavepoint(ctx, tx, func(r pgx.Row) error { return r.Scan(&referenceID) }, `
-							SELECT id FROM goods_receipt_notes 
+							SELECT id::text FROM goods_receipt_notes 
 							WHERE organization_id = $1 
 							  AND (metadata->>'sap_doc_num' = $2 OR metadata->>'sap_doc_entry' = $2 OR grn_number = 'GRN-' || $2 OR grn_number = $2)
 							LIMIT 1`, payload.OrganizationID, sm.ReferenceNumber)
@@ -1392,13 +1392,13 @@ func (uc *SAPMigrationUseCase) IngestBatch(ctx context.Context, orgID int, paylo
 					referenceID, rCached = refIDCache[cacheKey]
 					if !rCached {
 						err := queryRowWithSavepoint(ctx, tx, func(r pgx.Row) error { return r.Scan(&referenceID) }, `
-							SELECT id FROM goods_receipt_notes 
+							SELECT id::text FROM goods_receipt_notes 
 							WHERE organization_id = $1 
 							  AND (metadata->>'sap_doc_num' = $2 OR metadata->>'sap_doc_entry' = $2)
 							LIMIT 1`, payload.OrganizationID, sm.ReferenceNumber)
 						if err != nil || referenceID == nil {
 							_ = queryRowWithSavepoint(ctx, tx, func(r pgx.Row) error { return r.Scan(&referenceID) }, `
-								SELECT id FROM purchase_orders 
+								SELECT id::text FROM purchase_orders 
 								WHERE organization_id = $1 
 								  AND (metadata->>'sap_doc_num' = $2 OR metadata->>'sap_doc_entry' = $2 OR po_number = 'PO-' || $2)
 								LIMIT 1`, payload.OrganizationID, sm.ReferenceNumber)
@@ -1410,7 +1410,7 @@ func (uc *SAPMigrationUseCase) IngestBatch(ctx context.Context, orgID int, paylo
 					referenceID, rCached = refIDCache[cacheKey]
 					if !rCached {
 						_ = queryRowWithSavepoint(ctx, tx, func(r pgx.Row) error { return r.Scan(&referenceID) }, `
-							SELECT sr.id FROM sales_returns sr
+							SELECT sr.id::text FROM sales_returns sr
 							JOIN stores s ON s.id = sr.store_id
 							WHERE s.organization_id = $1 
 							  AND (sr.metadata->>'sap_doc_num' = $2 OR sr.metadata->>'sap_doc_entry' = $2 OR sr.return_number = 'RET-SAP-' || $2 OR sr.return_number = 'CN-SAP-' || $2 OR sr.return_number = $2)
@@ -1422,7 +1422,7 @@ func (uc *SAPMigrationUseCase) IngestBatch(ctx context.Context, orgID int, paylo
 					referenceID, rCached = refIDCache[cacheKey]
 					if !rCached {
 						_ = queryRowWithSavepoint(ctx, tx, func(r pgx.Row) error { return r.Scan(&referenceID) }, `
-							SELECT id FROM transfer_requests 
+							SELECT id::text FROM transfer_requests 
 							WHERE organization_id = $1 
 							  AND (metadata->>'sap_doc_num' = $2 OR metadata->>'sap_doc_entry' = $2 OR transfer_number = 'TR-SAP-' || $2 OR transfer_number = $2)
 							LIMIT 1`, payload.OrganizationID, sm.ReferenceNumber)

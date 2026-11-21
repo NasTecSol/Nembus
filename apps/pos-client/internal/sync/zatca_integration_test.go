@@ -31,7 +31,7 @@ CREATE TABLE zatca_device_configs(id serial PRIMARY KEY,organization_id int NOT 
 CREATE TABLE zatca_document_chain(id bigserial PRIMARY KEY,entity_type text NOT NULL,entity_id text NOT NULL,device_config_id int NOT NULL REFERENCES zatca_device_configs,organization_id int NOT NULL REFERENCES organizations,
  zatca_uuid uuid NOT NULL,icv bigint NOT NULL,pih text NOT NULL,xml_hash text NOT NULL,zatca_status zatca_doc_status DEFAULT 'pending',zatca_response jsonb DEFAULT '{}',qr_code_base64 text,signed_xml text,
  submitted_at timestamptz,cleared_at timestamptz,created_at timestamp DEFAULT NOW(),updated_at timestamp DEFAULT NOW(),UNIQUE(device_config_id,icv));
-CREATE TABLE sync_queue(id bigserial PRIMARY KEY,entity_type text,entity_id bigint,action text,payload jsonb,status text DEFAULT 'pending',priority int DEFAULT 0,correlation_id text,max_retries int DEFAULT 5,retry_count int DEFAULT 0,last_error text,created_at timestamptz DEFAULT NOW(),synced_at timestamptz);
+CREATE TABLE sync_queue(id bigserial PRIMARY KEY,entity_type text,entity_id text,action text,payload jsonb,status text DEFAULT 'pending',priority int DEFAULT 0,correlation_id text,max_retries int DEFAULT 5,retry_count int DEFAULT 0,last_error text,created_at timestamptz DEFAULT NOW(),synced_at timestamptz);
 CREATE TABLE local_device_config(id serial PRIMARY KEY,store_id int,pos_terminal_id int);
 INSERT INTO organizations VALUES(1),(2);
 INSERT INTO stores VALUES(1,1),(2,2);

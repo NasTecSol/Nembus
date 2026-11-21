@@ -41,8 +41,8 @@ func (q *Queries) LockRestaurantCart(ctx context.Context, id uuid.UUID) (uuid.UU
 
 // LockRestaurantOrder acquires a row-level FOR UPDATE lock on the restaurant_orders
 // row so concurrent status changes, stock reversals, and settlements serialize.
-func (q *Queries) LockRestaurantOrder(ctx context.Context, id int32) (int32, error) {
-	var lockedID int32
+func (q *Queries) LockRestaurantOrder(ctx context.Context, id uuid.UUID) (uuid.UUID, error) {
+	var lockedID uuid.UUID
 	err := q.db.QueryRow(ctx, `/* LockRestaurantOrder */ SELECT id FROM restaurant_orders WHERE id = $1 FOR UPDATE`, id).Scan(&lockedID)
 	return lockedID, err
 }
