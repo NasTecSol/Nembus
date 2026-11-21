@@ -524,8 +524,9 @@ func ensureJSONArray(raw json.RawMessage) json.RawMessage {
 	return raw
 }
 
-func generateRestaurantRef(prefix string) string {
-	return GenerateTerminalDocNumber(prefix, "POS")
+func generateRestaurantRef(ctx context.Context, q *repository.Queries, prefix string, posTerminalID int32) string {
+	term := LookupTerminalCode(ctx, q, posTerminalID, "POS")
+	return GenerateTerminalDocNumber(prefix, term)
 }
 
 func restaurantCartToOutput(c repository.RestaurantCart) RestaurantCartOutput {
@@ -947,7 +948,7 @@ func (uc *RestaurantCartUseCase) CreateCart(ctx context.Context, input Restauran
 	return uc.withTx(ctx, func(q *repository.Queries) *repository.Response {
 		cartNumber := strings.TrimSpace(input.CartNumber)
 		if cartNumber == "" {
-			cartNumber = generateRestaurantRef("RCART")
+			cartNumber = generateRestaurantRef(ctx, q, "RCART", utils.DerefInt32(input.PosTerminalID))
 		}
 		orderType := strings.TrimSpace(input.OrderType)
 		if orderType == "" {
@@ -1375,7 +1376,7 @@ func (uc *RestaurantCartUseCase) AddToCart(ctx context.Context, input Restaurant
 				}
 				orgID := resolveStoreOrganizationID(ctx, q, input.StoreID, input.OrganizationID)
 				cart, err = q.CreateRestaurantCart(ctx, repository.CreateRestaurantCartParams{
-					CartNumber:      pgtype.Text{String: generateRestaurantRef("RCART"), Valid: true},
+					CartNumber:      pgtype.Text{String: generateRestaurantRef(ctx, q, "RCART", utils.DerefInt32(input.PosTerminalID)), Valid: true},
 					OrganizationID:  orgID,
 					StoreID:         input.StoreID,
 					TableID:         utils.Int32ToPgInt4(input.TableID),
@@ -1848,7 +1849,11 @@ func (uc *RestaurantCartUseCase) ConvertToOrder(ctx context.Context, input Resta
 
 		orderNumber := strings.TrimSpace(input.OrderNumber)
 		if orderNumber == "" {
-			orderNumber = generateRestaurantRef("RORD")
+			termID := int32(0)
+			if posTerminalID.Valid {
+				termID = posTerminalID.Int32
+			}
+			orderNumber = generateRestaurantRef(ctx, q, "RORD", termID)
 		}
 		orderSource := strings.TrimSpace(input.OrderSource)
 		if orderSource == "" {
@@ -2153,7 +2158,7 @@ func reopenOrderToCartInTx(ctx context.Context, q *repository.Queries, orderID u
 
 	if reopenedCart.ID == uuid.Nil {
 		c, err := q.CreateRestaurantCart(ctx, repository.CreateRestaurantCartParams{
-			CartNumber:      pgtype.Text{String: generateRestaurantRef("RCART"), Valid: true},
+			CartNumber:      pgtype.Text{String: generateRestaurantRef(ctx, q, "RCART", utils.DerefInt32(utils.Int4ToPtr(order.PosTerminalID))), Valid: true},
 			OrganizationID:  orgID,
 			StoreID:         order.StoreID,
 			TableID:         order.TableID,
@@ -2283,7 +2288,7 @@ func (uc *RestaurantCartUseCase) CreateOrderWithItems(ctx context.Context, input
 
 		orderNumber := strings.TrimSpace(input.OrderNumber)
 		if orderNumber == "" {
-			orderNumber = generateRestaurantRef("RORD")
+			orderNumber = generateRestaurantRef(ctx, q, "RORD", utils.DerefInt32(input.PosTerminalID))
 		}
 		orderSource := strings.TrimSpace(input.OrderSource)
 		if orderSource == "" {

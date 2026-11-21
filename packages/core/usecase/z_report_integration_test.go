@@ -157,9 +157,10 @@ INSERT INTO sales_returns VALUES
 		assertMoney("empty cash", r.Drawer.CalculatedExpectedCash, "100.00")
 	})
 	t.Run("missing payments and unknown refund", func(t *testing.T) {
-		_, err := tx.Exec(ctx, `INSERT INTO pos_transactions VALUES ($1,$2,3,12,7,'sale','completed',10,0,0,0,'{}');
-INSERT INTO sales_returns VALUES ($2,3,12,'completed',2,0,NULL)`, txn(7), s846)
-		if err != nil {
+		if _, err := tx.Exec(ctx, `INSERT INTO pos_transactions VALUES ($1,$2,3,12,7,'sale','completed',10,0,0,0,'{}')`, txn(7), s846); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tx.Exec(ctx, `INSERT INTO sales_returns VALUES ($1,3,12,'completed',2,0,NULL)`, s846); err != nil {
 			t.Fatal(err)
 		}
 		f := filters
