@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/NasTecSol/nembus-client/utils"
@@ -66,5 +67,12 @@ func (h *PrintHandler) PrintReceipt(c *gin.Context) {
 	}
 
 	resp := h.useCase.PrintReceipt(c.Request.Context(), req)
+	if resp.StatusCode >= http.StatusInternalServerError {
+		msg := resp.Message
+		if msg == "" {
+			msg = "receipt print failed"
+		}
+		_ = c.Error(errors.New(msg))
+	}
 	c.JSON(resp.StatusCode, resp)
 }

@@ -274,12 +274,11 @@ func (s *Server) startDownstreamScheduler() {
 		func(c *config.AgentConfig) int { return c.DownstreamIntervalSec },
 		s.isDownstreamAutoActive,
 		func(interval int) {
-			log.Printf("[SAP-AGENT] Running scheduled downstream master data sync (interval: %ds)...", interval)
 			if stats, err := s.runDownstreamSync(context.Background(), DownstreamMasterDomains); err != nil {
 				log.Printf("[SAP-AGENT] Scheduled downstream sync notice: %v", err)
-			} else if stats != nil {
-				log.Printf("[SAP-AGENT] Scheduled downstream sync completed: %d uoms, %d products, %d barcodes, %d prices in %v",
-					stats.UOMs, stats.Products, stats.Barcodes, stats.Prices, stats.Duration)
+			} else if stats != nil && (stats.UOMs+stats.Products+stats.Barcodes+stats.Prices > 0) {
+				log.Printf("[SAP-AGENT] Scheduled downstream sync completed (interval: %ds): %d uoms, %d products, %d barcodes, %d prices in %v",
+					interval, stats.UOMs, stats.Products, stats.Barcodes, stats.Prices, stats.Duration)
 			}
 		},
 	)
