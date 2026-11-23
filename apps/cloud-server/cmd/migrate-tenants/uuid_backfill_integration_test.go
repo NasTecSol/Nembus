@@ -223,9 +223,14 @@ func TestUUIDBackfillAndUpgradePaths(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 		defer cancel()
 
-		posM1SQLText := m1UUIDSQL
+		posM1Path := filepath.Join(posMigrationsDir, "20261121120000_m1_uuid_push_entities.sql")
+		posM1SQL, err := os.ReadFile(posM1Path)
+		if err != nil {
+			t.Fatalf("read POS M1 UUID migration %s: %v", posM1Path, err)
+		}
+		posM1SQLText := stripGooseUpSQL(string(posM1SQL))
 		if strings.TrimSpace(posM1SQLText) == "" {
-			t.Fatal("M1 UUID section missing from initial schema")
+			t.Fatalf("POS M1 UUID migration file empty: %s", posM1Path)
 		}
 
 		dbURL, pool := createDisposableDB(t, ctx, baseURL, "pathc")
@@ -262,7 +267,7 @@ func TestUUIDBackfillAndUpgradePaths(t *testing.T) {
 		}
 		snap.preCounts["sync_queue"]++
 
-		// Apply M1 UUID section from synced POS initial migration + updated 99999999999999_pos_extensions.sql.
+		// Apply the versioned POS M1 migration + updated 99999999999999_pos_extensions.sql.
 		posM1Body := posM1SQLText
 		if _, err := pool.Exec(ctx, posM1Body); err != nil {
 			t.Fatalf("apply POS M1 UUID section: %v", err)
