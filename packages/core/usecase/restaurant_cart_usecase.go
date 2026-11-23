@@ -525,7 +525,7 @@ func ensureJSONArray(raw json.RawMessage) json.RawMessage {
 }
 
 func generateRestaurantRef(ctx context.Context, q *repository.Queries, prefix string, posTerminalID int32) string {
-	term := LookupTerminalCode(ctx, q, posTerminalID, "POS")
+	term := LookupTerminalCode(ctx, q, posTerminalID, "")
 	return GenerateTerminalDocNumber(prefix, term)
 }
 

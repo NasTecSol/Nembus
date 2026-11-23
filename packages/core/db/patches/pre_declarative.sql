@@ -358,4 +358,85 @@ BEGIN
     END IF;
 END $$;
 
+-- Pending SAP stock approvals and queued POS receipt events retain numeric
+-- transaction IDs in JSON or polymorphic entity references.
+DO $$
+BEGIN
+    IF to_regclass('public.approval_requests') IS NOT NULL THEN
+        UPDATE public.approval_requests
+        SET payload = jsonb_set(
+            payload,
+            '{transaction_id}',
+            to_jsonb(pg_temp.det_uuid('pos_transactions', (payload->>'transaction_id')::bigint)::text),
+            true
+        )
+        WHERE payload ? 'transaction_id'
+          AND (payload->>'transaction_id') ~ '^[0-9]+$';
+    END IF;
+
+    IF to_regclass('public.notification_events') IS NOT NULL THEN
+        WITH candidates AS (
+            SELECT
+                e.id,
+                pg_temp.det_uuid(
+                    'pos_transactions',
+                    CASE
+                        WHEN (e.payload->>'transaction_id') ~ '^[0-9]+$'
+                            THEN (e.payload->>'transaction_id')::bigint
+                        WHEN e.entity_id ~ '^[0-9]+$'
+                            THEN e.entity_id::bigint
+                        ELSE split_part(e.idempotency_key, ':', 2)::bigint
+                    END
+                )::text AS transaction_uuid,
+                COALESCE(NULLIF(e.payload->>'transaction_number', ''), split_part(e.idempotency_key, ':', 3)) AS transaction_number,
+                e.idempotency_key,
+                e.created_at
+            FROM public.notification_events e
+            WHERE e.event_type_id = 'pos.receipt'
+              AND e.entity_type = 'pos_transaction'
+              AND (
+                  (e.payload->>'transaction_id') ~ '^[0-9]+$'
+                  OR e.entity_id ~ '^[0-9]+$'
+                  OR (split_part(e.idempotency_key, ':', 2)) ~ '^[0-9]+$'
+              )
+        ), ranked AS (
+            SELECT
+                c.*,
+                'pos.receipt:' || c.transaction_uuid || ':' || c.transaction_number AS canonical_key,
+                row_number() OVER (
+                    PARTITION BY 'pos.receipt:' || c.transaction_uuid || ':' || c.transaction_number
+                    ORDER BY (c.idempotency_key = 'pos.receipt:' || c.transaction_uuid || ':' || c.transaction_number) DESC,
+                             c.created_at ASC,
+                             c.id ASC
+                ) AS key_rank
+            FROM candidates c
+        )
+        UPDATE public.notification_events e
+        SET payload = jsonb_set(e.payload, '{transaction_id}', to_jsonb(r.transaction_uuid), true),
+            entity_id = r.transaction_uuid,
+            idempotency_key = CASE
+                WHEN r.key_rank = 1 AND NOT EXISTS (
+                    SELECT 1
+                    FROM public.notification_events existing
+                    WHERE existing.event_type_id = 'pos.receipt'
+                      AND existing.idempotency_key = r.canonical_key
+                      AND existing.id <> e.id
+                ) THEN r.canonical_key
+                ELSE 'pos.receipt:deduped:' || e.id::text
+            END,
+            status = CASE
+                WHEN r.key_rank = 1 AND NOT EXISTS (
+                    SELECT 1
+                    FROM public.notification_events existing
+                    WHERE existing.event_type_id = 'pos.receipt'
+                      AND existing.idempotency_key = r.canonical_key
+                      AND existing.id <> e.id
+                ) THEN e.status
+                ELSE 'completed'
+            END
+        FROM ranked r
+        WHERE e.id = r.id;
+    END IF;
+END $$;
+
 DROP FUNCTION IF EXISTS pg_temp.det_uuid(text, bigint);
