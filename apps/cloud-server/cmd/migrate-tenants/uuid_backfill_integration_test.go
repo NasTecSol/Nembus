@@ -267,7 +267,7 @@ func TestUUIDBackfillAndUpgradePaths(t *testing.T) {
 		}
 		snap.preCounts["sync_queue"]++
 
-		// Apply M1 UUID section from synced POS initial migration + updated 99999999999999_pos_extensions.sql.
+		// Apply the versioned POS M1 migration + updated 99999999999999_pos_extensions.sql.
 		posM1Body := posM1SQLText
 		if _, err := pool.Exec(ctx, posM1Body); err != nil {
 			t.Fatalf("apply POS M1 UUID section: %v", err)

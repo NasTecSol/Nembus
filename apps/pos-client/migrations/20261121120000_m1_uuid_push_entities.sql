@@ -1,8 +1,6 @@
 -- +goose Up
 -- @nembus:m1_uuid_push_entities_begin
--- M1 UUID push entities (runs on new installs and as Goose 20261121120000 on existing POS DBs).
--- Legacy installs that already applied this block inside initial_schema skip via goose version only once;
--- cloud/tenant migrate paths apply this Atlas migration directly.
+-- M1 UUID push entities upgrade for existing databases.
 -- =====================================================================
 
 -- +goose StatementBegin
@@ -1786,5 +1784,70 @@ SET payload = jsonb_set(
 )
 WHERE payload ? 'transaction_id'
   AND (payload->>'transaction_id') ~ '^[0-9]+$';
+
+-- Keep queued POS receipt references and idempotency keys aligned with the
+-- UUID transaction ID. If a UUID-keyed event already exists, archive the
+-- numeric-key event as completed so a later sync cannot send a second receipt.
+WITH candidates AS (
+    SELECT
+        e.id,
+        pg_temp.det_uuid(
+            'pos_transactions',
+            CASE
+                WHEN (e.payload->>'transaction_id') ~ '^[0-9]+$'
+                    THEN (e.payload->>'transaction_id')::bigint
+                WHEN e.entity_id ~ '^[0-9]+$'
+                    THEN e.entity_id::bigint
+                ELSE split_part(e.idempotency_key, ':', 2)::bigint
+            END
+        )::text AS transaction_uuid,
+        COALESCE(NULLIF(e.payload->>'transaction_number', ''), split_part(e.idempotency_key, ':', 3)) AS transaction_number,
+        e.idempotency_key,
+        e.created_at
+    FROM public.notification_events e
+    WHERE e.event_type_id = 'pos.receipt'
+      AND e.entity_type = 'pos_transaction'
+      AND (
+          (e.payload->>'transaction_id') ~ '^[0-9]+$'
+          OR e.entity_id ~ '^[0-9]+$'
+          OR (split_part(e.idempotency_key, ':', 2)) ~ '^[0-9]+$'
+      )
+), ranked AS (
+    SELECT
+        c.*,
+        'pos.receipt:' || c.transaction_uuid || ':' || c.transaction_number AS canonical_key,
+        row_number() OVER (
+            PARTITION BY 'pos.receipt:' || c.transaction_uuid || ':' || c.transaction_number
+            ORDER BY (c.idempotency_key = 'pos.receipt:' || c.transaction_uuid || ':' || c.transaction_number) DESC,
+                     c.created_at ASC,
+                     c.id ASC
+        ) AS key_rank
+    FROM candidates c
+)
+UPDATE public.notification_events e
+SET payload = jsonb_set(e.payload, '{transaction_id}', to_jsonb(r.transaction_uuid), true),
+    entity_id = r.transaction_uuid,
+    idempotency_key = CASE
+        WHEN r.key_rank = 1 AND NOT EXISTS (
+            SELECT 1
+            FROM public.notification_events existing
+            WHERE existing.event_type_id = 'pos.receipt'
+              AND existing.idempotency_key = r.canonical_key
+              AND existing.id <> e.id
+        ) THEN r.canonical_key
+        ELSE 'pos.receipt:deduped:' || e.id::text
+    END,
+    status = CASE
+        WHEN r.key_rank = 1 AND NOT EXISTS (
+            SELECT 1
+            FROM public.notification_events existing
+            WHERE existing.event_type_id = 'pos.receipt'
+              AND existing.idempotency_key = r.canonical_key
+              AND existing.id <> e.id
+        ) THEN e.status
+        ELSE 'completed'
+    END
+FROM ranked r
+WHERE e.id = r.id;
 
 DROP FUNCTION IF EXISTS pg_temp.det_uuid(text, bigint);
