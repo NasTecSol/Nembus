@@ -223,14 +223,9 @@ func TestUUIDBackfillAndUpgradePaths(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 		defer cancel()
 
-		posM1Path := filepath.Join(posMigrationsDir, "20261121120000_m1_uuid_push_entities.sql")
-		posM1SQL, err := os.ReadFile(posM1Path)
-		if err != nil {
-			t.Fatalf("read POS M1 UUID migration %s: %v", posM1Path, err)
-		}
-		posM1SQLText := stripGooseUpSQL(string(posM1SQL))
+		posM1SQLText := m1UUIDSQL
 		if strings.TrimSpace(posM1SQLText) == "" {
-			t.Fatalf("POS M1 UUID migration file empty: %s", posM1Path)
+			t.Fatal("M1 UUID section missing from initial schema")
 		}
 
 		dbURL, pool := createDisposableDB(t, ctx, baseURL, "pathc")

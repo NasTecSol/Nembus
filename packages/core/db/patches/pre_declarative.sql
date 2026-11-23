@@ -358,4 +358,40 @@ BEGIN
     END IF;
 END $$;
 
+-- Pending SAP stock approvals and queued POS receipt events retain numeric
+-- transaction IDs in JSON or polymorphic entity references.
+DO $$
+BEGIN
+    IF to_regclass('public.approval_requests') IS NOT NULL THEN
+        UPDATE public.approval_requests
+        SET payload = jsonb_set(
+            payload,
+            '{transaction_id}',
+            to_jsonb(pg_temp.det_uuid('pos_transactions', (payload->>'transaction_id')::bigint)::text),
+            true
+        )
+        WHERE payload ? 'transaction_id'
+          AND (payload->>'transaction_id') ~ '^[0-9]+$';
+    END IF;
+
+    IF to_regclass('public.notification_events') IS NOT NULL THEN
+        UPDATE public.notification_events
+        SET payload = jsonb_set(
+            payload,
+            '{transaction_id}',
+            to_jsonb(pg_temp.det_uuid('pos_transactions', (payload->>'transaction_id')::bigint)::text),
+            true
+        )
+        WHERE event_type_id = 'pos.receipt'
+          AND payload ? 'transaction_id'
+          AND (payload->>'transaction_id') ~ '^[0-9]+$';
+
+        UPDATE public.notification_events
+        SET entity_id = pg_temp.det_uuid('pos_transactions', entity_id::bigint)::text
+        WHERE event_type_id = 'pos.receipt'
+          AND entity_type = 'pos_transaction'
+          AND entity_id ~ '^[0-9]+$';
+    END IF;
+END $$;
+
 DROP FUNCTION IF EXISTS pg_temp.det_uuid(text, bigint);
