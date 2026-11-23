@@ -59,7 +59,7 @@ CREATE TABLE IF NOT EXISTS customer_payments (
     id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     organization_id   INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
     payment_number    VARCHAR(50) UNIQUE NOT NULL,
-    customer_id       INTEGER REFERENCES customers(id) ON DELETE SET NULL,
+    customer_id       UUID REFERENCES customers(id) ON DELETE SET NULL,
     customer_code     VARCHAR(50),
     payment_date      DATE NOT NULL,
     payment_amount    DECIMAL(15,2) NOT NULL CHECK (payment_amount > 0),

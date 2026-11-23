@@ -612,7 +612,7 @@ type Cart struct {
 	CartNumber         string           `json:"cart_number"`
 	OrganizationID     int32            `json:"organization_id"`
 	StoreID            pgtype.Int4      `json:"store_id"`
-	CustomerID         pgtype.Int4      `json:"customer_id"`
+	CustomerID         pgtype.UUID      `json:"customer_id"`
 	GuestIdentifier    pgtype.Text      `json:"guest_identifier"`
 	GuestEmail         pgtype.Text      `json:"guest_email"`
 	GuestPhone         pgtype.Text      `json:"guest_phone"`
@@ -699,7 +699,7 @@ type Cashier struct {
 }
 
 type CashierSession struct {
-	ID                   int32            `json:"id"`
+	ID                   uuid.UUID        `json:"id"`
 	CashierID            int32            `json:"cashier_id"`
 	PosTerminalID        int32            `json:"pos_terminal_id"`
 	SessionNumber        string           `json:"session_number"`
@@ -720,7 +720,7 @@ type CashierSession struct {
 type ChangeLog struct {
 	Seq        int64           `json:"seq"`
 	EntityType string          `json:"entity_type"`
-	EntityID   int64           `json:"entity_id"`
+	EntityID   string          `json:"entity_id"`
 	Op         string          `json:"op"`
 	Payload    json.RawMessage `json:"payload"`
 	ChangedAt  time.Time       `json:"changed_at"`
@@ -797,7 +797,7 @@ type Currency struct {
 }
 
 type Customer struct {
-	ID                 int32            `json:"id"`
+	ID                 uuid.UUID        `json:"id"`
 	OrganizationID     int32            `json:"organization_id"`
 	CustomerCode       string           `json:"customer_code"`
 	Name               string           `json:"name"`
@@ -818,7 +818,7 @@ type Customer struct {
 
 type CustomerAddress struct {
 	ID          int32            `json:"id"`
-	CustomerID  int32            `json:"customer_id"`
+	CustomerID  uuid.UUID        `json:"customer_id"`
 	AddressType string           `json:"address_type"`
 	AddressLine pgtype.Text      `json:"address_line"`
 	Street      pgtype.Text      `json:"street"`
@@ -837,7 +837,7 @@ type CustomerPayment struct {
 	ID               uuid.UUID        `json:"id"`
 	OrganizationID   int32            `json:"organization_id"`
 	PaymentNumber    string           `json:"payment_number"`
-	CustomerID       pgtype.Int4      `json:"customer_id"`
+	CustomerID       pgtype.UUID      `json:"customer_id"`
 	CustomerCode     pgtype.Text      `json:"customer_code"`
 	PaymentDate      pgtype.Date      `json:"payment_date"`
 	PaymentAmount    pgtype.Numeric   `json:"payment_amount"`
@@ -875,7 +875,7 @@ type DiscountAnalytic struct {
 type DraftCartTemplate struct {
 	ID                   uuid.UUID        `json:"id"`
 	OrganizationID       int32            `json:"organization_id"`
-	CustomerID           int32            `json:"customer_id"`
+	CustomerID           uuid.UUID        `json:"customer_id"`
 	TemplateName         string           `json:"template_name"`
 	Description          pgtype.Text      `json:"description"`
 	TemplateType         pgtype.Text      `json:"template_type"`
@@ -1017,7 +1017,7 @@ type Invoice struct {
 	InvoiceNumber      string           `json:"invoice_number"`
 	OrganizationID     int32            `json:"organization_id"`
 	StoreID            pgtype.Int4      `json:"store_id"`
-	CustomerID         pgtype.Int4      `json:"customer_id"`
+	CustomerID         pgtype.UUID      `json:"customer_id"`
 	CustomerName       string           `json:"customer_name"`
 	CustomerEmail      pgtype.Text      `json:"customer_email"`
 	CustomerPhone      pgtype.Text      `json:"customer_phone"`
@@ -1143,7 +1143,7 @@ type JournalLine struct {
 }
 
 type KioskSession struct {
-	ID            int32            `json:"id"`
+	ID            uuid.UUID        `json:"id"`
 	PosTerminalID int32            `json:"pos_terminal_id"`
 	StoreID       int32            `json:"store_id"`
 	SessionToken  string           `json:"session_token"`
@@ -1493,8 +1493,8 @@ type Permission struct {
 }
 
 type PosPayment struct {
-	ID               int32            `json:"id"`
-	TransactionID    int32            `json:"transaction_id"`
+	ID               uuid.UUID        `json:"id"`
+	TransactionID    uuid.UUID        `json:"transaction_id"`
 	PaymentMethod    string           `json:"payment_method"`
 	PaymentGateway   pgtype.Text      `json:"payment_gateway"`
 	Amount           pgtype.Numeric   `json:"amount"`
@@ -1531,11 +1531,11 @@ type PosTerminal struct {
 }
 
 type PosTransaction struct {
-	ID                int32            `json:"id"`
+	ID                uuid.UUID        `json:"id"`
 	StoreID           int32            `json:"store_id"`
 	CashierID         int32            `json:"cashier_id"`
-	CashierSessionID  int32            `json:"cashier_session_id"`
-	CustomerID        pgtype.Int4      `json:"customer_id"`
+	CashierSessionID  uuid.UUID        `json:"cashier_session_id"`
+	CustomerID        pgtype.UUID      `json:"customer_id"`
 	PosTerminalID     pgtype.Int4      `json:"pos_terminal_id"`
 	TransactionNumber string           `json:"transaction_number"`
 	TransactionDate   pgtype.Timestamp `json:"transaction_date"`
@@ -1559,8 +1559,8 @@ type PosTransaction struct {
 }
 
 type PosTransactionLine struct {
-	ID               int32            `json:"id"`
-	TransactionID    int32            `json:"transaction_id"`
+	ID               uuid.UUID        `json:"id"`
+	TransactionID    uuid.UUID        `json:"transaction_id"`
 	ProductID        pgtype.Int4      `json:"product_id"`
 	ProductVariantID pgtype.Int4      `json:"product_variant_id"`
 	Quantity         pgtype.Numeric   `json:"quantity"`
@@ -1862,7 +1862,7 @@ type Quote struct {
 	QuoteNumber        string           `json:"quote_number"`
 	OrganizationID     int32            `json:"organization_id"`
 	StoreID            pgtype.Int4      `json:"store_id"`
-	CustomerID         pgtype.Int4      `json:"customer_id"`
+	CustomerID         pgtype.UUID      `json:"customer_id"`
 	CustomerName       string           `json:"customer_name"`
 	CustomerEmail      pgtype.Text      `json:"customer_email"`
 	CustomerPhone      pgtype.Text      `json:"customer_phone"`
@@ -1947,7 +1947,7 @@ type RestaurantCart struct {
 	StoreID            int32            `json:"store_id"`
 	TableID            pgtype.Int4      `json:"table_id"`
 	OrderType          string           `json:"order_type"`
-	CustomerID         pgtype.Int4      `json:"customer_id"`
+	CustomerID         pgtype.UUID      `json:"customer_id"`
 	GuestIdentifier    pgtype.Text      `json:"guest_identifier"`
 	GuestName          pgtype.Text      `json:"guest_name"`
 	GuestEmail         pgtype.Text      `json:"guest_email"`
@@ -1960,7 +1960,7 @@ type RestaurantCart struct {
 	CreatedByUserID    pgtype.Int4      `json:"created_by_user_id"`
 	CashierID          pgtype.Int4      `json:"cashier_id"`
 	PosTerminalID      pgtype.Int4      `json:"pos_terminal_id"`
-	KioskSessionID     pgtype.Int4      `json:"kiosk_session_id"`
+	KioskSessionID     pgtype.UUID      `json:"kiosk_session_id"`
 	Subtotal           pgtype.Numeric   `json:"subtotal"`
 	DiscountAmount     pgtype.Numeric   `json:"discount_amount"`
 	TaxAmount          pgtype.Numeric   `json:"tax_amount"`
@@ -1968,7 +1968,7 @@ type RestaurantCart struct {
 	CouponCode         pgtype.Text      `json:"coupon_code"`
 	DiscountCode       pgtype.Text      `json:"discount_code"`
 	DeliveryAddress    json.RawMessage  `json:"delivery_address"`
-	ConvertedToOrderID pgtype.Int4      `json:"converted_to_order_id"`
+	ConvertedToOrderID pgtype.UUID      `json:"converted_to_order_id"`
 	ConvertedAt        pgtype.Timestamp `json:"converted_at"`
 	LastActivityAt     pgtype.Timestamp `json:"last_activity_at"`
 	ExpiresAt          pgtype.Timestamp `json:"expires_at"`
@@ -2002,15 +2002,15 @@ type RestaurantCartItem struct {
 }
 
 type RestaurantOrder struct {
-	ID               int32            `json:"id"`
+	ID               uuid.UUID        `json:"id"`
 	OrganizationID   pgtype.Int4      `json:"organization_id"`
 	StoreID          int32            `json:"store_id"`
 	TableID          pgtype.Int4      `json:"table_id"`
 	CashierID        pgtype.Int4      `json:"cashier_id"`
-	CashierSessionID pgtype.Int4      `json:"cashier_session_id"`
-	CustomerID       pgtype.Int4      `json:"customer_id"`
+	CashierSessionID pgtype.UUID      `json:"cashier_session_id"`
+	CustomerID       pgtype.UUID      `json:"customer_id"`
 	PosTerminalID    pgtype.Int4      `json:"pos_terminal_id"`
-	KioskSessionID   pgtype.Int4      `json:"kiosk_session_id"`
+	KioskSessionID   pgtype.UUID      `json:"kiosk_session_id"`
 	CreatedByUserID  pgtype.Int4      `json:"created_by_user_id"`
 	SourceCartID     pgtype.UUID      `json:"source_cart_id"`
 	OrderNumber      string           `json:"order_number"`
@@ -2031,7 +2031,7 @@ type RestaurantOrder struct {
 	CouponCode       pgtype.Text      `json:"coupon_code"`
 	DiscountCode     pgtype.Text      `json:"discount_code"`
 	Notes            pgtype.Text      `json:"notes"`
-	PosTransactionID pgtype.Int4      `json:"pos_transaction_id"`
+	PosTransactionID pgtype.UUID      `json:"pos_transaction_id"`
 	OrderedAt        pgtype.Timestamp `json:"ordered_at"`
 	ConfirmedAt      pgtype.Timestamp `json:"confirmed_at"`
 	ServedAt         pgtype.Timestamp `json:"served_at"`
@@ -2042,8 +2042,8 @@ type RestaurantOrder struct {
 }
 
 type RestaurantOrderItem struct {
-	ID                      int32            `json:"id"`
-	OrderID                 int32            `json:"order_id"`
+	ID                      uuid.UUID        `json:"id"`
+	OrderID                 uuid.UUID        `json:"order_id"`
 	MenuItemID              int32            `json:"menu_item_id"`
 	MenuItemName            pgtype.Text      `json:"menu_item_name"`
 	Quantity                pgtype.Numeric   `json:"quantity"`
@@ -2068,7 +2068,7 @@ type RestaurantOrderItem struct {
 
 type RestaurantOrderStatusHistory struct {
 	ID                int64            `json:"id"`
-	RestaurantOrderID int32            `json:"restaurant_order_id"`
+	RestaurantOrderID uuid.UUID        `json:"restaurant_order_id"`
 	StoreID           int32            `json:"store_id"`
 	FromStatus        pgtype.Text      `json:"from_status"`
 	ToStatus          string           `json:"to_status"`
@@ -2228,7 +2228,7 @@ type SalesAnalytic struct {
 	StoreID           pgtype.Int4      `json:"store_id"`
 	ProductID         pgtype.Int4      `json:"product_id"`
 	CategoryID        pgtype.Int4      `json:"category_id"`
-	CustomerID        pgtype.Int4      `json:"customer_id"`
+	CustomerID        pgtype.UUID      `json:"customer_id"`
 	Date              pgtype.Date      `json:"date"`
 	Hour              pgtype.Int4      `json:"hour"`
 	DayOfWeek         pgtype.Int4      `json:"day_of_week"`
@@ -2253,7 +2253,7 @@ type SalesOrder struct {
 	ID             int32            `json:"id"`
 	OrganizationID int32            `json:"organization_id"`
 	OrderNumber    string           `json:"order_number"`
-	CustomerID     pgtype.Int4      `json:"customer_id"`
+	CustomerID     pgtype.UUID      `json:"customer_id"`
 	StoreID        int32            `json:"store_id"`
 	OrderDate      pgtype.Date      `json:"order_date"`
 	DeliveryDate   pgtype.Date      `json:"delivery_date"`
@@ -2327,7 +2327,7 @@ type SalesOrdersV2 struct {
 	OrderNumber          string            `json:"order_number"`
 	OrganizationID       int32             `json:"organization_id"`
 	StoreID              pgtype.Int4       `json:"store_id"`
-	CustomerID           pgtype.Int4       `json:"customer_id"`
+	CustomerID           pgtype.UUID       `json:"customer_id"`
 	CustomerName         pgtype.Text       `json:"customer_name"`
 	CustomerEmail        pgtype.Text       `json:"customer_email"`
 	CustomerPhone        pgtype.Text       `json:"customer_phone"`
@@ -2382,13 +2382,13 @@ type SalesOrdersV2 struct {
 }
 
 type SalesReturn struct {
-	ID                    int32            `json:"id"`
+	ID                    uuid.UUID        `json:"id"`
 	ReturnNumber          string           `json:"return_number"`
 	StoreID               int32            `json:"store_id"`
 	CashierID             pgtype.Int4      `json:"cashier_id"`
-	CashierSessionID      pgtype.Int4      `json:"cashier_session_id"`
-	CustomerID            pgtype.Int4      `json:"customer_id"`
-	OriginalTransactionID pgtype.Int4      `json:"original_transaction_id"`
+	CashierSessionID      pgtype.UUID      `json:"cashier_session_id"`
+	CustomerID            pgtype.UUID      `json:"customer_id"`
+	OriginalTransactionID pgtype.UUID      `json:"original_transaction_id"`
 	ReturnDate            pgtype.Timestamp `json:"return_date"`
 	ReturnReason          pgtype.Text      `json:"return_reason"`
 	Status                pgtype.Text      `json:"status"`
@@ -2405,11 +2405,11 @@ type SalesReturn struct {
 }
 
 type SalesReturnLine struct {
-	ID               int32            `json:"id"`
-	ReturnID         int32            `json:"return_id"`
+	ID               uuid.UUID        `json:"id"`
+	ReturnID         uuid.UUID        `json:"return_id"`
 	ProductID        int32            `json:"product_id"`
 	ProductVariantID pgtype.Int4      `json:"product_variant_id"`
-	OriginalLineID   pgtype.Int4      `json:"original_line_id"`
+	OriginalLineID   pgtype.UUID      `json:"original_line_id"`
 	Quantity         pgtype.Numeric   `json:"quantity"`
 	UnitPrice        pgtype.Numeric   `json:"unit_price"`
 	RefundAmount     pgtype.Numeric   `json:"refund_amount"`
@@ -2735,7 +2735,7 @@ type StagingSapStore struct {
 }
 
 type StockCount struct {
-	ID                int32            `json:"id"`
+	ID                uuid.UUID        `json:"id"`
 	CountNumber       string           `json:"count_number"`
 	StoreID           int32            `json:"store_id"`
 	StorageLocationID pgtype.Int4      `json:"storage_location_id"`
@@ -2752,8 +2752,8 @@ type StockCount struct {
 }
 
 type StockCountLine struct {
-	ID                int32            `json:"id"`
-	StockCountID      int32            `json:"stock_count_id"`
+	ID                uuid.UUID        `json:"id"`
+	StockCountID      uuid.UUID        `json:"stock_count_id"`
 	ProductID         int32            `json:"product_id"`
 	ProductVariantID  pgtype.Int4      `json:"product_variant_id"`
 	StorageLocationID pgtype.Int4      `json:"storage_location_id"`
@@ -2772,10 +2772,10 @@ type StockCountLine struct {
 }
 
 type StockMovement struct {
-	ID               int32            `json:"id"`
+	ID               uuid.UUID        `json:"id"`
 	MovementType     string           `json:"movement_type"`
 	ReferenceType    pgtype.Text      `json:"reference_type"`
-	ReferenceID      pgtype.Int4      `json:"reference_id"`
+	ReferenceID      pgtype.Text      `json:"reference_id"`
 	ProductID        int32            `json:"product_id"`
 	ProductVariantID pgtype.Int4      `json:"product_variant_id"`
 	FromStoreID      pgtype.Int4      `json:"from_store_id"`
@@ -2881,7 +2881,7 @@ type SyncInbox struct {
 	StoreID    int32       `json:"store_id"`
 	BatchID    pgtype.Text `json:"batch_id"`
 	EntityType string      `json:"entity_type"`
-	EntityID   int64       `json:"entity_id"`
+	EntityID   string      `json:"entity_id"`
 	AppliedAt  time.Time   `json:"applied_at"`
 }
 
@@ -3017,7 +3017,7 @@ type User struct {
 }
 
 type UserBiometricTemplate struct {
-	ID               int32            `json:"id"`
+	ID               uuid.UUID        `json:"id"`
 	OrganizationID   int32            `json:"organization_id"`
 	UserID           int32            `json:"user_id"`
 	FingerIndex      int16            `json:"finger_index"`
@@ -3141,7 +3141,7 @@ type VwAccountsPayable struct {
 }
 
 type VwActiveRestaurantOrder struct {
-	OrderID             int32            `json:"order_id"`
+	OrderID             uuid.UUID        `json:"order_id"`
 	OrderNumber         string           `json:"order_number"`
 	StoreID             int32            `json:"store_id"`
 	OrderSource         string           `json:"order_source"`
@@ -3158,13 +3158,13 @@ type VwActiveRestaurantOrder struct {
 	TableSection        pgtype.Text      `json:"table_section"`
 	CashierID           pgtype.Int4      `json:"cashier_id"`
 	WaiterName          string           `json:"waiter_name"`
-	CustomerID          pgtype.Int4      `json:"customer_id"`
+	CustomerID          pgtype.UUID      `json:"customer_id"`
 	CustomerName        pgtype.Text      `json:"customer_name"`
 	MinutesSinceOrdered int32            `json:"minutes_since_ordered"`
 }
 
 type VwCashierShiftReconciliation struct {
-	SessionID            int32            `json:"session_id"`
+	SessionID            uuid.UUID        `json:"session_id"`
 	SessionNumber        string           `json:"session_number"`
 	StoreID              int32            `json:"store_id"`
 	StoreName            string           `json:"store_name"`
@@ -3192,7 +3192,7 @@ type VwCashierShiftReconciliation struct {
 }
 
 type VwCustomerAgingReport struct {
-	CustomerID          int32          `json:"customer_id"`
+	CustomerID          uuid.UUID      `json:"customer_id"`
 	CustomerCode        string         `json:"customer_code"`
 	CustomerName        string         `json:"customer_name"`
 	Email               pgtype.Text    `json:"email"`
@@ -3411,7 +3411,7 @@ type VwRestaurantMenu struct {
 }
 
 type VwStockMovementLedger struct {
-	MovementID       int32            `json:"movement_id"`
+	MovementID       uuid.UUID        `json:"movement_id"`
 	MovementDate     pgtype.Timestamp `json:"movement_date"`
 	StoreID          pgtype.Int4      `json:"store_id"`
 	StoreName        pgtype.Text      `json:"store_name"`
@@ -3423,7 +3423,7 @@ type VwStockMovementLedger struct {
 	CategoryName     pgtype.Text      `json:"category_name"`
 	MovementType     string           `json:"movement_type"`
 	ReferenceType    pgtype.Text      `json:"reference_type"`
-	ReferenceID      pgtype.Int4      `json:"reference_id"`
+	ReferenceID      pgtype.Text      `json:"reference_id"`
 	BatchNumber      pgtype.Text      `json:"batch_number"`
 	SerialNumber     pgtype.Text      `json:"serial_number"`
 	QuantityIn       int32            `json:"quantity_in"`
@@ -3518,7 +3518,7 @@ type VwWasteDailySummary struct {
 }
 
 type WasteLog struct {
-	ID          int32            `json:"id"`
+	ID          uuid.UUID        `json:"id"`
 	StoreID     int32            `json:"store_id"`
 	ProductID   pgtype.Int4      `json:"product_id"`
 	MenuItemID  pgtype.Int4      `json:"menu_item_id"`
@@ -3530,7 +3530,7 @@ type WasteLog struct {
 	TotalCost   pgtype.Numeric   `json:"total_cost"`
 	Reason      pgtype.Text      `json:"reason"`
 	LoggedBy    pgtype.Int4      `json:"logged_by"`
-	OrderID     pgtype.Int4      `json:"order_id"`
+	OrderID     pgtype.UUID      `json:"order_id"`
 	WastedAt    pgtype.Timestamp `json:"wasted_at"`
 	Metadata    json.RawMessage  `json:"metadata"`
 	CreatedAt   pgtype.Timestamp `json:"created_at"`

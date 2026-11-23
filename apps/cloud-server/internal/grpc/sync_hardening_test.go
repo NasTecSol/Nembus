@@ -2,13 +2,17 @@ package grpc
 
 import (
 	"context"
+	"fmt"
 	"net"
+	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/NasTecSol/nembus-core/grpc/syncpb"
 	"github.com/NasTecSol/nembus-core/usecase"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -219,5 +223,342 @@ func TestBuildPullEntityRankCaseSQL(t *testing.T) {
 		if !strings.Contains(sqlExpr, "'"+entity+"'") {
 			t.Errorf("CASE SQL missing entity %s", entity)
 		}
+	}
+}
+
+func openMultiTerminalTestPool(t *testing.T, prefix string) (*pgxpool.Pool, func()) {
+	t.Helper()
+	dsn := os.Getenv("NEMBUS_SYNC_TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("set NEMBUS_SYNC_TEST_DATABASE_URL to run PostgreSQL multi-terminal integration tests")
+	}
+	ctx := context.Background()
+	admin, err := pgxpool.New(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	schema := fmt.Sprintf("%s_%d", prefix, time.Now().UnixNano())
+	if _, err := admin.Exec(ctx, "CREATE SCHEMA "+schema); err != nil {
+		admin.Close()
+		t.Fatal(err)
+	}
+	cfg, err := pgxpool.ParseConfig(dsn)
+	if err != nil {
+		_, _ = admin.Exec(ctx, "DROP SCHEMA "+schema+" CASCADE")
+		admin.Close()
+		t.Fatal(err)
+	}
+	cfg.ConnConfig.RuntimeParams["search_path"] = schema
+	pool, err := pgxpool.NewWithConfig(ctx, cfg)
+	if err != nil {
+		_, _ = admin.Exec(ctx, "DROP SCHEMA "+schema+" CASCADE")
+		admin.Close()
+		t.Fatal(err)
+	}
+	_, err = pool.Exec(ctx, `
+		CREATE TABLE pos_terminals (
+			id integer PRIMARY KEY,
+			store_id integer NOT NULL,
+			sync_token_hash text,
+			is_active boolean DEFAULT true
+		);
+		CREATE TABLE cashier_sessions (
+			id uuid PRIMARY KEY,
+			pos_terminal_id integer NOT NULL,
+			session_number text UNIQUE,
+			status text NOT NULL DEFAULT 'open'
+		);
+		CREATE TABLE pos_transactions (
+			id uuid PRIMARY KEY,
+			store_id integer NOT NULL,
+			pos_terminal_id integer,
+			cashier_session_id uuid REFERENCES cashier_sessions(id),
+			transaction_number text UNIQUE,
+			total_amount numeric NOT NULL,
+			status text NOT NULL DEFAULT 'completed'
+		);
+		CREATE TABLE pos_transaction_lines (
+			id uuid PRIMARY KEY,
+			transaction_id uuid NOT NULL REFERENCES pos_transactions(id),
+			quantity numeric NOT NULL,
+			line_total numeric NOT NULL
+		);
+		CREATE TABLE pos_payments (
+			id uuid PRIMARY KEY,
+			transaction_id uuid NOT NULL REFERENCES pos_transactions(id),
+			payment_method text NOT NULL,
+			amount numeric NOT NULL
+		);
+		CREATE TABLE sync_watermarks (
+			entity_type text NOT NULL,
+			store_id integer NOT NULL,
+			last_sync_at timestamptz NOT NULL DEFAULT now(),
+			metadata jsonb,
+			PRIMARY KEY (entity_type, store_id)
+		);
+	`)
+	if err != nil {
+		pool.Close()
+		_, _ = admin.Exec(ctx, "DROP SCHEMA "+schema+" CASCADE")
+		admin.Close()
+		t.Fatal(err)
+	}
+	cleanup := func() {
+		pool.Close()
+		_, _ = admin.Exec(ctx, "DROP SCHEMA "+schema+" CASCADE")
+		admin.Close()
+	}
+	return pool, cleanup
+}
+
+func TestMultiTerminalConcurrentOfflineSync(t *testing.T) {
+	pool, cleanup := openMultiTerminalTestPool(t, "multi_term_conc")
+	defer cleanup()
+	ctx := context.Background()
+
+	srv := NewSyncServer(nil, nil)
+	srv.SetPoolResolver(func(ctx context.Context, slug string) (*pgxpool.Pool, error) {
+		return pool, nil
+	})
+
+	type termFixture struct {
+		terminalID int32
+		sessionID  string
+		txID       string
+		lineID     string
+		payID      string
+		txNum      string
+		batchID    string
+		outboxPfx  string
+	}
+	fixtures := []termFixture{
+		{
+			terminalID: 1,
+			sessionID:  "11111111-1111-4111-8111-111111111101",
+			txID:       "11111111-1111-4111-8111-111111111102",
+			lineID:     "11111111-1111-4111-8111-111111111103",
+			payID:      "11111111-1111-4111-8111-111111111104",
+			txNum:      "POS-20261121-150000-T1-A001",
+			batchID:    "batch-t1",
+			outboxPfx:  "11111111-1111-4111-8111-11111111120",
+		},
+		{
+			terminalID: 2,
+			sessionID:  "22222222-2222-4222-8222-222222222201",
+			txID:       "22222222-2222-4222-8222-222222222202",
+			lineID:     "22222222-2222-4222-8222-222222222203",
+			payID:      "22222222-2222-4222-8222-222222222204",
+			txNum:      "POS-20261121-150000-T2-B002",
+			batchID:    "batch-t2",
+			outboxPfx:  "22222222-2222-4222-8222-22222222220",
+		},
+	}
+
+	var wg sync.WaitGroup
+	acks := make([]*syncpb.SyncAck, len(fixtures))
+	for i, fx := range fixtures {
+		wg.Add(1)
+		go func(idx int, f termFixture) {
+			defer wg.Done()
+			sessPayload := []byte(fmt.Sprintf(`{"id":%q,"pos_terminal_id":%d,"session_number":"SES-T%d-01","status":"open"}`, f.sessionID, f.terminalID, f.terminalID))
+			txPayload := []byte(fmt.Sprintf(`{"id":%q,"store_id":1,"pos_terminal_id":%d,"cashier_session_id":%q,"transaction_number":%q,"total_amount":25.00,"status":"completed"}`, f.txID, f.terminalID, f.sessionID, f.txNum))
+			linePayload := []byte(fmt.Sprintf(`{"id":%q,"transaction_id":%q,"quantity":1,"line_total":25.00}`, f.lineID, f.txID))
+			payPayload := []byte(fmt.Sprintf(`{"id":%q,"transaction_id":%q,"payment_method":"cash","amount":25.00}`, f.payID, f.txID))
+
+			events := []*syncpb.SyncEvent{
+				{
+					Id:          1,
+					OutboxUuid:  f.outboxPfx + "1",
+					BatchId:     f.batchID,
+					BatchSize:   4,
+					SeqInBatch:  1,
+					EntityType:  "cashier_sessions",
+					EntityKey:   f.sessionID,
+					Action:      "INSERT",
+					PayloadJson: sessPayload,
+					Sha256:      computePayloadSHA256(sessPayload),
+					StoreId:     1,
+					TenantSlug:  "demo",
+				},
+				{
+					Id:          2,
+					OutboxUuid:  f.outboxPfx + "2",
+					BatchId:     f.batchID,
+					BatchSize:   4,
+					SeqInBatch:  2,
+					EntityType:  "pos_transactions",
+					EntityKey:   f.txID,
+					Action:      "INSERT",
+					PayloadJson: txPayload,
+					Sha256:      computePayloadSHA256(txPayload),
+					StoreId:     1,
+					TenantSlug:  "demo",
+				},
+				{
+					Id:          3,
+					OutboxUuid:  f.outboxPfx + "3",
+					BatchId:     f.batchID,
+					BatchSize:   4,
+					SeqInBatch:  3,
+					EntityType:  "pos_transaction_lines",
+					EntityKey:   f.lineID,
+					Action:      "INSERT",
+					PayloadJson: linePayload,
+					Sha256:      computePayloadSHA256(linePayload),
+					StoreId:     1,
+					TenantSlug:  "demo",
+				},
+				{
+					Id:          4,
+					OutboxUuid:  f.outboxPfx + "4",
+					BatchId:     f.batchID,
+					BatchSize:   4,
+					SeqInBatch:  4,
+					EntityType:  "pos_payments",
+					EntityKey:   f.payID,
+					Action:      "INSERT",
+					PayloadJson: payPayload,
+					Sha256:      computePayloadSHA256(payPayload),
+					StoreId:     1,
+					TenantSlug:  "demo",
+				},
+			}
+			acks[idx] = srv.processPushBatchWithAuth(ctx, events, f.terminalID, 1)
+		}(i, fx)
+	}
+	wg.Wait()
+
+	for i, ack := range acks {
+		if ack == nil || !ack.Success {
+			t.Fatalf("terminal %d batch push failed: %+v", i+1, ack)
+		}
+	}
+
+	var sessionCount, txCount, reparentedCount int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM cashier_sessions`).Scan(&sessionCount); err != nil || sessionCount != 2 {
+		t.Fatalf("expected 2 distinct cashier_sessions, got %d (err=%v)", sessionCount, err)
+	}
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM pos_transactions`).Scan(&txCount); err != nil || txCount != 2 {
+		t.Fatalf("expected 2 distinct pos_transactions, got %d (err=%v)", txCount, err)
+	}
+	if err := pool.QueryRow(ctx, `
+		SELECT count(*)
+		FROM pos_transaction_lines l
+		JOIN pos_transactions pt ON pt.id = l.transaction_id
+		WHERE (l.id = '11111111-1111-4111-8111-111111111103'::uuid AND pt.pos_terminal_id <> 1)
+		   OR (l.id = '22222222-2222-4222-8222-222222222203'::uuid AND pt.pos_terminal_id <> 2)
+	`).Scan(&reparentedCount); err != nil || reparentedCount != 0 {
+		t.Fatalf("expected 0 cross-reparented child rows, got %d (err=%v)", reparentedCount, err)
+	}
+}
+
+func TestCrossTerminalOverwriteRejection(t *testing.T) {
+	ctx := context.Background()
+
+	// 1. Pre-DB payload ownership check rejects Terminal 2 claiming Terminal 1's pos_terminal_id
+	err := validateEntityOwnership(
+		ctx,
+		nil,
+		"pos_transactions",
+		[]byte(`{"id":"11111111-1111-4111-8111-111111111102","store_id":1,"pos_terminal_id":1}`),
+		1,
+		2,
+	)
+	if err == nil || !strings.Contains(err.Error(), "ownership") {
+		t.Fatalf("expected ownership violation when terminal 2 pushes pos_terminal_id=1, got %v", err)
+	}
+
+	// 2. Full DB conflict guard when Terminal 2 attempts to overwrite Terminal 1's cashier_session or pos_transaction
+	pool, cleanup := openMultiTerminalTestPool(t, "cross_term_reject")
+	defer cleanup()
+
+	srv := NewSyncServer(nil, nil)
+	srv.SetPoolResolver(func(ctx context.Context, slug string) (*pgxpool.Pool, error) {
+		return pool, nil
+	})
+
+	const sess1ID = "11111111-1111-4111-8111-111111111101"
+	const tx1ID = "11111111-1111-4111-8111-111111111102"
+
+	sess1Payload := []byte(`{"id":"` + sess1ID + `","pos_terminal_id":1,"session_number":"SES-T1-01","status":"open"}`)
+	ackSess1 := srv.handleSinglePushEventWithAuth(ctx, &syncpb.SyncEvent{
+		Id:          1,
+		EntityType:  "cashier_sessions",
+		EntityKey:   sess1ID,
+		Action:      "INSERT",
+		PayloadJson: sess1Payload,
+		Sha256:      computePayloadSHA256(sess1Payload),
+		StoreId:     1,
+		TenantSlug:  "demo",
+	}, 1, 1)
+	if !ackSess1.Success {
+		t.Fatalf("terminal 1 session insert failed: %s", ackSess1.ErrorMessage)
+	}
+
+	tx1Payload := []byte(`{"id":"` + tx1ID + `","store_id":1,"pos_terminal_id":1,"cashier_session_id":"` + sess1ID + `","transaction_number":"POS-T1-001","total_amount":50.00,"status":"completed"}`)
+	ackTx1 := srv.handleSinglePushEventWithAuth(ctx, &syncpb.SyncEvent{
+		Id:          2,
+		EntityType:  "pos_transactions",
+		EntityKey:   tx1ID,
+		Action:      "INSERT",
+		PayloadJson: tx1Payload,
+		Sha256:      computePayloadSHA256(tx1Payload),
+		StoreId:     1,
+		TenantSlug:  "demo",
+	}, 1, 1)
+	if !ackTx1.Success {
+		t.Fatalf("terminal 1 transaction insert failed: %s", ackTx1.ErrorMessage)
+	}
+
+	// Terminal 2 attempts to overwrite Terminal 1's cashier_session ID with pos_terminal_id=2
+	hijackSessPayload := []byte(`{"id":"` + sess1ID + `","pos_terminal_id":2,"session_number":"SES-HIJACK","status":"closed"}`)
+	ackHijackSess := srv.handleSinglePushEventWithAuth(ctx, &syncpb.SyncEvent{
+		Id:          3,
+		EntityType:  "cashier_sessions",
+		EntityKey:   sess1ID,
+		Action:      "UPDATE",
+		PayloadJson: hijackSessPayload,
+		Sha256:      computePayloadSHA256(hijackSessPayload),
+		StoreId:     1,
+		TenantSlug:  "demo",
+	}, 2, 1)
+	if ackHijackSess.Success || !strings.Contains(ackHijackSess.ErrorMessage, "ownership") {
+		t.Fatalf("expected ownership failure on cross-terminal cashier_session overwrite, got %+v", ackHijackSess)
+	}
+
+	// Terminal 2 attempts to overwrite Terminal 1's pos_transaction ID with pos_terminal_id=2
+	hijackTxPayload := []byte(`{"id":"` + tx1ID + `","store_id":1,"pos_terminal_id":2,"cashier_session_id":"` + sess1ID + `","transaction_number":"POS-T1-001","total_amount":999.00,"status":"voided"}`)
+	ackHijackTx := srv.handleSinglePushEventWithAuth(ctx, &syncpb.SyncEvent{
+		Id:          4,
+		EntityType:  "pos_transactions",
+		EntityKey:   tx1ID,
+		Action:      "UPDATE",
+		PayloadJson: hijackTxPayload,
+		Sha256:      computePayloadSHA256(hijackTxPayload),
+		StoreId:     1,
+		TenantSlug:  "demo",
+	}, 2, 1)
+	if ackHijackTx.Success || !strings.Contains(ackHijackTx.ErrorMessage, "ownership") {
+		t.Fatalf("expected ownership failure on cross-terminal pos_transaction overwrite, got %+v", ackHijackTx)
+	}
+
+	// Verify Terminal 1's rows remain completely unmodified
+	var sessTermID int32
+	var sessStatus string
+	if err := pool.QueryRow(ctx, `SELECT pos_terminal_id, status FROM cashier_sessions WHERE id = $1::uuid`, sess1ID).Scan(&sessTermID, &sessStatus); err != nil {
+		t.Fatal(err)
+	}
+	if sessTermID != 1 || sessStatus != "open" {
+		t.Fatalf("cashier_session was modified by cross-terminal overwrite: term=%d status=%s", sessTermID, sessStatus)
+	}
+
+	var txTermID int32
+	var txStatus string
+	var txTotal float64
+	if err := pool.QueryRow(ctx, `SELECT pos_terminal_id, status, total_amount::float8 FROM pos_transactions WHERE id = $1::uuid`, tx1ID).Scan(&txTermID, &txStatus, &txTotal); err != nil {
+		t.Fatal(err)
+	}
+	if txTermID != 1 || txStatus != "completed" || txTotal != 50.0 {
+		t.Fatalf("pos_transaction was modified by cross-terminal overwrite: term=%d status=%s total=%v", txTermID, txStatus, txTotal)
 	}
 }

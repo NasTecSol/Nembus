@@ -2,20 +2,26 @@ package nembus_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"testing"
 	"time"
 
 	"github.com/NasTecSol/nembus-sap-agent/internal/nembus"
+	"github.com/google/uuid"
 )
 
+func testEntityUUID(legacy int64) uuid.UUID {
+	return uuid.NewSHA1(uuid.NameSpaceOID, []byte(fmt.Sprintf("nembus-test-entity-%d", legacy)))
+}
+
 func TestSalesReturnStructSerialization(t *testing.T) {
-	origTxID := int32(50)
+	origTxID := testEntityUUID(50)
 	cashierID := int32(1)
-	customerID := int32(10)
+	customerID := testEntityUUID(10)
 	reason := "Customer return"
 
 	ret := nembus.SalesReturn{
-		ID:                    100,
+		ID:                    testEntityUUID(100),
 		ReturnNumber:          "RET-100",
 		StoreID:               2,
 		CashierID:             &cashierID,
@@ -40,14 +46,14 @@ func TestSalesReturnStructSerialization(t *testing.T) {
 		t.Fatalf("failed to unmarshal SalesReturn: %v", err)
 	}
 
-	if unmarshaled.ID != 100 {
-		t.Errorf("expected ID 100, got %d", unmarshaled.ID)
+	if unmarshaled.ID != testEntityUUID(100) {
+		t.Errorf("expected ID %s, got %s", testEntityUUID(100), unmarshaled.ID)
 	}
 	if unmarshaled.ReturnNumber != "RET-100" {
 		t.Errorf("expected ReturnNumber RET-100, got %s", unmarshaled.ReturnNumber)
 	}
-	if unmarshaled.OriginalTransactionID == nil || *unmarshaled.OriginalTransactionID != 50 {
-		t.Errorf("expected OriginalTransactionID 50, got %v", unmarshaled.OriginalTransactionID)
+	if unmarshaled.OriginalTransactionID == nil || *unmarshaled.OriginalTransactionID != testEntityUUID(50) {
+		t.Errorf("expected OriginalTransactionID %s, got %v", testEntityUUID(50), unmarshaled.OriginalTransactionID)
 	}
 	if unmarshaled.TotalRefundAmount != 287.5 {
 		t.Errorf("expected TotalRefundAmount 287.5, got %f", unmarshaled.TotalRefundAmount)
@@ -55,11 +61,11 @@ func TestSalesReturnStructSerialization(t *testing.T) {
 }
 
 func TestSalesReturnLineSerialization(t *testing.T) {
-	origLineID := int32(501)
+	origLineID := testEntityUUID(501)
 
 	line := nembus.SalesReturnLine{
-		ID:             1,
-		ReturnID:       100,
+		ID:             testEntityUUID(1),
+		ReturnID:       testEntityUUID(100),
 		ProductID:      25,
 		ProductSKU:     "SKU-RET-TEST",
 		ProductName:    "Test Item",

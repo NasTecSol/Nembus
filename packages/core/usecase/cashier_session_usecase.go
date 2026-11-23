@@ -5,6 +5,7 @@ import (
 
 	"github.com/NasTecSol/nembus-core/repository"
 	"github.com/NasTecSol/nembus-core/utils"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -31,6 +32,10 @@ func (uc *CashierSessionUseCase) OpenCashierSession(ctx context.Context, arg rep
 	if resp := uc.repoOrErr(); resp != nil {
 		return resp
 	}
+	if IsWeakOrEmptyDocNumber(arg.SessionNumber) {
+		termCode := LookupTerminalCode(ctx, uc.repo, arg.PosTerminalID, "")
+		arg.SessionNumber = GenerateTerminalDocNumber("SES", termCode)
+	}
 	session, err := uc.repo.OpenCashierSession(ctx, arg)
 	if err != nil {
 		return utils.NewResponse(utils.CodeError, "failed to open cashier session", err.Error())
@@ -49,7 +54,7 @@ func (uc *CashierSessionUseCase) GetActiveCashierSession(ctx context.Context, ca
 	return utils.NewResponse(utils.CodeOK, "active cashier session fetched successfully", session)
 }
 
-func (uc *CashierSessionUseCase) GetSessionByID(ctx context.Context, id int32) *repository.Response {
+func (uc *CashierSessionUseCase) GetSessionByID(ctx context.Context, id uuid.UUID) *repository.Response {
 	if resp := uc.repoOrErr(); resp != nil {
 		return resp
 	}
@@ -86,7 +91,7 @@ func (uc *CashierSessionUseCase) CloseCashierSession(ctx context.Context, arg re
 	return utils.NewResponse(utils.CodeOK, "cashier session closed successfully", row)
 }
 
-func (uc *CashierSessionUseCase) GetSessionSummary(ctx context.Context, id int32) *repository.Response {
+func (uc *CashierSessionUseCase) GetSessionSummary(ctx context.Context, id uuid.UUID) *repository.Response {
 	if resp := uc.repoOrErr(); resp != nil {
 		return resp
 	}
@@ -108,7 +113,7 @@ func (uc *CashierSessionUseCase) GetCashierSessions(ctx context.Context, arg rep
 	return utils.NewResponse(utils.CodeOK, "cashier sessions fetched successfully", sessions)
 }
 
-func (uc *CashierSessionUseCase) SetSessionOpenedSupervisor(ctx context.Context, sessionID int32, supervisorUserID int32) *repository.Response {
+func (uc *CashierSessionUseCase) SetSessionOpenedSupervisor(ctx context.Context, sessionID uuid.UUID, supervisorUserID int32) *repository.Response {
 	if resp := uc.repoOrErr(); resp != nil {
 		return resp
 	}
@@ -122,7 +127,7 @@ func (uc *CashierSessionUseCase) SetSessionOpenedSupervisor(ctx context.Context,
 	return utils.NewResponse(utils.CodeOK, "opening supervisor recorded", nil)
 }
 
-func (uc *CashierSessionUseCase) SetSessionClosedSupervisor(ctx context.Context, sessionID int32, supervisorUserID int32) *repository.Response {
+func (uc *CashierSessionUseCase) SetSessionClosedSupervisor(ctx context.Context, sessionID uuid.UUID, supervisorUserID int32) *repository.Response {
 	if resp := uc.repoOrErr(); resp != nil {
 		return resp
 	}

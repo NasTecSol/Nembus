@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -30,7 +31,7 @@ RETURNING id, cashier_id, pos_terminal_id, session_number, opening_time, closing
 `
 
 type CloseCashierSessionParams struct {
-	ID              int32           `json:"id"`
+	ID              uuid.UUID       `json:"id"`
 	ClosingBalance  pgtype.Numeric  `json:"closing_balance"`
 	ExpectedBalance pgtype.Numeric  `json:"expected_balance"`
 	Variance        pgtype.Numeric  `json:"variance"`
@@ -89,7 +90,7 @@ RETURNING id, cashier_id, pos_terminal_id, session_number, opening_time, closing
 `
 
 type CloseCashierSessionReconcileParams struct {
-	ID             int32           `json:"id"`
+	ID             uuid.UUID       `json:"id"`
 	ClosingBalance pgtype.Numeric  `json:"closing_balance"`
 	Column3        string          `json:"column_3"`
 	Column4        int64           `json:"column_4"`
@@ -146,7 +147,7 @@ LIMIT 1
 `
 
 type GetActiveCashierSessionRow struct {
-	ID                   int32            `json:"id"`
+	ID                   uuid.UUID        `json:"id"`
 	CashierID            int32            `json:"cashier_id"`
 	PosTerminalID        int32            `json:"pos_terminal_id"`
 	SessionNumber        string           `json:"session_number"`
@@ -226,7 +227,7 @@ type GetCashierSessionsParams struct {
 }
 
 type GetCashierSessionsRow struct {
-	ID                   int32            `json:"id"`
+	ID                   uuid.UUID        `json:"id"`
 	CashierID            int32            `json:"cashier_id"`
 	PosTerminalID        int32            `json:"pos_terminal_id"`
 	SessionNumber        string           `json:"session_number"`
@@ -324,7 +325,7 @@ GROUP BY cs.id
 `
 
 type GetSessionSummaryRow struct {
-	ID                  int32            `json:"id"`
+	ID                  uuid.UUID        `json:"id"`
 	SessionNumber       string           `json:"session_number"`
 	OpeningTime         pgtype.Timestamp `json:"opening_time"`
 	ClosingTime         pgtype.Timestamp `json:"closing_time"`
@@ -338,7 +339,7 @@ type GetSessionSummaryRow struct {
 	TotalDiscountsGiven interface{}      `json:"total_discounts_given"`
 }
 
-func (q *Queries) GetSessionSummary(ctx context.Context, id int32) (GetSessionSummaryRow, error) {
+func (q *Queries) GetSessionSummary(ctx context.Context, id uuid.UUID) (GetSessionSummaryRow, error) {
 	row := q.db.QueryRow(ctx, getSessionSummary, id)
 	var i GetSessionSummaryRow
 	err := row.Scan(
@@ -380,7 +381,7 @@ type OpenCashierSessionParams struct {
 }
 
 type OpenCashierSessionRow struct {
-	ID              int32            `json:"id"`
+	ID              uuid.UUID        `json:"id"`
 	SessionNumber   string           `json:"session_number"`
 	OpeningTime     pgtype.Timestamp `json:"opening_time"`
 	ExpectedBalance pgtype.Numeric   `json:"expected_balance"`
@@ -412,7 +413,7 @@ WHERE id = $1
 `
 
 type UpdateSessionExpectedBalanceParams struct {
-	ID              int32          `json:"id"`
+	ID              uuid.UUID      `json:"id"`
 	ExpectedBalance pgtype.Numeric `json:"expected_balance"`
 }
 

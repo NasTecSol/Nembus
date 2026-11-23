@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"math"
 	"os"
 	"path/filepath"
@@ -19,6 +20,10 @@ import (
 	"github.com/NasTecSol/nembus-sap/contracts"
 	"github.com/google/uuid"
 )
+
+func testUUID(legacy int64) uuid.UUID {
+	return uuid.NewSHA1(uuid.NameSpaceOID, []byte(fmt.Sprintf("nembus-test-entity-%d", legacy)))
+}
 
 // MockSAPClient implements pipeline.SAPClient
 type MockSAPClient struct {
@@ -68,10 +73,10 @@ func (m *MockSAPClient) CheckItemWarehouseStock(ctx context.Context, itemCode, w
 type MockNembusClient struct {
 	unpostedPOSTransactions        []nembus.POSTransaction
 	approvedPendingPOSTransactions []nembus.POSTransaction
-	txLines                        map[int64][]nembus.POSTransactionLine
-	txPayments                     map[int64][]nembus.POSPayment
-	markedTransactions             map[int64]markedSAPDoc
-	heldTransactions               map[int64]string
+	txLines                        map[uuid.UUID][]nembus.POSTransactionLine
+	txPayments                     map[uuid.UUID][]nembus.POSPayment
+	markedTransactions             map[uuid.UUID]markedSAPDoc
+	heldTransactions               map[uuid.UUID]string
 
 	unpostedSalesOrders        []nembus.SalesOrderV2
 	approvedPendingSalesOrders []nembus.SalesOrderV2
@@ -80,9 +85,9 @@ type MockNembusClient struct {
 	heldSalesOrders            map[uuid.UUID]string
 
 	unpostedSalesReturns  []nembus.SalesReturn
-	returnLines           map[int64][]nembus.SalesReturnLine
-	markedReturns         map[int64]markedSAPDoc
-	originalSAPDocEntries map[int32]int
+	returnLines           map[uuid.UUID][]nembus.SalesReturnLine
+	markedReturns         map[uuid.UUID]markedSAPDoc
+	originalSAPDocEntries map[uuid.UUID]int
 
 	stockBySKU              map[string]float64
 	fetchUnpostedReturnsErr error
@@ -102,14 +107,14 @@ type markedSAPDoc struct {
 
 func newMockNembusClient() *MockNembusClient {
 	return &MockNembusClient{
-		txLines:               make(map[int64][]nembus.POSTransactionLine),
-		txPayments:            make(map[int64][]nembus.POSPayment),
-		markedTransactions:    make(map[int64]markedSAPDoc),
+		txLines:               make(map[uuid.UUID][]nembus.POSTransactionLine),
+		txPayments:            make(map[uuid.UUID][]nembus.POSPayment),
+		markedTransactions:    make(map[uuid.UUID]markedSAPDoc),
 		salesOrderLines:       make(map[uuid.UUID][]nembus.SalesOrderLineV2),
 		markedSalesOrders:     make(map[uuid.UUID]markedSAPDoc),
-		returnLines:           make(map[int64][]nembus.SalesReturnLine),
-		markedReturns:         make(map[int64]markedSAPDoc),
-		originalSAPDocEntries: make(map[int32]int),
+		returnLines:           make(map[uuid.UUID][]nembus.SalesReturnLine),
+		markedReturns:         make(map[uuid.UUID]markedSAPDoc),
+		originalSAPDocEntries: make(map[uuid.UUID]int),
 		stockBySKU:            map[string]float64{"*": 999},
 	}
 }
@@ -122,28 +127,28 @@ func (m *MockNembusClient) FetchUnpostedPOSTransactions(ctx context.Context, lim
 	return m.unpostedPOSTransactions, nil
 }
 
-func (m *MockNembusClient) FetchTransactionLines(ctx context.Context, transactionID int64) ([]nembus.POSTransactionLine, error) {
+func (m *MockNembusClient) FetchTransactionLines(ctx context.Context, transactionID uuid.UUID) ([]nembus.POSTransactionLine, error) {
 	return m.txLines[transactionID], nil
 }
 
-func (m *MockNembusClient) FetchTransactionPayments(ctx context.Context, transactionID int64) ([]nembus.POSPayment, error) {
+func (m *MockNembusClient) FetchTransactionPayments(ctx context.Context, transactionID uuid.UUID) ([]nembus.POSPayment, error) {
 	return m.txPayments[transactionID], nil
 }
 
-func (m *MockNembusClient) MarkTransactionPostedToSAP(ctx context.Context, transactionID int64, sapDocEntry, sapDocNum int) error {
+func (m *MockNembusClient) MarkTransactionPostedToSAP(ctx context.Context, transactionID uuid.UUID, sapDocEntry, sapDocNum int) error {
 	m.markedTransactions[transactionID] = markedSAPDoc{DocEntry: sapDocEntry, DocNum: sapDocNum}
 	return nil
 }
 
-func (m *MockNembusClient) HoldTransactionForStockReview(ctx context.Context, txID int64, txNum string, storeID int32, whCode string, totalAmount float64, shortageItems []nembus.ShortageItem, summary string) error {
+func (m *MockNembusClient) HoldTransactionForStockReview(ctx context.Context, txID uuid.UUID, txNum string, storeID int32, whCode string, totalAmount float64, shortageItems []nembus.ShortageItem, summary string) error {
 	if m.heldTransactions == nil {
-		m.heldTransactions = make(map[int64]string)
+		m.heldTransactions = make(map[uuid.UUID]string)
 	}
 	m.heldTransactions[txID] = summary
 	return nil
 }
 
-func (m *MockNembusClient) FetchCustomerSAPCode(ctx context.Context, customerID int32) (string, error) {
+func (m *MockNembusClient) FetchCustomerSAPCode(ctx context.Context, customerID uuid.UUID) (string, error) {
 	return "C_TEST", nil
 }
 
@@ -154,14 +159,14 @@ func (m *MockNembusClient) FetchUnpostedSalesReturns(ctx context.Context, limit 
 	return m.unpostedSalesReturns, nil
 }
 
-func (m *MockNembusClient) FetchSalesReturnLines(ctx context.Context, returnID int64) ([]nembus.SalesReturnLine, error) {
+func (m *MockNembusClient) FetchSalesReturnLines(ctx context.Context, returnID uuid.UUID) ([]nembus.SalesReturnLine, error) {
 	if m.fetchReturnLinesErr != nil {
 		return nil, m.fetchReturnLinesErr
 	}
 	return m.returnLines[returnID], nil
 }
 
-func (m *MockNembusClient) MarkSalesReturnPostedToSAP(ctx context.Context, returnID int64, sapDocEntry, sapDocNum int) error {
+func (m *MockNembusClient) MarkSalesReturnPostedToSAP(ctx context.Context, returnID uuid.UUID, sapDocEntry, sapDocNum int) error {
 	if m.markReturnPostedErr != nil {
 		return m.markReturnPostedErr
 	}
@@ -169,7 +174,7 @@ func (m *MockNembusClient) MarkSalesReturnPostedToSAP(ctx context.Context, retur
 	return nil
 }
 
-func (m *MockNembusClient) FetchOriginalSAPDocEntry(ctx context.Context, originalTxID int32) (int, error) {
+func (m *MockNembusClient) FetchOriginalSAPDocEntry(ctx context.Context, originalTxID uuid.UUID) (int, error) {
 	entry, ok := m.originalSAPDocEntries[originalTxID]
 	if !ok {
 		return 0, nil
@@ -311,13 +316,13 @@ func TestProcessOutbox_LinkedReturnPosting(t *testing.T) {
 	mockSAP := &MockSAPClient{}
 	mockNembus := newMockNembusClient()
 
-	origTxID := int32(42)
+	origTxID := testUUID(42)
 	reason := "Damaged item"
-	customerID := int32(101)
+	customerID := testUUID(101)
 
 	mockNembus.unpostedSalesReturns = []nembus.SalesReturn{
 		{
-			ID:                    10,
+			ID: testUUID(10),
 			ReturnNumber:          "RET-2026-001",
 			StoreID:               1,
 			CustomerID:            &customerID,
@@ -331,10 +336,10 @@ func TestProcessOutbox_LinkedReturnPosting(t *testing.T) {
 		},
 	}
 
-	mockNembus.returnLines[10] = []nembus.SalesReturnLine{
+	mockNembus.returnLines[testUUID(10)] = []nembus.SalesReturnLine{
 		{
-			ID:            101,
-			ReturnID:      10,
+			ID: testUUID(101),
+			ReturnID: testUUID(10),
 			ProductID:     5,
 			ProductSKU:    "SKU-RETURN-01",
 			ProductName:   "Returned Widget",
@@ -405,7 +410,7 @@ func TestProcessOutbox_LinkedReturnPosting(t *testing.T) {
 	}
 
 	// Verify MarkSalesReturnPostedToSAP was called with SAP DocEntry & DocNum
-	marked, ok := mockNembus.markedReturns[10]
+	marked, ok := mockNembus.markedReturns[testUUID(10)]
 	if !ok {
 		t.Fatalf("expected return 10 to be marked as posted in Nembus")
 	}
@@ -420,7 +425,7 @@ func TestProcessOutbox_StandaloneReturnPosting(t *testing.T) {
 
 	mockNembus.unpostedSalesReturns = []nembus.SalesReturn{
 		{
-			ID:                    20,
+			ID: testUUID(20),
 			ReturnNumber:          "RET-STANDALONE-001",
 			StoreID:               1,
 			OriginalTransactionID: nil, // Standalone
@@ -432,10 +437,10 @@ func TestProcessOutbox_StandaloneReturnPosting(t *testing.T) {
 		},
 	}
 
-	mockNembus.returnLines[20] = []nembus.SalesReturnLine{
+	mockNembus.returnLines[testUUID(20)] = []nembus.SalesReturnLine{
 		{
-			ID:           201,
-			ReturnID:     20,
+			ID: testUUID(201),
+			ReturnID: testUUID(20),
 			ProductID:    8,
 			ProductSKU:   "SKU-STANDALONE",
 			ProductName:  "Standalone Item",
@@ -477,28 +482,28 @@ func TestProcessOutbox_DryRun(t *testing.T) {
 
 	mockNembus.unpostedPOSTransactions = []nembus.POSTransaction{
 		{
-			ID:                15,
+			ID: testUUID(15),
 			TransactionNumber: "TX-DRYRUN",
 			TotalAmount:       100.0,
 			AmountPaid:        100.0,
 			TransactionDate:   time.Date(2026, 10, 22, 10, 0, 0, 0, time.UTC),
 		},
 	}
-	mockNembus.txLines[15] = []nembus.POSTransactionLine{
-		{ID: 151, TransactionID: 15, ProductSKU: "SKU-TX", Quantity: 1.0, UnitPrice: 100.0, LineTotal: 100.0},
+	mockNembus.txLines[testUUID(15)] = []nembus.POSTransactionLine{
+		{ID: testUUID(151), TransactionID: testUUID(15), ProductSKU: "SKU-TX", Quantity: 1.0, UnitPrice: 100.0, LineTotal: 100.0},
 	}
 
 	mockNembus.unpostedSalesReturns = []nembus.SalesReturn{
 		{
-			ID:                30,
+			ID: testUUID(30),
 			ReturnNumber:      "RET-DRYRUN",
 			Status:            "completed",
 			TotalRefundAmount: 200.0,
 			ReturnDate:        time.Date(2026, 10, 22, 11, 0, 0, 0, time.UTC),
 		},
 	}
-	mockNembus.returnLines[30] = []nembus.SalesReturnLine{
-		{ID: 301, ReturnID: 30, ProductSKU: "SKU-D", Quantity: 1.0, UnitPrice: 200.0, RefundAmount: 200.0},
+	mockNembus.returnLines[testUUID(30)] = []nembus.SalesReturnLine{
+		{ID: testUUID(301), ReturnID: testUUID(30), ProductSKU: "SKU-D", Quantity: 1.0, UnitPrice: 200.0, RefundAmount: 200.0},
 	}
 
 	cfg := &config.Config{
@@ -544,14 +549,14 @@ func TestProcessOutbox_CreditMemoFailure(t *testing.T) {
 
 	mockNembus.unpostedSalesReturns = []nembus.SalesReturn{
 		{
-			ID:                40,
+			ID: testUUID(40),
 			ReturnNumber:      "RET-FAIL",
 			Status:            "completed",
 			TotalRefundAmount: 50.0,
 		},
 	}
-	mockNembus.returnLines[40] = []nembus.SalesReturnLine{
-		{ID: 401, ReturnID: 40, ProductSKU: "SKU-FAIL", Quantity: 1.0, UnitPrice: 50.0, RefundAmount: 50.0},
+	mockNembus.returnLines[testUUID(40)] = []nembus.SalesReturnLine{
+		{ID: testUUID(401), ReturnID: testUUID(40), ProductSKU: "SKU-FAIL", Quantity: 1.0, UnitPrice: 50.0, RefundAmount: 50.0},
 	}
 
 	cfg := &config.Config{BatchSize: 10}
@@ -611,15 +616,15 @@ func TestProcessOutbox_ReturnInvalidQuantity(t *testing.T) {
 
 	mockNembus.unpostedSalesReturns = []nembus.SalesReturn{
 		{
-			ID:                50,
+			ID: testUUID(50),
 			ReturnNumber:      "RET-ZERO-QTY",
 			Status:            "completed",
 			TotalRefundAmount: 50.0,
 			ReturnDate:        time.Date(2026, 10, 22, 11, 0, 0, 0, time.UTC),
 		},
 	}
-	mockNembus.returnLines[50] = []nembus.SalesReturnLine{
-		{ID: 501, ReturnID: 50, ProductSKU: "SKU-INV", Quantity: 0.0, UnitPrice: 50.0, RefundAmount: 50.0},
+	mockNembus.returnLines[testUUID(50)] = []nembus.SalesReturnLine{
+		{ID: testUUID(501), ReturnID: testUUID(50), ProductSKU: "SKU-INV", Quantity: 0.0, UnitPrice: 50.0, RefundAmount: 50.0},
 	}
 
 	cfg := &config.Config{BatchSize: 10}
@@ -651,15 +656,15 @@ func TestProcessOutbox_ReturnNegativeRefundAmount(t *testing.T) {
 
 	mockNembus.unpostedSalesReturns = []nembus.SalesReturn{
 		{
-			ID:                60,
+			ID: testUUID(60),
 			ReturnNumber:      "RET-NEG-AMT",
 			Status:            "completed",
 			TotalRefundAmount: -25.0,
 			ReturnDate:        time.Date(2026, 10, 22, 11, 0, 0, 0, time.UTC),
 		},
 	}
-	mockNembus.returnLines[60] = []nembus.SalesReturnLine{
-		{ID: 601, ReturnID: 60, ProductSKU: "SKU-NEG", Quantity: 1.0, UnitPrice: 25.0, RefundAmount: -25.0},
+	mockNembus.returnLines[testUUID(60)] = []nembus.SalesReturnLine{
+		{ID: testUUID(601), ReturnID: testUUID(60), ProductSKU: "SKU-NEG", Quantity: 1.0, UnitPrice: 25.0, RefundAmount: -25.0},
 	}
 
 	cfg := &config.Config{BatchSize: 10}
@@ -689,10 +694,10 @@ func TestProcessOutbox_ReturnUnresolvedOriginalDocEntry(t *testing.T) {
 	mockSAP := &MockSAPClient{}
 	mockNembus := newMockNembusClient()
 
-	origTxID := int32(9999) // Non-existent in mock originalSAPDocEntries (resolves to 0)
+	origTxID := testUUID(9999) // Non-existent in mock originalSAPDocEntries (resolves to 0)
 	mockNembus.unpostedSalesReturns = []nembus.SalesReturn{
 		{
-			ID:                    70,
+			ID: testUUID(70),
 			ReturnNumber:          "RET-UNRESOLVED-ENTRY",
 			OriginalTransactionID: &origTxID,
 			Status:                "completed",
@@ -700,8 +705,8 @@ func TestProcessOutbox_ReturnUnresolvedOriginalDocEntry(t *testing.T) {
 			ReturnDate:            time.Date(2026, 10, 22, 11, 0, 0, 0, time.UTC),
 		},
 	}
-	mockNembus.returnLines[70] = []nembus.SalesReturnLine{
-		{ID: 701, ReturnID: 70, ProductSKU: "SKU-UNRES", Quantity: 2.0, UnitPrice: 40.0, RefundAmount: 80.0},
+	mockNembus.returnLines[testUUID(70)] = []nembus.SalesReturnLine{
+		{ID: testUUID(701), ReturnID: testUUID(70), ProductSKU: "SKU-UNRES", Quantity: 2.0, UnitPrice: 40.0, RefundAmount: 80.0},
 	}
 
 	cfg := &config.Config{BatchSize: 10}
@@ -751,15 +756,15 @@ func TestProcessOutbox_StockShortageHold(t *testing.T) {
 	mockNembus := newMockNembusClient()
 	mockNembus.unpostedPOSTransactions = []nembus.POSTransaction{
 		{
-			ID:                88,
+			ID: testUUID(88),
 			TransactionNumber: "TX-HOLD-001",
 			TransactionDate:   time.Now(),
 			TotalAmount:       150.0,
 			Status:            "completed",
 		},
 	}
-	mockNembus.txLines[88] = []nembus.POSTransactionLine{
-		{ID: 881, TransactionID: 88, ProductSKU: "SKU-DEPLETED", Quantity: 5.0, UnitPrice: 30.0, LineTotal: 150.0},
+	mockNembus.txLines[testUUID(88)] = []nembus.POSTransactionLine{
+		{ID: testUUID(881), TransactionID: testUUID(88), ProductSKU: "SKU-DEPLETED", Quantity: 5.0, UnitPrice: 30.0, LineTotal: 150.0},
 	}
 
 	cfg := &config.Config{BatchSize: 10, NembusDefaultWarehouse: "W01"}
@@ -774,7 +779,7 @@ func TestProcessOutbox_StockShortageHold(t *testing.T) {
 	if stats.TransactionsPosted != 0 {
 		t.Errorf("expected 0 transactions posted, got %d", stats.TransactionsPosted)
 	}
-	if summary, held := mockNembus.heldTransactions[88]; !held {
+	if summary, held := mockNembus.heldTransactions[testUUID(88)]; !held {
 		t.Errorf("expected transaction 88 to be held for review")
 	} else if !strings.Contains(summary, "SAP Stock Shortage") {
 		t.Errorf("expected shortage summary, got: %s", summary)
@@ -795,15 +800,15 @@ func TestProcessOutbox_StockHoldPolicyDisabled_DoesNotHold(t *testing.T) {
 	mockNembus.stockHoldPolicyRequired = false
 	mockNembus.unpostedPOSTransactions = []nembus.POSTransaction{
 		{
-			ID:                89,
+			ID: testUUID(89),
 			TransactionNumber: "TX-NO-HOLD-001",
 			TransactionDate:   time.Now(),
 			TotalAmount:       120.0,
 			Status:            "completed",
 		},
 	}
-	mockNembus.txLines[89] = []nembus.POSTransactionLine{
-		{ID: 891, TransactionID: 89, ProductSKU: "SKU-ZERO", Quantity: 2.0, UnitPrice: 60.0, LineTotal: 120.0},
+	mockNembus.txLines[testUUID(89)] = []nembus.POSTransactionLine{
+		{ID: testUUID(891), TransactionID: testUUID(89), ProductSKU: "SKU-ZERO", Quantity: 2.0, UnitPrice: 60.0, LineTotal: 120.0},
 	}
 
 	cfg := &config.Config{BatchSize: 10, NembusDefaultWarehouse: "W01"}
@@ -833,15 +838,15 @@ func TestProcessOutbox_HoldOnZeroStockDisabled(t *testing.T) {
 		mockNembus.stockHoldPolicyRules = map[string]any{"hold_on_zero_stock": false}
 		mockNembus.unpostedPOSTransactions = []nembus.POSTransaction{
 			{
-				ID:                90,
+				ID: testUUID(90),
 				TransactionNumber: "TX-ZERO-ALLOW",
 				TransactionDate:   time.Now(),
 				TotalAmount:       60.0,
 				Status:            "completed",
 			},
 		}
-		mockNembus.txLines[90] = []nembus.POSTransactionLine{
-			{ID: 901, TransactionID: 90, ProductSKU: "SKU-ZERO", Quantity: 2.0, UnitPrice: 30.0, LineTotal: 60.0},
+		mockNembus.txLines[testUUID(90)] = []nembus.POSTransactionLine{
+			{ID: testUUID(901), TransactionID: testUUID(90), ProductSKU: "SKU-ZERO", Quantity: 2.0, UnitPrice: 30.0, LineTotal: 60.0},
 		}
 
 		cfg := &config.Config{BatchSize: 10, NembusDefaultWarehouse: "W01"}
@@ -867,15 +872,15 @@ func TestProcessOutbox_HoldOnZeroStockDisabled(t *testing.T) {
 		mockNembus.stockHoldPolicyRules = map[string]any{"hold_on_zero_stock": false}
 		mockNembus.unpostedPOSTransactions = []nembus.POSTransaction{
 			{
-				ID:                91,
+				ID: testUUID(91),
 				TransactionNumber: "TX-PARTIAL-HOLD",
 				TransactionDate:   time.Now(),
 				TotalAmount:       150.0,
 				Status:            "completed",
 			},
 		}
-		mockNembus.txLines[91] = []nembus.POSTransactionLine{
-			{ID: 911, TransactionID: 91, ProductSKU: "SKU-LOW", Quantity: 5.0, UnitPrice: 30.0, LineTotal: 150.0},
+		mockNembus.txLines[testUUID(91)] = []nembus.POSTransactionLine{
+			{ID: testUUID(911), TransactionID: testUUID(91), ProductSKU: "SKU-LOW", Quantity: 5.0, UnitPrice: 30.0, LineTotal: 150.0},
 		}
 
 		cfg := &config.Config{BatchSize: 10, NembusDefaultWarehouse: "W01"}
@@ -888,7 +893,7 @@ func TestProcessOutbox_HoldOnZeroStockDisabled(t *testing.T) {
 		if stats.TransactionsHeld != 1 {
 			t.Errorf("expected 1 held transaction for partial shortage, got %d", stats.TransactionsHeld)
 		}
-		if _, held := mockNembus.heldTransactions[91]; !held {
+		if _, held := mockNembus.heldTransactions[testUUID(91)]; !held {
 			t.Errorf("expected transaction 91 to be held")
 		}
 	})
@@ -919,22 +924,22 @@ func TestProcessOutbox_WatermarkFiltering(t *testing.T) {
 	preMigOrderID := uuid.New()
 	mockNembus.unpostedPOSTransactions = []nembus.POSTransaction{
 		{
-			ID:                1001,
+			ID: testUUID(1001),
 			TransactionNumber: "TX-PRE-MIG",
 			TransactionDate:   migEnd.Add(-10 * time.Minute),
 			TotalAmount:       50,
 			Status:            "completed",
 		},
 		{
-			ID:                1002,
+			ID: testUUID(1002),
 			TransactionNumber: "TX-POST-MIG",
 			TransactionDate:   migEnd.Add(2 * time.Second),
 			TotalAmount:       75,
 			Status:            "completed",
 		},
 	}
-	mockNembus.txLines[1001] = []nembus.POSTransactionLine{{ID: 1, ProductSKU: "SKU-1", Quantity: 1, LineTotal: 50}}
-	mockNembus.txLines[1002] = []nembus.POSTransactionLine{{ID: 2, ProductSKU: "SKU-1", Quantity: 1, LineTotal: 75}}
+	mockNembus.txLines[testUUID(1001)] = []nembus.POSTransactionLine{{ID: testUUID(1), ProductSKU: "SKU-1", Quantity: 1, LineTotal: 50}}
+	mockNembus.txLines[testUUID(1002)] = []nembus.POSTransactionLine{{ID: testUUID(2), ProductSKU: "SKU-1", Quantity: 1, LineTotal: 75}}
 	mockNembus.unpostedSalesOrders = []nembus.SalesOrderV2{
 		{
 			ID:          preMigOrderID,
@@ -956,10 +961,10 @@ func TestProcessOutbox_WatermarkFiltering(t *testing.T) {
 	if stats.TransactionsPosted != 1 || stats.OrdersPosted != 0 {
 		t.Fatalf("expected 1 TX and 0 orders posted, got %+v", stats)
 	}
-	if _, ok := mockNembus.markedTransactions[1001]; ok {
+	if _, ok := mockNembus.markedTransactions[testUUID(1001)]; ok {
 		t.Fatalf("pre-migration transaction 1001 should have been skipped")
 	}
-	if _, ok := mockNembus.markedTransactions[1002]; !ok {
+	if _, ok := mockNembus.markedTransactions[testUUID(1002)]; !ok {
 		t.Fatalf("post-migration transaction 1002 should have been posted")
 	}
 
@@ -972,14 +977,14 @@ func TestProcessOutbox_WatermarkFiltering(t *testing.T) {
 	time.Sleep(1100 * time.Millisecond)
 	mockNembus.unpostedPOSTransactions = []nembus.POSTransaction{
 		{
-			ID:                1003,
+			ID: testUUID(1003),
 			TransactionNumber: "TX-FAIL-AFTER",
 			TransactionDate:   wm1.Add(1 * time.Second),
 			TotalAmount:       25,
 			Status:            "completed",
 		},
 	}
-	mockNembus.txLines[1003] = []nembus.POSTransactionLine{{ID: 3, ProductSKU: "SKU-1", Quantity: 1, LineTotal: 25}}
+	mockNembus.txLines[testUUID(1003)] = []nembus.POSTransactionLine{{ID: testUUID(3), ProductSKU: "SKU-1", Quantity: 1, LineTotal: 25}}
 	mockSAP.postInvoiceFunc = func(ctx context.Context, inv *sap.SAPInvoiceRequest) (*sap.SAPInvoiceResponse, error) {
 		return nil, errors.New("sap temporary failure")
 	}
@@ -1014,21 +1019,21 @@ func TestProcessOutbox_SkipsZeroLineRecordsAndAdvancesWatermark(t *testing.T) {
 	mockNembus := newMockNembusClient()
 	mockNembus.unpostedPOSTransactions = []nembus.POSTransaction{
 		{
-			ID:                101,
+			ID: testUUID(101),
 			TransactionNumber: "TXN-ORD-EMPTY",
 			StoreID:           1,
 			TransactionDate:   emptyTxTime,
 			TotalAmount:       25,
 		},
 		{
-			ID:                102,
+			ID: testUUID(102),
 			TransactionNumber: "INV-VALID",
 			StoreID:           1,
 			TransactionDate:   validTxTime,
 			TotalAmount:       50,
 		},
 	}
-	mockNembus.txLines[102] = []nembus.POSTransactionLine{{
+	mockNembus.txLines[testUUID(102)] = []nembus.POSTransactionLine{{
 		ProductID: 1, ProductSKU: "SKU-1", ProductName: "Item 1", Quantity: 1, UnitPrice: 50, LineTotal: 50,
 	}}
 	mockNembus.unpostedSalesOrders = []nembus.SalesOrderV2{{
@@ -1099,7 +1104,7 @@ func TestPostTransactionToSAP_UoMEntryAndManualUseBaseUnits(t *testing.T) {
 	mockNembus := newMockNembusClient()
 	mockNembus.unpostedPOSTransactions = []nembus.POSTransaction{
 		{
-			ID:                501,
+			ID: testUUID(501),
 			StoreID:           1,
 			CustomerSAPCode:   "C-REAL-474",
 			TransactionNumber: "TXN-UOM-1",
@@ -1109,10 +1114,10 @@ func TestPostTransactionToSAP_UoMEntryAndManualUseBaseUnits(t *testing.T) {
 			Status:            "completed",
 		},
 	}
-	mockNembus.txLines[501] = []nembus.POSTransactionLine{
+	mockNembus.txLines[testUUID(501)] = []nembus.POSTransactionLine{
 		{
-			ID:                  1,
-			TransactionID:       501,
+			ID: testUUID(1),
+			TransactionID: testUUID(501),
 			ProductSKU:          "ITEM-UGP",
 			ProductName:         "UoM Group Item",
 			Quantity:            1.0,
@@ -1126,8 +1131,8 @@ func TestPostTransactionToSAP_UoMEntryAndManualUseBaseUnits(t *testing.T) {
 			SAPTaxCode:          "O15",
 		},
 		{
-			ID:                  2,
-			TransactionID:       501,
+			ID: testUUID(2),
+			TransactionID: testUUID(501),
 			ProductSKU:          "ITEM-MANUAL",
 			ProductName:         "Manual Carton Item",
 			Quantity:            1.0,
@@ -1202,7 +1207,7 @@ func TestPostTransactionToSAP_PaymentTotalMismatchLogsWarning(t *testing.T) {
 	mockNembus := newMockNembusClient()
 	mockNembus.unpostedPOSTransactions = []nembus.POSTransaction{
 		{
-			ID:                601,
+			ID: testUUID(601),
 			StoreID:           1,
 			TransactionNumber: "TXN-PAY-WARN",
 			TransactionDate:   time.Now().UTC(),
@@ -1211,7 +1216,7 @@ func TestPostTransactionToSAP_PaymentTotalMismatchLogsWarning(t *testing.T) {
 			Status:            "completed",
 		},
 		{
-			ID:                602,
+			ID: testUUID(602),
 			StoreID:           1,
 			TransactionNumber: "TXN-PAY-CAP",
 			TransactionDate:   time.Now().UTC(),
@@ -1220,10 +1225,10 @@ func TestPostTransactionToSAP_PaymentTotalMismatchLogsWarning(t *testing.T) {
 			Status:            "completed",
 		},
 	}
-	mockNembus.txLines[601] = []nembus.POSTransactionLine{{ID: 1, ProductSKU: "SKU-1", Quantity: 1, UnitPrice: 300, LineTotal: 300}}
-	mockNembus.txLines[602] = []nembus.POSTransactionLine{{ID: 2, ProductSKU: "SKU-1", Quantity: 1, UnitPrice: 300, LineTotal: 345, TaxAmount: 45}}
-	mockNembus.txPayments[601] = []nembus.POSPayment{{ID: 1, TransactionID: 601, PaymentMethod: "cash", Amount: 300.0}}
-	mockNembus.txPayments[602] = []nembus.POSPayment{{ID: 2, TransactionID: 602, PaymentMethod: "cash", Amount: 400.0}}
+	mockNembus.txLines[testUUID(601)] = []nembus.POSTransactionLine{{ID: testUUID(1), ProductSKU: "SKU-1", Quantity: 1, UnitPrice: 300, LineTotal: 300}}
+	mockNembus.txLines[testUUID(602)] = []nembus.POSTransactionLine{{ID: testUUID(2), ProductSKU: "SKU-1", Quantity: 1, UnitPrice: 300, LineTotal: 345, TaxAmount: 45}}
+	mockNembus.txPayments[testUUID(601)] = []nembus.POSPayment{{ID: testUUID(1), TransactionID: testUUID(601), PaymentMethod: "cash", Amount: 300.0}}
+	mockNembus.txPayments[testUUID(602)] = []nembus.POSPayment{{ID: testUUID(2), TransactionID: testUUID(602), PaymentMethod: "cash", Amount: 400.0}}
 
 	var logs []string
 	sync := pipeline.NewUpstreamSync(&config.Config{BatchSize: 10, NembusDefaultWarehouse: "01"}, mockSAP, mockNembus)
@@ -1281,7 +1286,7 @@ func TestProcessOutbox_OfflineTransactionNotDroppedAfterIdlePoll(t *testing.T) {
 	offlineDate := time.Now().UTC().Truncate(24*time.Hour).Add(30 * time.Second)
 	mockNembus.unpostedPOSTransactions = []nembus.POSTransaction{
 		{
-			ID:                701,
+			ID: testUUID(701),
 			StoreID:           1,
 			TransactionNumber: "TXN-OFFLINE-1",
 			TransactionDate:   offlineDate,
@@ -1290,7 +1295,7 @@ func TestProcessOutbox_OfflineTransactionNotDroppedAfterIdlePoll(t *testing.T) {
 			Status:            "completed",
 		},
 	}
-	mockNembus.txLines[701] = []nembus.POSTransactionLine{{ID: 1, ProductSKU: "SKU-1", Quantity: 1, UnitPrice: 100, LineTotal: 100}}
+	mockNembus.txLines[testUUID(701)] = []nembus.POSTransactionLine{{ID: testUUID(1), ProductSKU: "SKU-1", Quantity: 1, UnitPrice: 100, LineTotal: 100}}
 
 	stats2, err := sync.ProcessOutbox(ctx)
 	if err != nil {
@@ -1312,7 +1317,7 @@ func TestProcessOutbox_ErrorLoggingNotUpToDate(t *testing.T) {
 	mockNembus := newMockNembusClient()
 	mockNembus.unpostedPOSTransactions = []nembus.POSTransaction{
 		{
-			ID:                801,
+			ID: testUUID(801),
 			StoreID:           1,
 			TransactionNumber: "TXN-ERR-1",
 			TransactionDate:   time.Now().UTC(),
@@ -1320,7 +1325,7 @@ func TestProcessOutbox_ErrorLoggingNotUpToDate(t *testing.T) {
 			Status:            "completed",
 		},
 	}
-	mockNembus.txLines[801] = []nembus.POSTransactionLine{{ID: 1, ProductSKU: "SKU-1", Quantity: 1, UnitPrice: 50, LineTotal: 50}}
+	mockNembus.txLines[testUUID(801)] = []nembus.POSTransactionLine{{ID: testUUID(1), ProductSKU: "SKU-1", Quantity: 1, UnitPrice: 50, LineTotal: 50}}
 
 	var logs []string
 	sync := pipeline.NewUpstreamSync(&config.Config{BatchSize: 10, NembusDefaultWarehouse: "01"}, mockSAP, mockNembus)

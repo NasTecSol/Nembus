@@ -72,7 +72,7 @@ CREATE TABLE user_store_access (
 );
 
 CREATE TABLE user_biometric_templates (
-    id SERIAL PRIMARY KEY,
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     finger_index SMALLINT NOT NULL CHECK (finger_index BETWEEN 1 AND 10),
@@ -124,7 +124,7 @@ CREATE TABLE pos_terminals (
 );
 
 CREATE TABLE cashier_sessions (
-    id SERIAL PRIMARY KEY,
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     cashier_id INTEGER NOT NULL REFERENCES cashiers(id) ON DELETE CASCADE,
     pos_terminal_id INTEGER NOT NULL REFERENCES pos_terminals(id) ON DELETE CASCADE,
     session_number VARCHAR(50) NOT NULL,

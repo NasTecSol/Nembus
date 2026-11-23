@@ -235,6 +235,31 @@ func parseFlexInt64(v any) int64 {
 	}
 }
 
+func parseFlexUUID(v any) uuid.UUID {
+	switch t := v.(type) {
+	case string:
+		if u, err := uuid.Parse(strings.TrimSpace(t)); err == nil {
+			return u
+		}
+	case []byte:
+		if u, err := uuid.ParseBytes(t); err == nil {
+			return u
+		}
+	}
+	return uuid.Nil
+}
+
+func parseOptionalFlexUUID(v any) *uuid.UUID {
+	if v == nil {
+		return nil
+	}
+	u := parseFlexUUID(v)
+	if u == uuid.Nil {
+		return nil
+	}
+	return &u
+}
+
 func parseFlexTime(v any) time.Time {
 	s, ok := v.(string)
 	if !ok || strings.TrimSpace(s) == "" {
@@ -419,20 +444,17 @@ func (c *HTTPClient) parseTransactionRow(row map[string]any, fallbackStoreID int
 	if cashierID <= 0 {
 		cashierID = 1
 	}
-	sessionID := int32(parseFlexInt64(row["cashier_session_id"]))
-	if sessionID <= 0 {
-		sessionID = 1
-	}
+	sessionID := parseFlexUUID(row["cashier_session_id"])
 	custSAPCode, _ := row["customer_sap_code"].(string)
 	total := parseFlexFloat(row["total_amount"])
 	amountPaid := parseFlexFloat(row["amount_paid"])
 
 	return POSTransaction{
-		ID:                parseFlexInt64(row["id"]),
+		ID:                parseFlexUUID(row["id"]),
 		StoreID:           storeID,
 		CashierID:         cashierID,
 		CashierSessionID:  sessionID,
-		CustomerID:        parseOptionalInt32(row["customer_id"]),
+		CustomerID:        parseOptionalFlexUUID(row["customer_id"]),
 		CustomerSAPCode:   strings.TrimSpace(custSAPCode),
 		TransactionNumber: txNum,
 		TransactionDate:   parseFlexTime(row["transaction_date"]),
@@ -600,11 +622,11 @@ func (c *HTTPClient) FetchUnpostedPOSTransactions(ctx context.Context, limit int
 	return list, nil
 }
 
-func (c *HTTPClient) FetchTransactionLines(ctx context.Context, transactionID int64) ([]POSTransactionLine, error) {
-	path := fmt.Sprintf("/api/pos/transactions/%d/full", transactionID)
+func (c *HTTPClient) FetchTransactionLines(ctx context.Context, transactionID uuid.UUID) ([]POSTransactionLine, error) {
+	path := fmt.Sprintf("/api/pos/transactions/%s/full", transactionID.String())
 	bodyBytes, status, err := c.doJSON(ctx, http.MethodGet, path, nil, false)
 	if err != nil || status != http.StatusOK {
-		return nil, fmt.Errorf("fetch transaction %d lines failed (status %d)", transactionID, status)
+		return nil, fmt.Errorf("fetch transaction %s lines failed (status %d)", transactionID, status)
 	}
 
 	var env struct {
@@ -620,10 +642,13 @@ func (c *HTTPClient) FetchTransactionLines(ctx context.Context, transactionID in
 		if sku == "" {
 			sku, _ = row["product_sku"].(string)
 		}
-		lineID := parseFlexInt64(row["line_id"])
+		lineID := parseFlexUUID(row["line_id"])
+		if lineID == uuid.Nil {
+			lineID = parseFlexUUID(row["id"])
+		}
 		productID := parseFlexInt64(row["product_id"])
 		qty := parseFlexFloat(row["quantity"])
-		if lineID == 0 && productID == 0 && sku == "" && qty == 0 {
+		if lineID == uuid.Nil && productID == 0 && sku == "" && qty == 0 {
 			continue
 		}
 		name, _ := row["product_name"].(string)
@@ -676,8 +701,8 @@ func (c *HTTPClient) FetchTransactionLines(ctx context.Context, transactionID in
 	return lines, nil
 }
 
-func (c *HTTPClient) FetchTransactionPayments(ctx context.Context, transactionID int64) ([]POSPayment, error) {
-	path := fmt.Sprintf("/api/pos/transactions/%d/payments", transactionID)
+func (c *HTTPClient) FetchTransactionPayments(ctx context.Context, transactionID uuid.UUID) ([]POSPayment, error) {
+	path := fmt.Sprintf("/api/pos/transactions/%s/payments", transactionID.String())
 	bodyBytes, status, err := c.doJSON(ctx, http.MethodGet, path, nil, false)
 	if err != nil || status != http.StatusOK {
 		return nil, nil
@@ -699,7 +724,7 @@ func (c *HTTPClient) FetchTransactionPayments(ctx context.Context, transactionID
 			refPtr = &ref
 		}
 		payments = append(payments, POSPayment{
-			ID:            parseFlexInt64(row["id"]),
+			ID:            parseFlexUUID(row["id"]),
 			TransactionID: transactionID,
 			PaymentMethod: method,
 			Amount:        parseFlexFloat(row["amount"]),
@@ -729,12 +754,12 @@ func (c *HTTPClient) markEntitySyncedToSAP(ctx context.Context, path string, sap
 	return nil
 }
 
-func (c *HTTPClient) MarkTransactionPostedToSAP(ctx context.Context, transactionID int64, sapDocEntry, sapDocNum int) error {
-	return c.markEntitySyncedToSAP(ctx, fmt.Sprintf("/api/pos/transactions/%d/sap-sync", transactionID), sapDocEntry, sapDocNum)
+func (c *HTTPClient) MarkTransactionPostedToSAP(ctx context.Context, transactionID uuid.UUID, sapDocEntry, sapDocNum int) error {
+	return c.markEntitySyncedToSAP(ctx, fmt.Sprintf("/api/pos/transactions/%s/sap-sync", transactionID.String()), sapDocEntry, sapDocNum)
 }
 
-func (c *HTTPClient) FetchCustomerSAPCode(ctx context.Context, customerID int32) (string, error) {
-	path := fmt.Sprintf("/api/customers/%d", customerID)
+func (c *HTTPClient) FetchCustomerSAPCode(ctx context.Context, customerID uuid.UUID) (string, error) {
+	path := fmt.Sprintf("/api/customers/%s", customerID.String())
 	bodyBytes, status, err := c.doJSON(ctx, http.MethodGet, path, nil, false)
 	if err != nil || status != http.StatusOK {
 		return c.cfg.NembusDefaultCustomer, nil
@@ -802,13 +827,13 @@ func (c *HTTPClient) FetchUnpostedSalesReturns(ctx context.Context, limit int) (
 			reasonPtr = &reason
 		}
 		list = append(list, SalesReturn{
-			ID:                    parseFlexInt64(row["id"]),
+			ID:                    parseFlexUUID(row["id"]),
 			ReturnNumber:          retNum,
 			StoreID:               int32(parseFlexInt64(row["store_id"])),
 			CashierID:             parseOptionalInt32(row["cashier_id"]),
-			CustomerID:            parseOptionalInt32(row["customer_id"]),
+			CustomerID:            parseOptionalFlexUUID(row["customer_id"]),
 			CustomerSAPCode:       strings.TrimSpace(custSAPCode),
-			OriginalTransactionID: parseOptionalInt32(row["original_transaction_id"]),
+			OriginalTransactionID: parseOptionalFlexUUID(row["original_transaction_id"]),
 			OriginalSAPDocEntry:   int(parseFlexInt64(row["original_sap_doc_entry"])),
 			ReturnDate:            parseFlexTime(row["return_date"]),
 			ReturnReason:          reasonPtr,
@@ -822,11 +847,11 @@ func (c *HTTPClient) FetchUnpostedSalesReturns(ctx context.Context, limit int) (
 	return list, nil
 }
 
-func (c *HTTPClient) FetchSalesReturnLines(ctx context.Context, returnID int64) ([]SalesReturnLine, error) {
-	path := fmt.Sprintf("/api/pos/returns/%d/lines", returnID)
+func (c *HTTPClient) FetchSalesReturnLines(ctx context.Context, returnID uuid.UUID) ([]SalesReturnLine, error) {
+	path := fmt.Sprintf("/api/pos/returns/%s/lines", returnID.String())
 	bodyBytes, status, err := c.doJSON(ctx, http.MethodGet, path, nil, false)
 	if err != nil || status != http.StatusOK {
-		return nil, fmt.Errorf("fetch sales return %d lines failed (status %d)", returnID, status)
+		return nil, fmt.Errorf("fetch sales return %s lines failed (status %d)", returnID, status)
 	}
 	var env struct {
 		Data []map[string]any `json:"data"`
@@ -852,12 +877,12 @@ func (c *HTTPClient) FetchSalesReturnLines(ctx context.Context, returnID int64) 
 			lineNum = idx + 1
 		}
 		lines = append(lines, SalesReturnLine{
-			ID:                  parseFlexInt64(row["id"]),
+			ID:                  parseFlexUUID(row["id"]),
 			ReturnID:            returnID,
 			ProductID:           int32(parseFlexInt64(row["product_id"])),
 			ProductSKU:          sku,
 			ProductName:         name,
-			OriginalLineID:      parseOptionalInt32(row["original_line_id"]),
+			OriginalLineID:      parseOptionalFlexUUID(row["original_line_id"]),
 			Quantity:            parseFlexFloat(row["quantity"]),
 			UnitPrice:           parseFlexFloat(row["unit_price"]),
 			RefundAmount:        parseFlexFloat(row["refund_amount"]),
@@ -873,12 +898,12 @@ func (c *HTTPClient) FetchSalesReturnLines(ctx context.Context, returnID int64) 
 	return lines, nil
 }
 
-func (c *HTTPClient) MarkSalesReturnPostedToSAP(ctx context.Context, returnID int64, sapDocEntry, sapDocNum int) error {
-	return c.markEntitySyncedToSAP(ctx, fmt.Sprintf("/api/pos/returns/%d/sap-sync", returnID), sapDocEntry, sapDocNum)
+func (c *HTTPClient) MarkSalesReturnPostedToSAP(ctx context.Context, returnID uuid.UUID, sapDocEntry, sapDocNum int) error {
+	return c.markEntitySyncedToSAP(ctx, fmt.Sprintf("/api/pos/returns/%s/sap-sync", returnID.String()), sapDocEntry, sapDocNum)
 }
 
-func (c *HTTPClient) FetchOriginalSAPDocEntry(ctx context.Context, originalTxID int32) (int, error) {
-	path := fmt.Sprintf("/api/pos/transactions/%d", originalTxID)
+func (c *HTTPClient) FetchOriginalSAPDocEntry(ctx context.Context, originalTxID uuid.UUID) (int, error) {
+	path := fmt.Sprintf("/api/pos/transactions/%s", originalTxID.String())
 	bodyBytes, status, err := c.doJSON(ctx, http.MethodGet, path, nil, false)
 	if err != nil || status != http.StatusOK {
 		return 0, nil
@@ -953,9 +978,9 @@ func (c *HTTPClient) submitStockHoldApproval(ctx context.Context, entityType, en
 	return nil
 }
 
-func (c *HTTPClient) HoldTransactionForStockReview(ctx context.Context, txID int64, txNum string, storeID int32, whCode string, totalAmount float64, shortageItems []ShortageItem, summary string) error {
+func (c *HTTPClient) HoldTransactionForStockReview(ctx context.Context, txID uuid.UUID, txNum string, storeID int32, whCode string, totalAmount float64, shortageItems []ShortageItem, summary string) error {
 	payload := map[string]any{
-		"transaction_id":     txID,
+		"transaction_id":     txID.String(),
 		"transaction_number": txNum,
 		"store_id":           storeID,
 		"warehouse_code":     whCode,
@@ -963,7 +988,7 @@ func (c *HTTPClient) HoldTransactionForStockReview(ctx context.Context, txID int
 		"shortage_items":     shortageItems,
 		"reason":             summary,
 	}
-	return c.submitStockHoldApproval(ctx, "pos_transaction", fmt.Sprintf("%d", txID), summary, payload)
+	return c.submitStockHoldApproval(ctx, "pos_transaction", txID.String(), summary, payload)
 }
 
 func parseSalesOrderRow(row map[string]any) (SalesOrderV2, bool) {
@@ -999,7 +1024,7 @@ func parseSalesOrderRow(row map[string]any) (SalesOrderV2, bool) {
 		ID:              orderID,
 		OrderNumber:     orderNum,
 		StoreID:         int32(parseFlexInt64(row["store_id"])),
-		CustomerID:      parseOptionalInt32(row["customer_id"]),
+		CustomerID:      parseOptionalFlexUUID(row["customer_id"]),
 		CustomerSAPCode: strings.TrimSpace(custSAPCode),
 		OrderDate:       parseFlexTime(row["order_date"]),
 		TotalAmount:     parseFlexFloat(row["total_amount"]),

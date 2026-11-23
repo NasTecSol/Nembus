@@ -11,6 +11,7 @@ import (
 	"github.com/NasTecSol/nembus-core/utils"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
 
 // StockCountsHandler handles stock counts endpoints.
@@ -166,13 +167,13 @@ func (h *StockCountsHandler) GetStockCount(c *gin.Context) {
 	h.useCase.SetRepository(repo)
 
 	idStr := c.Param("id")
-	id, err := strconv.ParseInt(idStr, 10, 32)
+	id, err := uuid.Parse(idStr)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid stock count id", nil))
 		return
 	}
 
-	resp := h.useCase.GetStockCount(c.Request.Context(), int32(id))
+	resp := h.useCase.GetStockCount(c.Request.Context(), id)
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -185,7 +186,7 @@ func (h *StockCountsHandler) GetStockCount(c *gin.Context) {
 // @Security     BearerAuth
 // @Param        x-tenant-id   header    string                   true  "Tenant identifier"
 // @Param        Authorization header    string                   true  "Bearer token"
-// @Param        id            path      int                      true  "Stock Count ID"
+// @Param        id            path      string                   true  "Stock Count ID (UUID)"
 // @Param        body          body      UpdateStockCountRequest  true  "Stock count update payload"
 // @Success      200           {object}  StockCountResponse
 // @Failure      400           {object}  ErrorResponse
@@ -200,7 +201,7 @@ func (h *StockCountsHandler) UpdateStockCount(c *gin.Context) {
 	h.useCase.SetRepository(repo)
 
 	idStr := c.Param("id")
-	id, err := strconv.ParseInt(idStr, 10, 32)
+	id, err := uuid.Parse(idStr)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid stock count id", nil))
 		return
@@ -212,7 +213,7 @@ func (h *StockCountsHandler) UpdateStockCount(c *gin.Context) {
 		return
 	}
 
-	resp := h.useCase.UpdateStockCount(c.Request.Context(), int32(id), req)
+	resp := h.useCase.UpdateStockCount(c.Request.Context(), id, req)
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -225,7 +226,7 @@ func (h *StockCountsHandler) UpdateStockCount(c *gin.Context) {
 // @Security     BearerAuth
 // @Param        x-tenant-id   header    string  true  "Tenant identifier"
 // @Param        Authorization header    string  true  "Bearer token"
-// @Param        id            path      int     true  "Stock Count ID"
+// @Param        id            path      string  true  "Stock Count ID (UUID)"
 // @Success      200           {object}  SuccessResponse
 // @Failure      400           {object}  ErrorResponse
 // @Failure      404           {object}  ErrorResponse
@@ -239,13 +240,13 @@ func (h *StockCountsHandler) DeleteStockCount(c *gin.Context) {
 	h.useCase.SetRepository(repo)
 
 	idStr := c.Param("id")
-	id, err := strconv.ParseInt(idStr, 10, 32)
+	id, err := uuid.Parse(idStr)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid stock count id", nil))
 		return
 	}
 
-	resp := h.useCase.DeleteStockCount(c.Request.Context(), int32(id))
+	resp := h.useCase.DeleteStockCount(c.Request.Context(), id)
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -258,7 +259,7 @@ func (h *StockCountsHandler) DeleteStockCount(c *gin.Context) {
 // @Security     BearerAuth
 // @Param        x-tenant-id   header    string  true  "Tenant identifier"
 // @Param        Authorization header    string  true  "Bearer token"
-// @Param        id            path      int     true  "Stock Count ID"
+// @Param        id            path      string  true  "Stock Count ID (UUID)"
 // @Success      200           {object}  StockCountResponse
 // @Failure      400           {object}  ErrorResponse
 // @Failure      500           {object}  ErrorResponse
@@ -271,13 +272,13 @@ func (h *StockCountsHandler) StartStockCount(c *gin.Context) {
 	h.useCase.SetRepository(repo)
 
 	idStr := c.Param("id")
-	id, err := strconv.ParseInt(idStr, 10, 32)
+	id, err := uuid.Parse(idStr)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid stock count id", nil))
 		return
 	}
 
-	resp := h.useCase.StartStockCount(c.Request.Context(), int32(id))
+	resp := h.useCase.StartStockCount(c.Request.Context(), id)
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -290,7 +291,7 @@ func (h *StockCountsHandler) StartStockCount(c *gin.Context) {
 // @Security     BearerAuth
 // @Param        x-tenant-id   header    string  true  "Tenant identifier"
 // @Param        Authorization header    string  true  "Bearer token"
-// @Param        id            path      int     true  "Stock Count ID"
+// @Param        id            path      string  true  "Stock Count ID (UUID)"
 // @Success      200           {object}  StockCountResponse
 // @Failure      400           {object}  ErrorResponse
 // @Failure      500           {object}  ErrorResponse
@@ -303,13 +304,13 @@ func (h *StockCountsHandler) CompleteStockCount(c *gin.Context) {
 	h.useCase.SetRepository(repo)
 
 	idStr := c.Param("id")
-	id, err := strconv.ParseInt(idStr, 10, 32)
+	id, err := uuid.Parse(idStr)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid stock count id", nil))
 		return
 	}
 
-	resp := h.useCase.CompleteStockCount(c.Request.Context(), int32(id))
+	resp := h.useCase.CompleteStockCount(c.Request.Context(), id)
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -322,7 +323,7 @@ func (h *StockCountsHandler) CompleteStockCount(c *gin.Context) {
 // @Security     BearerAuth
 // @Param        x-tenant-id   header    string                    true  "Tenant identifier"
 // @Param        Authorization header    string                    true  "Bearer token"
-// @Param        id            path      int                       true  "Stock Count ID"
+// @Param        id            path      string                    true  "Stock Count ID (UUID)"
 // @Param        body          body      ApproveStockCountRequest  false "Approver payload"
 // @Success      200           {object}  StockCountResponse
 // @Failure      400           {object}  ErrorResponse
@@ -336,7 +337,7 @@ func (h *StockCountsHandler) ApproveStockCount(c *gin.Context) {
 	h.useCase.SetRepository(repo)
 
 	idStr := c.Param("id")
-	id, err := strconv.ParseInt(idStr, 10, 32)
+	id, err := uuid.Parse(idStr)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid stock count id", nil))
 		return
@@ -345,7 +346,7 @@ func (h *StockCountsHandler) ApproveStockCount(c *gin.Context) {
 	var req usecase.ApproveStockCountInput
 	_ = c.ShouldBindJSON(&req)
 
-	resp := h.useCase.ApproveStockCount(c.Request.Context(), int32(id), req.ApprovedBy)
+	resp := h.useCase.ApproveStockCount(c.Request.Context(), id, req.ApprovedBy)
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -358,7 +359,7 @@ func (h *StockCountsHandler) ApproveStockCount(c *gin.Context) {
 // @Security     BearerAuth
 // @Param        x-tenant-id   header    string  true  "Tenant identifier"
 // @Param        Authorization header    string  true  "Bearer token"
-// @Param        id            path      int     true  "Stock Count ID"
+// @Param        id            path      string  true  "Stock Count ID (UUID)"
 // @Success      200           {object}  StockCountResponse
 // @Failure      400           {object}  ErrorResponse
 // @Failure      500           {object}  ErrorResponse
@@ -371,13 +372,13 @@ func (h *StockCountsHandler) ReconcileStockCount(c *gin.Context) {
 	h.useCase.SetRepository(repo)
 
 	idStr := c.Param("id")
-	id, err := strconv.ParseInt(idStr, 10, 32)
+	id, err := uuid.Parse(idStr)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid stock count id", nil))
 		return
 	}
 
-	resp := h.useCase.ReconcileStockCount(c.Request.Context(), int32(id))
+	resp := h.useCase.ReconcileStockCount(c.Request.Context(), id)
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -390,7 +391,7 @@ func (h *StockCountsHandler) ReconcileStockCount(c *gin.Context) {
 // @Security     BearerAuth
 // @Param        x-tenant-id   header    string  true  "Tenant identifier"
 // @Param        Authorization header    string  true  "Bearer token"
-// @Param        id            path      int     true  "Stock Count ID"
+// @Param        id            path      string  true  "Stock Count ID (UUID)"
 // @Success      200           {object}  StockCountSummaryResponse
 // @Failure      400           {object}  ErrorResponse
 // @Failure      500           {object}  ErrorResponse
@@ -403,13 +404,13 @@ func (h *StockCountsHandler) GetStockCountSummary(c *gin.Context) {
 	h.useCase.SetRepository(repo)
 
 	idStr := c.Param("id")
-	id, err := strconv.ParseInt(idStr, 10, 32)
+	id, err := uuid.Parse(idStr)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid stock count id", nil))
 		return
 	}
 
-	resp := h.useCase.GetStockCountSummary(c.Request.Context(), int32(id))
+	resp := h.useCase.GetStockCountSummary(c.Request.Context(), id)
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -422,7 +423,7 @@ func (h *StockCountsHandler) GetStockCountSummary(c *gin.Context) {
 // @Security     BearerAuth
 // @Param        x-tenant-id   header    string             true  "Tenant identifier"
 // @Param        Authorization header    string             true  "Bearer token"
-// @Param        id            path      int                true  "Stock Count ID"
+// @Param        id            path      string             true  "Stock Count ID (UUID)"
 // @Param        body          body      StockCountLineDTO  true  "Line item creation payload"
 // @Success      201           {object}  StockCountLineResponse
 // @Failure      400           {object}  ErrorResponse
@@ -436,7 +437,7 @@ func (h *StockCountsHandler) AddStockCountLine(c *gin.Context) {
 	h.useCase.SetRepository(repo)
 
 	countIDStr := c.Param("id")
-	countID, err := strconv.ParseInt(countIDStr, 10, 32)
+	countID, err := uuid.Parse(countIDStr)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid stock count id", nil))
 		return
@@ -448,7 +449,7 @@ func (h *StockCountsHandler) AddStockCountLine(c *gin.Context) {
 		return
 	}
 
-	resp := h.useCase.AddStockCountLine(c.Request.Context(), int32(countID), req)
+	resp := h.useCase.AddStockCountLine(c.Request.Context(), countID, req)
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -461,7 +462,7 @@ func (h *StockCountsHandler) AddStockCountLine(c *gin.Context) {
 // @Security     BearerAuth
 // @Param        x-tenant-id   header    string  true  "Tenant identifier"
 // @Param        Authorization header    string  true  "Bearer token"
-// @Param        id            path      int     true  "Stock Count ID"
+// @Param        id            path      string  true  "Stock Count ID (UUID)"
 // @Success      200           {array}   StockCountLineResponse
 // @Failure      400           {object}  ErrorResponse
 // @Failure      500           {object}  ErrorResponse
@@ -474,13 +475,13 @@ func (h *StockCountsHandler) ListStockCountLines(c *gin.Context) {
 	h.useCase.SetRepository(repo)
 
 	countIDStr := c.Param("id")
-	countID, err := strconv.ParseInt(countIDStr, 10, 32)
+	countID, err := uuid.Parse(countIDStr)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid stock count id", nil))
 		return
 	}
 
-	resp := h.useCase.ListStockCountLines(c.Request.Context(), int32(countID))
+	resp := h.useCase.ListStockCountLines(c.Request.Context(), countID)
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -493,8 +494,8 @@ func (h *StockCountsHandler) ListStockCountLines(c *gin.Context) {
 // @Security     BearerAuth
 // @Param        x-tenant-id   header    string  true  "Tenant identifier"
 // @Param        Authorization header    string  true  "Bearer token"
-// @Param        id            path      int     true  "Stock Count ID"
-// @Param        line_id       path      int     true  "Line Item ID"
+// @Param        id            path      string  true  "Stock Count ID (UUID)"
+// @Param        line_id       path      string  true  "Line Item ID (UUID)"
 // @Success      200           {object}  StockCountLineResponse
 // @Failure      400           {object}  ErrorResponse
 // @Failure      404           {object}  ErrorResponse
@@ -508,13 +509,13 @@ func (h *StockCountsHandler) GetStockCountLine(c *gin.Context) {
 	h.useCase.SetRepository(repo)
 
 	lineIDStr := c.Param("line_id")
-	lineID, err := strconv.ParseInt(lineIDStr, 10, 32)
+	lineID, err := uuid.Parse(lineIDStr)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid stock count line id", nil))
 		return
 	}
 
-	resp := h.useCase.GetStockCountLine(c.Request.Context(), int32(lineID))
+	resp := h.useCase.GetStockCountLine(c.Request.Context(), lineID)
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -527,8 +528,8 @@ func (h *StockCountsHandler) GetStockCountLine(c *gin.Context) {
 // @Security     BearerAuth
 // @Param        x-tenant-id   header    string                       true  "Tenant identifier"
 // @Param        Authorization header    string                       true  "Bearer token"
-// @Param        id            path      int                          true  "Stock Count ID"
-// @Param        line_id       path      int                          true  "Line Item ID"
+// @Param        id            path      string                       true  "Stock Count ID (UUID)"
+// @Param        line_id       path      string                       true  "Line Item ID (UUID)"
 // @Param        body          body      UpdateStockCountLineRequest  true  "Line item update payload"
 // @Success      200           {object}  StockCountLineResponse
 // @Failure      400           {object}  ErrorResponse
@@ -543,7 +544,7 @@ func (h *StockCountsHandler) UpdateStockCountLine(c *gin.Context) {
 	h.useCase.SetRepository(repo)
 
 	lineIDStr := c.Param("line_id")
-	lineID, err := strconv.ParseInt(lineIDStr, 10, 32)
+	lineID, err := uuid.Parse(lineIDStr)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid stock count line id", nil))
 		return
@@ -555,7 +556,7 @@ func (h *StockCountsHandler) UpdateStockCountLine(c *gin.Context) {
 		return
 	}
 
-	resp := h.useCase.UpdateStockCountLine(c.Request.Context(), int32(lineID), req)
+	resp := h.useCase.UpdateStockCountLine(c.Request.Context(), lineID, req)
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -568,8 +569,8 @@ func (h *StockCountsHandler) UpdateStockCountLine(c *gin.Context) {
 // @Security     BearerAuth
 // @Param        x-tenant-id   header    string  true  "Tenant identifier"
 // @Param        Authorization header    string  true  "Bearer token"
-// @Param        id            path      int     true  "Stock Count ID"
-// @Param        line_id       path      int     true  "Line Item ID"
+// @Param        id            path      string  true  "Stock Count ID (UUID)"
+// @Param        line_id       path      string  true  "Line Item ID (UUID)"
 // @Success      200           {object}  SuccessResponse
 // @Failure      400           {object}  ErrorResponse
 // @Failure      404           {object}  ErrorResponse
@@ -583,13 +584,13 @@ func (h *StockCountsHandler) DeleteStockCountLine(c *gin.Context) {
 	h.useCase.SetRepository(repo)
 
 	lineIDStr := c.Param("line_id")
-	lineID, err := strconv.ParseInt(lineIDStr, 10, 32)
+	lineID, err := uuid.Parse(lineIDStr)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid stock count line id", nil))
 		return
 	}
 
-	resp := h.useCase.DeleteStockCountLine(c.Request.Context(), int32(lineID))
+	resp := h.useCase.DeleteStockCountLine(c.Request.Context(), lineID)
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -602,7 +603,7 @@ func (h *StockCountsHandler) DeleteStockCountLine(c *gin.Context) {
 // @Security     BearerAuth
 // @Param        x-tenant-id   header    string                            true  "Tenant identifier"
 // @Param        Authorization header    string                            true  "Bearer token"
-// @Param        id            path      int                               true  "Stock Count ID"
+// @Param        id            path      string                            true  "Stock Count ID (UUID)"
 // @Param        body          body      BulkUpdateStockCountLinesRequest  true  "Bulk update payload"
 // @Success      200           {object}  StockCountResponse
 // @Failure      400           {object}  ErrorResponse
@@ -616,7 +617,7 @@ func (h *StockCountsHandler) BulkUpdateStockCountLines(c *gin.Context) {
 	h.useCase.SetRepository(repo)
 
 	countIDStr := c.Param("id")
-	countID, err := strconv.ParseInt(countIDStr, 10, 32)
+	countID, err := uuid.Parse(countIDStr)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid stock count id", nil))
 		return
@@ -630,6 +631,6 @@ func (h *StockCountsHandler) BulkUpdateStockCountLines(c *gin.Context) {
 		return
 	}
 
-	resp := h.useCase.BulkUpdateStockCountLines(c.Request.Context(), int32(countID), req.Lines)
+	resp := h.useCase.BulkUpdateStockCountLines(c.Request.Context(), countID, req.Lines)
 	c.JSON(resp.StatusCode, resp)
 }

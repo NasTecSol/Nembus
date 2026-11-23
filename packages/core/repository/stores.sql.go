@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -271,7 +272,7 @@ ORDER BY cs.opening_time DESC
 `
 
 type ListActiveSessionsByStoreIdRow struct {
-	SessionID       int32            `json:"session_id"`
+	SessionID       uuid.UUID        `json:"session_id"`
 	PosTerminalID   int32            `json:"pos_terminal_id"`
 	SessionNumber   string           `json:"session_number"`
 	OpeningTime     pgtype.Timestamp `json:"opening_time"`

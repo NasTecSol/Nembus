@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"strconv"
+	"strings"
 
 	"github.com/NasTecSol/nembus-core/repository"
 	"github.com/NasTecSol/nembus-core/utils"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -328,12 +330,12 @@ func (uc *LoyaltyUseCase) AdjustCustomerLoyaltyPoints(ctx context.Context, custo
 	if uc.repo == nil {
 		return utils.NewResponse(utils.CodeError, "repository not set", nil)
 	}
-	id, err := strconv.ParseInt(customerID, 10, 32)
+	id, err := uuid.Parse(strings.TrimSpace(customerID))
 	if err != nil {
 		return utils.NewResponse(utils.CodeBadReq, "invalid customer id", nil)
 	}
 	customer, err := uc.repo.AdjustCustomerLoyaltyPoints(ctx, repository.AdjustCustomerLoyaltyPointsParams{
-		ID:            int32(id),
+		ID:            id,
 		LoyaltyPoints: points,
 	})
 	if err != nil {
@@ -346,11 +348,11 @@ func (uc *LoyaltyUseCase) GetCustomerLoyaltyBalance(ctx context.Context, custome
 	if uc.repo == nil {
 		return utils.NewResponse(utils.CodeError, "repository not set", nil)
 	}
-	id, err := strconv.ParseInt(customerID, 10, 32)
+	id, err := uuid.Parse(strings.TrimSpace(customerID))
 	if err != nil {
 		return utils.NewResponse(utils.CodeBadReq, "invalid customer id", nil)
 	}
-	data, err := uc.repo.GetCustomerLoyaltyBalance(ctx, int32(id))
+	data, err := uc.repo.GetCustomerLoyaltyBalance(ctx, id)
 	if err != nil {
 		return utils.NewResponse(utils.CodeNotFound, "customer not found", nil)
 	}

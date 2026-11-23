@@ -8302,3 +8302,5 @@ FOR EACH ROW EXECUTE FUNCTION "public"."trg_record_change_log"('printing_templat
 DROP TRIGGER IF EXISTS "trg_change_log_store_receipt_settings" ON "public"."store_receipt_settings";
 CREATE TRIGGER "trg_change_log_store_receipt_settings" AFTER INSERT OR UPDATE ON "public"."store_receipt_settings"
 FOR EACH ROW EXECUTE FUNCTION "public"."trg_record_change_log"('store_receipt_settings');
+
+-- =====================================================================

@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -71,7 +72,7 @@ WHERE store_id = $1
 
 type CountCustomerRestaurantCouponUsesParams struct {
 	StoreID    int32       `json:"store_id"`
-	CustomerID pgtype.Int4 `json:"customer_id"`
+	CustomerID pgtype.UUID `json:"customer_id"`
 	CouponCode string      `json:"coupon_code"`
 }
 
@@ -554,13 +555,13 @@ func (q *Queries) ListAllRestaurantPromotions(ctx context.Context, arg ListAllRe
 }
 
 const lockCustomerRestaurantCouponUsage = `-- name: LockCustomerRestaurantCouponUsage :exec
-SELECT pg_advisory_xact_lock(hashtext('restaurant_coupon:' || $1::int::text || ':' || $2::int::text || ':' || LOWER(TRIM($3::text))))
+SELECT pg_advisory_xact_lock(hashtext('restaurant_coupon:' || $1::int::text || ':' || $2::uuid::text || ':' || LOWER(TRIM($3::text))))
 `
 
 type LockCustomerRestaurantCouponUsageParams struct {
-	StoreID    int32  `json:"store_id"`
-	CustomerID int32  `json:"customer_id"`
-	CouponCode string `json:"coupon_code"`
+	StoreID    int32     `json:"store_id"`
+	CustomerID uuid.UUID `json:"customer_id"`
+	CouponCode string    `json:"coupon_code"`
 }
 
 func (q *Queries) LockCustomerRestaurantCouponUsage(ctx context.Context, arg LockCustomerRestaurantCouponUsageParams) error {

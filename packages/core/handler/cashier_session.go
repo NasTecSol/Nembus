@@ -11,6 +11,7 @@ import (
 	"github.com/NasTecSol/nembus-core/utils"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -99,7 +100,7 @@ func (h *CashierSessionHandler) OpenCashierSession(c *gin.Context) {
 // @Security     BearerAuth
 // @Param        x-tenant-id   header    string  true  "Tenant identifier"
 // @Param        Authorization header    string  true  "Bearer token"
-// @Param        id            path      int     true  "Session ID"
+// @Param        id            path      string  true  "Session ID"
 // @Success      200           {object}  SuccessResponse
 // @Failure      400           {object}  ErrorResponse
 // @Failure      401           {object}  ErrorResponse
@@ -114,13 +115,13 @@ func (h *CashierSessionHandler) GetSessionByID(c *gin.Context) {
 	h.useCase.SetRepository(repo)
 
 	idStr := c.Param("id")
-	id, err := strconv.Atoi(idStr)
+	id, err := uuid.Parse(idStr)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid session id", nil))
 		return
 	}
 
-	resp := h.useCase.GetSessionByID(c.Request.Context(), int32(id))
+	resp := h.useCase.GetSessionByID(c.Request.Context(), id)
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -167,7 +168,7 @@ func (h *CashierSessionHandler) GetActiveCashierSession(c *gin.Context) {
 // @Security     BearerAuth
 // @Param        x-tenant-id   header    string                      true  "Tenant identifier"
 // @Param        Authorization header    string                      true  "Bearer token"
-// @Param        id            path      int                         true  "Session ID"
+// @Param        id            path      string                      true  "Session ID"
 // @Param        body          body      CloseCashierSessionRequest  true  "Close session payload"
 // @Success      200           {object}  SuccessResponse
 // @Failure      400           {object}  ErrorResponse
@@ -183,7 +184,7 @@ func (h *CashierSessionHandler) CloseCashierSession(c *gin.Context) {
 	h.useCase.SetRepository(repo)
 
 	idStr := c.Param("id")
-	id, err := strconv.Atoi(idStr)
+	id, err := uuid.Parse(idStr)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid session id", nil))
 		return
@@ -205,7 +206,7 @@ func (h *CashierSessionHandler) CloseCashierSession(c *gin.Context) {
 	variance, _ := numericFromString(req.Variance)
 
 	arg := repository.CloseCashierSessionParams{
-		ID:              int32(id),
+		ID:              id,
 		ClosingBalance:  closingBalance,
 		ExpectedBalance: expectedBalance,
 		Variance:        variance,
@@ -223,7 +224,7 @@ func (h *CashierSessionHandler) CloseCashierSession(c *gin.Context) {
 			supID = *req.SupervisorID
 		}
 		if supID > 0 {
-			_ = h.useCase.SetSessionClosedSupervisor(c.Request.Context(), int32(id), supID)
+			_ = h.useCase.SetSessionClosedSupervisor(c.Request.Context(), id, supID)
 		}
 	}
 	c.JSON(resp.StatusCode, resp)
@@ -238,7 +239,7 @@ func (h *CashierSessionHandler) CloseCashierSession(c *gin.Context) {
 // @Security     BearerAuth
 // @Param        x-tenant-id   header    string  true  "Tenant identifier"
 // @Param        Authorization header    string  true  "Bearer token"
-// @Param        id            path      int     true  "Session ID"
+// @Param        id            path      string  true  "Session ID"
 // @Success      200           {object}  SuccessResponse
 // @Failure      400           {object}  ErrorResponse
 // @Failure      401           {object}  ErrorResponse
@@ -253,13 +254,13 @@ func (h *CashierSessionHandler) GetSessionSummary(c *gin.Context) {
 	h.useCase.SetRepository(repo)
 
 	idStr := c.Param("id")
-	id, err := strconv.Atoi(idStr)
+	id, err := uuid.Parse(idStr)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid session id", nil))
 		return
 	}
 
-	resp := h.useCase.GetSessionSummary(c.Request.Context(), int32(id))
+	resp := h.useCase.GetSessionSummary(c.Request.Context(), id)
 	c.JSON(resp.StatusCode, resp)
 }
 

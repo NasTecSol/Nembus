@@ -9,6 +9,7 @@ import (
 	"github.com/NasTecSol/nembus-core/usecase"
 	"github.com/NasTecSol/nembus-core/utils"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
 
 // GetZReport calculates a session report without changing session state.
@@ -43,17 +44,28 @@ func (h *CashierSessionHandler) GetZReport(c *gin.Context) {
 		return
 	}
 	filters := repository.GetCashierSessionZReportParams{OrganizationID: orgID, UserID: int32(userID)}
+	sessionValues, sessionExists := c.Request.URL.Query()["cashier_session_id"]
+	if !sessionExists || len(sessionValues) != 1 {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "cashier_session_id must be provided exactly once as a valid UUID", nil))
+		return
+	}
+	sessionID, err := uuid.Parse(sessionValues[0])
+	if err != nil || sessionID == uuid.Nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid cashier_session_id: expected a valid UUID", nil))
+		return
+	}
+	filters.CashierSessionID = sessionID
+
 	for _, field := range []struct {
 		name string
 		dest *int32
 	}{
-		{"cashier_session_id", &filters.CashierSessionID},
 		{"store_id", &filters.StoreID},
 		{"pos_terminal_id", &filters.PosTerminalID},
 		{"cashier_id", &filters.CashierID},
 	} {
 		values, exists := c.Request.URL.Query()[field.name]
-		if !exists && field.name != "cashier_session_id" {
+		if !exists {
 			continue
 		}
 		if len(values) != 1 {

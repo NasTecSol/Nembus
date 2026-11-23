@@ -11,6 +11,7 @@ import (
 
 	"github.com/NasTecSol/nembus-core/repository"
 	"github.com/NasTecSol/nembus-core/utils"
+	"github.com/google/uuid"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -41,10 +42,12 @@ func (uc *SalesReturnUseCase) repoOrErr() *repository.Response {
 
 type ProcessReturnInput struct {
 	StoreID               int32
+	PosTerminalID         *int32
+	TerminalCode          string
 	CashierID             *int32
-	SessionID             *int32
-	OriginalTransactionID *int32
-	CustomerID            *int32
+	SessionID             *uuid.UUID
+	OriginalTransactionID *uuid.UUID
+	CustomerID            *uuid.UUID
 	ReturnReason          string
 	Subtotal              string
 	TaxAmount             string
@@ -60,7 +63,7 @@ type ProcessReturnInput struct {
 type ProcessReturnLineInput struct {
 	ProductID        int32
 	ProductVariantID *int32
-	OriginalLineID   *int32
+	OriginalLineID   *uuid.UUID
 	Quantity         string
 	UnitPrice        string
 	RefundAmount     string
@@ -77,7 +80,16 @@ func (uc *SalesReturnUseCase) ProcessSalesReturn(ctx context.Context, in Process
 	}
 
 	// 1. Prepare Return Header
-	returnNumber := fmt.Sprintf("RET-%d", time.Now().Unix())
+	var posTerminalID int32
+	if in.PosTerminalID != nil && *in.PosTerminalID > 0 {
+		posTerminalID = *in.PosTerminalID
+	} else if in.SessionID != nil && *in.SessionID != uuid.Nil {
+		if session, err := uc.repo.GetSessionByID(ctx, *in.SessionID); err == nil {
+			posTerminalID = session.PosTerminalID
+		}
+	}
+	termCode := LookupTerminalCode(ctx, uc.repo, posTerminalID, in.TerminalCode)
+	returnNumber := GenerateTerminalDocNumber("RET", termCode)
 
 	subtotal, _ := uc.repo.ParseNumeric(ctx, in.Subtotal)
 	taxAmount, _ := uc.repo.ParseNumeric(ctx, in.TaxAmount)
@@ -111,14 +123,14 @@ func (uc *SalesReturnUseCase) ProcessSalesReturn(ctx context.Context, in Process
 	if in.CashierID != nil {
 		headerParams.CashierID = pgtype.Int4{Int32: *in.CashierID, Valid: true}
 	}
-	if in.SessionID != nil {
-		headerParams.CashierSessionID = pgtype.Int4{Int32: *in.SessionID, Valid: true}
+	if in.SessionID != nil && *in.SessionID != uuid.Nil {
+		headerParams.CashierSessionID = pgtype.UUID{Bytes: *in.SessionID, Valid: true}
 	}
-	if in.OriginalTransactionID != nil {
-		headerParams.OriginalTransactionID = pgtype.Int4{Int32: *in.OriginalTransactionID, Valid: true}
+	if in.OriginalTransactionID != nil && *in.OriginalTransactionID != uuid.Nil {
+		headerParams.OriginalTransactionID = pgtype.UUID{Bytes: *in.OriginalTransactionID, Valid: true}
 	}
-	if in.CustomerID != nil {
-		headerParams.CustomerID = pgtype.Int4{Int32: *in.CustomerID, Valid: true}
+	if in.CustomerID != nil && *in.CustomerID != uuid.Nil {
+		headerParams.CustomerID = pgtype.UUID{Bytes: *in.CustomerID, Valid: true}
 	}
 
 	salesReturn, err := uc.repo.CreateSalesReturn(ctx, headerParams)
@@ -134,8 +146,8 @@ func (uc *SalesReturnUseCase) ProcessSalesReturn(ctx context.Context, in Process
 		refAmount, _ := uc.repo.ParseNumeric(ctx, l.RefundAmount)
 
 		// Validation: Check if returning more than available quantity on original line
-		if l.OriginalLineID != nil {
-			prevReturned, prevErr := uc.repo.GetReturnedQuantityByLineID(ctx, pgtype.Int4{Int32: *l.OriginalLineID, Valid: true})
+		if l.OriginalLineID != nil && *l.OriginalLineID != uuid.Nil {
+			prevReturned, prevErr := uc.repo.GetReturnedQuantityByLineID(ctx, pgtype.UUID{Bytes: *l.OriginalLineID, Valid: true})
 			if prevErr == nil && prevReturned.Valid && qty.Valid {
 				var prevQtyFloat float64
 				if vPrev, vErr := prevReturned.Value(); vErr == nil && vPrev != nil {
@@ -181,8 +193,8 @@ func (uc *SalesReturnUseCase) ProcessSalesReturn(ctx context.Context, in Process
 		if l.ProductVariantID != nil {
 			lineParams.ProductVariantID = pgtype.Int4{Int32: *l.ProductVariantID, Valid: true}
 		}
-		if l.OriginalLineID != nil {
-			lineParams.OriginalLineID = pgtype.Int4{Int32: *l.OriginalLineID, Valid: true}
+		if l.OriginalLineID != nil && *l.OriginalLineID != uuid.Nil {
+			lineParams.OriginalLineID = pgtype.UUID{Bytes: *l.OriginalLineID, Valid: true}
 		}
 		if l.SerialNumber != nil {
 			lineParams.SerialNumber = pgtype.Text{String: *l.SerialNumber, Valid: true}
@@ -244,7 +256,7 @@ func (uc *SalesReturnUseCase) ProcessSalesReturn(ctx context.Context, in Process
 			_, movErr := uc.repo.CreateStockMovement(ctx, repository.CreateStockMovementParams{
 				MovementType:     "return",
 				ReferenceType:    pgtype.Text{String: "sales_return", Valid: true},
-				ReferenceID:      pgtype.Int4{Int32: salesReturn.ID, Valid: true},
+				ReferenceID:      pgtype.Text{String: salesReturn.ID.String(), Valid: true},
 				ProductID:        l.ProductID,
 				ProductVariantID: lineParams.ProductVariantID,
 				ToStoreID:        pgtype.Int4{Int32: in.StoreID, Valid: true},
@@ -264,7 +276,7 @@ func (uc *SalesReturnUseCase) ProcessSalesReturn(ctx context.Context, in Process
 	}
 
 	// 3. Update original POS transaction status if referenced
-	if in.OriginalTransactionID != nil {
+	if in.OriginalTransactionID != nil && *in.OriginalTransactionID != uuid.Nil {
 		newStatus := "partially_refunded"
 		origTxn, err := uc.repo.GetPosTransaction(ctx, *in.OriginalTransactionID)
 		if err == nil && origTxn.TotalAmount.Valid && totalRefund.Valid {
@@ -282,7 +294,7 @@ func (uc *SalesReturnUseCase) ProcessSalesReturn(ctx context.Context, in Process
 	}
 
 	// 4. Adjust drawer expected_balance for cash/drawer refunds
-	if in.SessionID != nil && totalRefund.Valid && (in.RefundMethod == "cash" || in.RefundMethod == "") {
+	if in.SessionID != nil && *in.SessionID != uuid.Nil && totalRefund.Valid && (in.RefundMethod == "cash" || in.RefundMethod == "") {
 		negRefund := totalRefund
 		if negRefund.Int != nil {
 			negRefund = pgtype.Numeric{Int: new(big.Int).Neg(negRefund.Int), Exp: negRefund.Exp, Valid: true}
@@ -310,7 +322,7 @@ func (uc *SalesReturnUseCase) ProcessSalesReturn(ctx context.Context, in Process
 				var devErr error
 				var origInvoiceNumber string
 				var originalDeviceID int32
-				if in.OriginalTransactionID != nil {
+				if in.OriginalTransactionID != nil && *in.OriginalTransactionID != uuid.Nil {
 					origTxn, err := uc.repo.GetPosTransaction(ctx, *in.OriginalTransactionID)
 					if err == nil {
 						origInvoiceNumber, _ = uc.zatcaUC.OriginalIssuedInvoiceNumber(ctx, &origTxn)
@@ -323,7 +335,7 @@ func (uc *SalesReturnUseCase) ProcessSalesReturn(ctx context.Context, in Process
 					device, devErr = uc.repo.GetZatcaDeviceConfig(ctx, originalDeviceID)
 				} else {
 					var terminal pgtype.Int4
-					if in.SessionID != nil {
+					if in.SessionID != nil && *in.SessionID != uuid.Nil {
 						if session, err := uc.repo.GetSessionByID(ctx, *in.SessionID); err == nil {
 							terminal = pgtype.Int4{Int32: session.PosTerminalID, Valid: true}
 						}
@@ -410,7 +422,7 @@ func (uc *SalesReturnUseCase) ListUnpostedSalesReturnsForSAP(ctx context.Context
 }
 
 // ListSalesReturnLinesDetailedForSAP returns sales return lines enriched with SKU, UoM, and SAP tax metadata.
-func (uc *SalesReturnUseCase) ListSalesReturnLinesDetailedForSAP(ctx context.Context, returnID int32) *repository.Response {
+func (uc *SalesReturnUseCase) ListSalesReturnLinesDetailedForSAP(ctx context.Context, returnID uuid.UUID) *repository.Response {
 	if resp := uc.repoOrErr(); resp != nil {
 		return resp
 	}
@@ -422,7 +434,7 @@ func (uc *SalesReturnUseCase) ListSalesReturnLinesDetailedForSAP(ctx context.Con
 }
 
 // MarkSalesReturnSAPSynced records SAP DocEntry/DocNum metadata on a sales return.
-func (uc *SalesReturnUseCase) MarkSalesReturnSAPSynced(ctx context.Context, returnID int32, sapDocEntry, sapDocNum int) *repository.Response {
+func (uc *SalesReturnUseCase) MarkSalesReturnSAPSynced(ctx context.Context, returnID uuid.UUID, sapDocEntry, sapDocNum int) *repository.Response {
 	if resp := uc.repoOrErr(); resp != nil {
 		return resp
 	}

@@ -10,6 +10,7 @@ import (
 
 	"github.com/NasTecSol/nembus-core/repository"
 	"github.com/NasTecSol/nembus-core/utils"
+	"github.com/google/uuid"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -33,7 +34,7 @@ type StockCountLineInput struct {
 
 // BulkStockCountLineItem represents a line item in a bulk update operation.
 type BulkStockCountLineItem struct {
-	ID              int32                  `json:"id"`
+	ID              uuid.UUID              `json:"id"`
 	CountedQuantity float64                `json:"counted_quantity"`
 	Variance        *float64               `json:"variance,omitempty"`
 	VarianceValue   *float64               `json:"variance_value,omitempty"`
@@ -46,6 +47,7 @@ type BulkStockCountLineItem struct {
 // CreateStockCountInput represents payload for creating a stock count.
 type CreateStockCountInput struct {
 	CountNumber       *string                `json:"count_number,omitempty"`
+	TerminalCode      string                 `json:"terminal_code,omitempty"`
 	StoreID           int32                  `json:"store_id"`
 	StorageLocationID *int32                 `json:"storage_location_id,omitempty"`
 	CountType         *string                `json:"count_type,omitempty"`
@@ -96,8 +98,8 @@ type StockCountFilter struct {
 
 // StockCountLineOutput represents line item details.
 type StockCountLineOutput struct {
-	ID                  int32            `json:"id"`
-	StockCountID        int32            `json:"stock_count_id"`
+	ID                  uuid.UUID        `json:"id"`
+	StockCountID        uuid.UUID        `json:"stock_count_id"`
 	ProductID           int32            `json:"product_id"`
 	ProductName         pgtype.Text      `json:"product_name"`
 	ProductSKU          pgtype.Text      `json:"product_sku"`
@@ -132,7 +134,7 @@ type StockCountSummaryOutput struct {
 
 // StockCountOutput represents stock count with details and lines.
 type StockCountOutput struct {
-	ID                  int32                    `json:"id"`
+	ID                  uuid.UUID                `json:"id"`
 	CountNumber         string                   `json:"count_number"`
 	StoreID             int32                    `json:"store_id"`
 	StoreName           pgtype.Text              `json:"store_name"`
@@ -203,12 +205,12 @@ func (uc *StockCountsUseCase) CreateStockCount(ctx context.Context, input Create
 	if input.CountNumber != nil && strings.TrimSpace(*input.CountNumber) != "" {
 		countNumber = strings.TrimSpace(*input.CountNumber)
 	} else {
-		countNumber = fmt.Sprintf("SC-%s-%04d", time.Now().Format("20060102"), time.Now().UnixNano()%10000)
+		countNumber = GenerateTerminalDocNumber("SC", input.TerminalCode)
 	}
 
 	// Check count_number uniqueness
-	if existing, err := uc.repo.GetStockCountByNumber(ctx, countNumber); err == nil && existing.ID > 0 {
-		countNumber = fmt.Sprintf("SC-%s-%d", time.Now().Format("20060102"), time.Now().Unix())
+	if existing, err := uc.repo.GetStockCountByNumber(ctx, countNumber); err == nil && existing.ID != uuid.Nil {
+		countNumber = GenerateTerminalDocNumber("SC", input.TerminalCode)
 	}
 
 	var statusText pgtype.Text
@@ -316,7 +318,7 @@ func (uc *StockCountsUseCase) CreateStockCount(ctx context.Context, input Create
 }
 
 // GetStockCount retrieves a stock count by ID with full details, lines, and summary.
-func (uc *StockCountsUseCase) GetStockCount(ctx context.Context, id int32) *repository.Response {
+func (uc *StockCountsUseCase) GetStockCount(ctx context.Context, id uuid.UUID) *repository.Response {
 	if errResp := uc.repoOrErr(); errResp != nil {
 		return errResp
 	}
@@ -547,7 +549,7 @@ func (uc *StockCountsUseCase) ListStockCounts(ctx context.Context, filter StockC
 }
 
 // UpdateStockCount updates a stock count header.
-func (uc *StockCountsUseCase) UpdateStockCount(ctx context.Context, id int32, input UpdateStockCountInput) *repository.Response {
+func (uc *StockCountsUseCase) UpdateStockCount(ctx context.Context, id uuid.UUID, input UpdateStockCountInput) *repository.Response {
 	if errResp := uc.repoOrErr(); errResp != nil {
 		return errResp
 	}
@@ -596,7 +598,7 @@ func (uc *StockCountsUseCase) UpdateStockCount(ctx context.Context, id int32, in
 }
 
 // DeleteStockCount deletes a stock count and its lines.
-func (uc *StockCountsUseCase) DeleteStockCount(ctx context.Context, id int32) *repository.Response {
+func (uc *StockCountsUseCase) DeleteStockCount(ctx context.Context, id uuid.UUID) *repository.Response {
 	if errResp := uc.repoOrErr(); errResp != nil {
 		return errResp
 	}
@@ -618,7 +620,7 @@ func (uc *StockCountsUseCase) DeleteStockCount(ctx context.Context, id int32) *r
 }
 
 // StartStockCount transitions status to 'in_progress' and records started_at.
-func (uc *StockCountsUseCase) StartStockCount(ctx context.Context, id int32) *repository.Response {
+func (uc *StockCountsUseCase) StartStockCount(ctx context.Context, id uuid.UUID) *repository.Response {
 	if errResp := uc.repoOrErr(); errResp != nil {
 		return errResp
 	}
@@ -640,7 +642,7 @@ func (uc *StockCountsUseCase) StartStockCount(ctx context.Context, id int32) *re
 }
 
 // CompleteStockCount transitions status to 'completed' and records completed_at.
-func (uc *StockCountsUseCase) CompleteStockCount(ctx context.Context, id int32) *repository.Response {
+func (uc *StockCountsUseCase) CompleteStockCount(ctx context.Context, id uuid.UUID) *repository.Response {
 	if errResp := uc.repoOrErr(); errResp != nil {
 		return errResp
 	}
@@ -662,7 +664,7 @@ func (uc *StockCountsUseCase) CompleteStockCount(ctx context.Context, id int32) 
 }
 
 // ApproveStockCount approves a completed stock count.
-func (uc *StockCountsUseCase) ApproveStockCount(ctx context.Context, id int32, approvedBy int32) *repository.Response {
+func (uc *StockCountsUseCase) ApproveStockCount(ctx context.Context, id uuid.UUID, approvedBy int32) *repository.Response {
 	if errResp := uc.repoOrErr(); errResp != nil {
 		return errResp
 	}
@@ -692,7 +694,7 @@ func (uc *StockCountsUseCase) ApproveStockCount(ctx context.Context, id int32, a
 }
 
 // ReconcileStockCount reconciles approved stock count variances into inventory_stock and creates stock movements.
-func (uc *StockCountsUseCase) ReconcileStockCount(ctx context.Context, id int32) *repository.Response {
+func (uc *StockCountsUseCase) ReconcileStockCount(ctx context.Context, id uuid.UUID) *repository.Response {
 	if errResp := uc.repoOrErr(); errResp != nil {
 		return errResp
 	}
@@ -758,7 +760,7 @@ func (uc *StockCountsUseCase) ReconcileStockCount(ctx context.Context, id int32)
 			_, _ = uc.repo.CreateStockMovement(ctx, repository.CreateStockMovementParams{
 				MovementType:     "stock_adjustment",
 				ReferenceType:    pgtype.Text{String: "stock_count", Valid: true},
-				ReferenceID:      pgtype.Int4{Int32: id, Valid: true},
+				ReferenceID:      pgtype.Text{String: id.String(), Valid: true},
 				ProductID:        l.ProductID,
 				ProductVariantID: l.ProductVariantID,
 				FromStoreID:      pgtype.Int4{Int32: current.StoreID, Valid: true},
@@ -787,7 +789,7 @@ func (uc *StockCountsUseCase) ReconcileStockCount(ctx context.Context, id int32)
 }
 
 // GetStockCountSummary calculates variance metrics for a stock count.
-func (uc *StockCountsUseCase) GetStockCountSummary(ctx context.Context, id int32) *repository.Response {
+func (uc *StockCountsUseCase) GetStockCountSummary(ctx context.Context, id uuid.UUID) *repository.Response {
 	if errResp := uc.repoOrErr(); errResp != nil {
 		return errResp
 	}
@@ -807,12 +809,12 @@ func (uc *StockCountsUseCase) GetStockCountSummary(ctx context.Context, id int32
 }
 
 // AddStockCountLine adds a line item to a stock count.
-func (uc *StockCountsUseCase) AddStockCountLine(ctx context.Context, countID int32, input StockCountLineInput) *repository.Response {
+func (uc *StockCountsUseCase) AddStockCountLine(ctx context.Context, countID uuid.UUID, input StockCountLineInput) *repository.Response {
 	if errResp := uc.repoOrErr(); errResp != nil {
 		return errResp
 	}
 
-	if countID <= 0 || input.ProductID <= 0 {
+	if countID == uuid.Nil || input.ProductID <= 0 {
 		return utils.NewResponse(utils.CodeBadReq, "stock_count_id and product_id are required", nil)
 	}
 
@@ -877,7 +879,7 @@ func (uc *StockCountsUseCase) AddStockCountLine(ctx context.Context, countID int
 }
 
 // ListStockCountLines lists line items for a stock count.
-func (uc *StockCountsUseCase) ListStockCountLines(ctx context.Context, countID int32) *repository.Response {
+func (uc *StockCountsUseCase) ListStockCountLines(ctx context.Context, countID uuid.UUID) *repository.Response {
 	if errResp := uc.repoOrErr(); errResp != nil {
 		return errResp
 	}
@@ -920,7 +922,7 @@ func (uc *StockCountsUseCase) ListStockCountLines(ctx context.Context, countID i
 }
 
 // GetStockCountLine retrieves a single line item by ID.
-func (uc *StockCountsUseCase) GetStockCountLine(ctx context.Context, lineID int32) *repository.Response {
+func (uc *StockCountsUseCase) GetStockCountLine(ctx context.Context, lineID uuid.UUID) *repository.Response {
 	if errResp := uc.repoOrErr(); errResp != nil {
 		return errResp
 	}
@@ -934,7 +936,7 @@ func (uc *StockCountsUseCase) GetStockCountLine(ctx context.Context, lineID int3
 }
 
 // UpdateStockCountLine updates an individual stock count line.
-func (uc *StockCountsUseCase) UpdateStockCountLine(ctx context.Context, lineID int32, input UpdateStockCountLineInput) *repository.Response {
+func (uc *StockCountsUseCase) UpdateStockCountLine(ctx context.Context, lineID uuid.UUID, input UpdateStockCountLineInput) *repository.Response {
 	if errResp := uc.repoOrErr(); errResp != nil {
 		return errResp
 	}
@@ -993,7 +995,7 @@ func (uc *StockCountsUseCase) UpdateStockCountLine(ctx context.Context, lineID i
 }
 
 // DeleteStockCountLine deletes a line item by ID.
-func (uc *StockCountsUseCase) DeleteStockCountLine(ctx context.Context, lineID int32) *repository.Response {
+func (uc *StockCountsUseCase) DeleteStockCountLine(ctx context.Context, lineID uuid.UUID) *repository.Response {
 	if errResp := uc.repoOrErr(); errResp != nil {
 		return errResp
 	}
@@ -1006,18 +1008,18 @@ func (uc *StockCountsUseCase) DeleteStockCountLine(ctx context.Context, lineID i
 }
 
 // BulkUpdateStockCountLines updates multiple lines in a single call.
-func (uc *StockCountsUseCase) BulkUpdateStockCountLines(ctx context.Context, countID int32, lines []BulkStockCountLineItem) *repository.Response {
+func (uc *StockCountsUseCase) BulkUpdateStockCountLines(ctx context.Context, countID uuid.UUID, lines []BulkStockCountLineItem) *repository.Response {
 	if errResp := uc.repoOrErr(); errResp != nil {
 		return errResp
 	}
 
-	if countID <= 0 {
+	if countID == uuid.Nil {
 		return utils.NewResponse(utils.CodeBadReq, "stock_count_id is required", nil)
 	}
 
 	updatedCount := 0
 	for _, l := range lines {
-		if l.ID <= 0 {
+		if l.ID == uuid.Nil {
 			continue
 		}
 

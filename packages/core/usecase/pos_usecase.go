@@ -466,8 +466,8 @@ func computeNetCashImpact(metadata []byte, totalAmount pgtype.Numeric) float64 {
 	return 0
 }
 
-func updateSessionBalanceForTransaction(ctx context.Context, repo *repository.Queries, sessionID int32, metadata []byte, totalAmount pgtype.Numeric) {
-	if repo == nil || sessionID == 0 {
+func updateSessionBalanceForTransaction(ctx context.Context, repo *repository.Queries, sessionID uuid.UUID, metadata []byte, totalAmount pgtype.Numeric) {
+	if repo == nil || sessionID == uuid.Nil {
 		return
 	}
 	netCash := computeNetCashImpact(metadata, totalAmount)
@@ -503,7 +503,7 @@ func (uc *PosUseCase) ProcessPOSPayment(ctx context.Context, arg repository.AddP
 	}
 
 	// 3. Update the expected balance in the cashier session (only for cash payments)
-	if strings.EqualFold(strings.TrimSpace(arg.PaymentMethod), "cash") && txn.CashierSessionID != 0 {
+	if strings.EqualFold(strings.TrimSpace(arg.PaymentMethod), "cash") && txn.CashierSessionID != uuid.Nil {
 		var changeGiven float64
 		if len(arg.Metadata) > 0 {
 			var meta struct {
@@ -523,7 +523,7 @@ func (uc *PosUseCase) ProcessPOSPayment(ctx context.Context, arg repository.AddP
 					ExpectedBalance: netNum,
 				})
 				if err != nil {
-					fmt.Printf("Error: failed to update session expected balance for session %d: %s\n", txn.CashierSessionID, err.Error())
+					fmt.Printf("Error: failed to update session expected balance for session %s: %s\n", txn.CashierSessionID.String(), err.Error())
 				}
 			}
 		}
@@ -535,11 +535,12 @@ func (uc *PosUseCase) ProcessPOSPayment(ctx context.Context, arg repository.AddP
 // PosCreateTransactionInput is the input payload for creating a POS transaction.
 type PosCreateTransactionInput struct {
 	TransactionNumber string
+	TerminalCode      string
 	StoreID           int32
 	PosTerminalID     int32
-	CashierSessionID  int32
+	CashierSessionID  uuid.UUID
 	CashierID         int32
-	CustomerID        *int32
+	CustomerID        *uuid.UUID
 	PriceListID       *int32
 	TransactionType   *string
 	TransactionDate   *time.Time
@@ -573,11 +574,11 @@ type PosCreateTransactionLineInput struct {
 
 // PosTransactionOutput is the API response shape for a POS transaction.
 type PosTransactionOutput struct {
-	ID                int32            `json:"id"`
+	ID                uuid.UUID        `json:"id"`
 	StoreID           int32            `json:"store_id"`
 	CashierID         int32            `json:"cashier_id"`
-	CashierSessionID  int32            `json:"cashier_session_id"`
-	CustomerID        pgtype.Int4      `json:"customer_id"`
+	CashierSessionID  uuid.UUID        `json:"cashier_session_id"`
+	CustomerID        pgtype.UUID      `json:"customer_id"`
 	PosTerminalID     pgtype.Int4      `json:"pos_terminal_id"`
 	TransactionNumber string           `json:"transaction_number"`
 	TransactionDate   pgtype.Timestamp `json:"transaction_date"`
@@ -630,11 +631,11 @@ func toPosTransactionOutput(txn repository.PosTransaction) PosTransactionOutput 
 
 // PosTransactionWithLinesOutput is the API response shape for a POS transaction with lines.
 type PosTransactionWithLinesOutput struct {
-	ID                int32            `json:"id"`
+	ID                uuid.UUID        `json:"id"`
 	StoreID           int32            `json:"store_id"`
 	CashierID         int32            `json:"cashier_id"`
-	CashierSessionID  int32            `json:"cashier_session_id"`
-	CustomerID        pgtype.Int4      `json:"customer_id"`
+	CashierSessionID  uuid.UUID        `json:"cashier_session_id"`
+	CustomerID        pgtype.UUID      `json:"customer_id"`
 	PosTerminalID     pgtype.Int4      `json:"pos_terminal_id"`
 	TransactionNumber string           `json:"transaction_number"`
 	TransactionDate   pgtype.Timestamp `json:"transaction_date"`
@@ -686,7 +687,7 @@ func (uc *PosUseCase) CreateTransaction(ctx context.Context, in *PosCreateTransa
 	if uc.repo == nil {
 		return utils.NewResponse(utils.CodeError, "repository not set", nil)
 	}
-	if in.StoreID <= 0 || in.CashierID <= 0 || in.CashierSessionID <= 0 || in.PosTerminalID <= 0 {
+	if in.StoreID <= 0 || in.CashierID <= 0 || in.CashierSessionID == uuid.Nil || in.PosTerminalID <= 0 {
 		return utils.NewResponse(utils.CodeBadReq, "store_id, cashier_id, cashier_session_id and pos_terminal_id are required", nil)
 	}
 	if len(in.Lines) == 0 {
@@ -712,8 +713,9 @@ func (uc *PosUseCase) CreateTransaction(ctx context.Context, in *PosCreateTransa
 	}
 
 	transactionNumber := strings.TrimSpace(in.TransactionNumber)
-	if transactionNumber == "" {
-		transactionNumber = fmt.Sprintf("POS-%d", time.Now().Unix())
+	if IsWeakOrEmptyDocNumber(transactionNumber) {
+		termCode := LookupTerminalCode(ctx, uc.repo, in.PosTerminalID, in.TerminalCode)
+		transactionNumber = GenerateTerminalDocNumber("POS", termCode)
 	}
 
 	transactionDate := pgtype.Timestamp{Time: time.Now(), Valid: true}
@@ -737,7 +739,7 @@ func (uc *PosUseCase) CreateTransaction(ctx context.Context, in *PosCreateTransa
 		PosTerminalID:     pgtype.Int4{Int32: in.PosTerminalID, Valid: true},
 		CashierSessionID:  in.CashierSessionID,
 		CashierID:         in.CashierID,
-		CustomerID:        pgtype.Int4{},
+		CustomerID:        pgtype.UUID{},
 		PriceListID:       pgtype.Int4{},
 		TransactionType:   transactionType,
 		TransactionDate:   transactionDate,
@@ -753,8 +755,8 @@ func (uc *PosUseCase) CreateTransaction(ctx context.Context, in *PosCreateTransa
 	if params.Metadata == nil {
 		params.Metadata = []byte("{}")
 	}
-	if in.CustomerID != nil {
-		params.CustomerID = pgtype.Int4{Int32: *in.CustomerID, Valid: true}
+	if in.CustomerID != nil && *in.CustomerID != uuid.Nil {
+		params.CustomerID = pgtype.UUID{Bytes: *in.CustomerID, Valid: true}
 	}
 	if in.PriceListID != nil {
 		params.PriceListID = pgtype.Int4{Int32: *in.PriceListID, Valid: true}
@@ -873,7 +875,7 @@ func (uc *PosUseCase) CreateTransaction(ctx context.Context, in *PosCreateTransa
 			_, err := activeRepo.CreateStockMovement(ctx, repository.CreateStockMovementParams{
 				MovementType:     "pos_sale",
 				ReferenceType:    pgtype.Text{String: "pos_transaction", Valid: true},
-				ReferenceID:      pgtype.Int4{Int32: header.ID, Valid: true},
+				ReferenceID:      pgtype.Text{String: header.ID.String(), Valid: true},
 				ProductID:        line.ProductID,
 				ProductVariantID: variantID,
 				FromStoreID:      pgtype.Int4{Int32: in.StoreID, Valid: true},
@@ -912,8 +914,8 @@ func (uc *PosUseCase) CreateTransaction(ctx context.Context, in *PosCreateTransa
 		CashierID:         pgtype.Int4{Int32: in.CashierID, Valid: true},
 		Metadata:          header.Metadata,
 	}
-	if in.CustomerID != nil {
-		orderArg.CustomerID = pgtype.Int4{Int32: *in.CustomerID, Valid: true}
+	if in.CustomerID != nil && *in.CustomerID != uuid.Nil {
+		orderArg.CustomerID = pgtype.UUID{Bytes: *in.CustomerID, Valid: true}
 	}
 	salesOrderError = runInSavepoint(ctx, tx, "sp_pos_sales_order", func() error {
 		soV2, err := activeRepo.CreateSalesOrderV2(ctx, orderArg)
@@ -1006,7 +1008,7 @@ func (uc *PosUseCase) CreateTransaction(ctx context.Context, in *PosCreateTransa
 
 	if tx != nil {
 		if header.SalesOrderID.Valid {
-			enqueuePOSCheckoutOutboxTx(ctx, tx, corrID, int64(header.ID), uuid.UUID(header.SalesOrderID.Bytes), nil)
+			enqueuePOSCheckoutOutboxTx(ctx, tx, corrID, header.ID.String(), uuid.UUID(header.SalesOrderID.Bytes), nil)
 		}
 		if err := tx.Commit(ctx); err != nil {
 			return utils.NewResponse(utils.CodeError, "failed to commit checkout transaction: "+err.Error(), nil)
@@ -1120,7 +1122,7 @@ func (uc *PosUseCase) ListUnpostedTransactionsForSAP(ctx context.Context, storeI
 }
 
 // MarkTransactionSAPSynced records SAP DocEntry/DocNum metadata on a POS transaction.
-func (uc *PosUseCase) MarkTransactionSAPSynced(ctx context.Context, txID int32, sapDocEntry, sapDocNum int) *repository.Response {
+func (uc *PosUseCase) MarkTransactionSAPSynced(ctx context.Context, txID uuid.UUID, sapDocEntry, sapDocNum int) *repository.Response {
 	if uc.repo == nil {
 		return utils.NewResponse(utils.CodeError, "repository not set", nil)
 	}
@@ -1144,7 +1146,7 @@ func (uc *PosUseCase) MarkTransactionSAPSynced(ctx context.Context, txID int32, 
 func (uc *PosUseCase) ListTransactionsByCashierSession(
 	ctx context.Context,
 	cashierID *int32,
-	cashierSessionID *int32,
+	cashierSessionID *uuid.UUID,
 	startDate *time.Time,
 	endDate *time.Time,
 	page, limit int32,
@@ -1159,34 +1161,34 @@ func (uc *PosUseCase) ListTransactionsByCashierSession(
 	p, l, offset := calcPosPagination(page, limit)
 
 	countArg := repository.CountPosTransactionsByCashierSessionParams{
-		Column1: 0,
-		Column2: 0,
-		Column3: pgtype.Timestamp{},
-		Column4: pgtype.Timestamp{},
+		Column1:          0,
+		CashierSessionID: pgtype.UUID{},
+		FromDate:         pgtype.Timestamp{},
+		ToDate:           pgtype.Timestamp{},
 	}
 	listArg := repository.ListPosTransactionsByCashierSessionParams{
-		Column1: 0,
-		Column2: 0,
-		Column3: pgtype.Timestamp{},
-		Column4: pgtype.Timestamp{},
-		Limit:   l,
-		Offset:  offset,
+		Column1:          0,
+		CashierSessionID: pgtype.UUID{},
+		FromDate:         pgtype.Timestamp{},
+		ToDate:           pgtype.Timestamp{},
+		Limit:            l,
+		Offset:           offset,
 	}
 	if cashierID != nil && *cashierID > 0 {
 		countArg.Column1 = *cashierID
 		listArg.Column1 = *cashierID
 	}
-	if cashierSessionID != nil && *cashierSessionID > 0 {
-		countArg.Column2 = *cashierSessionID
-		listArg.Column2 = *cashierSessionID
+	if cashierSessionID != nil && *cashierSessionID != uuid.Nil {
+		countArg.CashierSessionID = pgtype.UUID{Bytes: *cashierSessionID, Valid: true}
+		listArg.CashierSessionID = pgtype.UUID{Bytes: *cashierSessionID, Valid: true}
 	}
 	if startDate != nil {
-		countArg.Column3 = pgtype.Timestamp{Time: *startDate, Valid: true}
-		listArg.Column3 = pgtype.Timestamp{Time: *startDate, Valid: true}
+		countArg.FromDate = pgtype.Timestamp{Time: *startDate, Valid: true}
+		listArg.FromDate = pgtype.Timestamp{Time: *startDate, Valid: true}
 	}
 	if endDate != nil {
-		countArg.Column4 = pgtype.Timestamp{Time: *endDate, Valid: true}
-		listArg.Column4 = pgtype.Timestamp{Time: *endDate, Valid: true}
+		countArg.ToDate = pgtype.Timestamp{Time: *endDate, Valid: true}
+		listArg.ToDate = pgtype.Timestamp{Time: *endDate, Valid: true}
 	}
 
 	totalCount, err := uc.repo.CountPosTransactionsByCashierSession(ctx, countArg)
@@ -1242,7 +1244,7 @@ func (uc *PosUseCase) ListTransactionsByCashierSession(
 // ListTransactionsByCustomer returns POS transactions for a specific customer ID with pagination.
 func (uc *PosUseCase) ListTransactionsByCustomer(
 	ctx context.Context,
-	customerID int32,
+	customerID uuid.UUID,
 	page, limit int32,
 ) *repository.Response {
 	if uc.repo == nil {
@@ -1250,7 +1252,7 @@ func (uc *PosUseCase) ListTransactionsByCustomer(
 	}
 
 	p, l, offset := calcPosPagination(page, limit)
-	custIDParam := pgtype.Int4{Int32: customerID, Valid: true}
+	custIDParam := pgtype.UUID{Bytes: customerID, Valid: customerID != uuid.Nil}
 
 	totalCount, err := uc.repo.CountPosTransactionsByCustomerID(ctx, custIDParam)
 	if err != nil {
@@ -1397,7 +1399,7 @@ func (uc *PosUseCase) ListTransactionsByTerminal(
 }
 
 // GetTransaction returns a single POS transaction by ID.
-func (uc *PosUseCase) GetTransaction(ctx context.Context, id int32) *repository.Response {
+func (uc *PosUseCase) GetTransaction(ctx context.Context, id uuid.UUID) *repository.Response {
 	if uc.repo == nil {
 		return utils.NewResponse(utils.CodeError, "repository not set", nil)
 	}
@@ -1409,7 +1411,7 @@ func (uc *PosUseCase) GetTransaction(ctx context.Context, id int32) *repository.
 }
 
 // GetTransactionFull returns a POS transaction with full line details.
-func (uc *PosUseCase) GetTransactionFull(ctx context.Context, id int32) *repository.Response {
+func (uc *PosUseCase) GetTransactionFull(ctx context.Context, id uuid.UUID) *repository.Response {
 	if uc.repo == nil {
 		return utils.NewResponse(utils.CodeError, "repository not set", nil)
 	}
@@ -1421,7 +1423,7 @@ func (uc *PosUseCase) GetTransactionFull(ctx context.Context, id int32) *reposit
 }
 
 // VoidTransaction voids a completed POS transaction.
-func (uc *PosUseCase) VoidTransaction(ctx context.Context, id int32, voidedBy int32, reason string) *repository.Response {
+func (uc *PosUseCase) VoidTransaction(ctx context.Context, id uuid.UUID, voidedBy int32, reason string) *repository.Response {
 	if uc.repo == nil {
 		return utils.NewResponse(utils.CodeError, "repository not set", nil)
 	}
@@ -1438,7 +1440,7 @@ func (uc *PosUseCase) VoidTransaction(ctx context.Context, id int32, voidedBy in
 }
 
 // GetTransactionPayments returns all payments for a POS transaction.
-func (uc *PosUseCase) GetTransactionPayments(ctx context.Context, transactionID int32) *repository.Response {
+func (uc *PosUseCase) GetTransactionPayments(ctx context.Context, transactionID uuid.UUID) *repository.Response {
 	if uc.repo == nil {
 		return utils.NewResponse(utils.CodeError, "repository not set", nil)
 	}
@@ -1450,7 +1452,7 @@ func (uc *PosUseCase) GetTransactionPayments(ctx context.Context, transactionID 
 }
 
 // GetTransactionPaymentSummary returns payment summary for a POS transaction.
-func (uc *PosUseCase) GetTransactionPaymentSummary(ctx context.Context, transactionID int32) *repository.Response {
+func (uc *PosUseCase) GetTransactionPaymentSummary(ctx context.Context, transactionID uuid.UUID) *repository.Response {
 	if uc.repo == nil {
 		return utils.NewResponse(utils.CodeError, "repository not set", nil)
 	}

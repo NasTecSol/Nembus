@@ -17,7 +17,7 @@ CREATE TABLE IF NOT EXISTS sync_queue (
     id              BIGSERIAL    PRIMARY KEY,
     outbox_uuid     UUID         NOT NULL DEFAULT gen_random_uuid(),
     entity_type     VARCHAR(50)  NOT NULL,
-    entity_id       BIGINT       NOT NULL,
+    entity_id       TEXT         NOT NULL,
     action          VARCHAR(20)  NOT NULL, -- 'INSERT', 'UPDATE', 'DELETE', 'POS_CHECKOUT'
     payload         JSONB        NOT NULL,
     status          VARCHAR(20)  DEFAULT 'pending',
@@ -81,7 +81,7 @@ BEGIN
     FROM sync_queue
     WHERE correlation_id = corr_id
       AND entity_type = entity_name
-      AND entity_id = NEW.id
+      AND entity_id = NEW.id::text
       AND status = 'pending'
     ORDER BY id DESC
     LIMIT 1;
@@ -94,7 +94,7 @@ BEGIN
         INSERT INTO sync_queue (entity_type, entity_id, action, payload, status, priority, correlation_id)
         VALUES (
             entity_name,
-            NEW.id,
+            NEW.id::text,
             TG_OP,
             row_to_json(NEW)::jsonb,
             'pending',
@@ -161,7 +161,7 @@ DROP TRIGGER IF EXISTS trg_sync_stock_movements ON stock_movements;
 CREATE TRIGGER trg_sync_stock_movements
     AFTER INSERT ON stock_movements
     FOR EACH ROW
-    WHEN (NEW.movement_type IN ('stock_adjustment', 'adjustment', 'waste', 'damage', 'physical_count'))
+    WHEN (NEW.movement_type IN ('stock_adjustment', 'adjustment', 'waste', 'damage', 'physical_count', 'recipe_deduction', 'recipe_reversal'))
     EXECUTE FUNCTION trg_enqueue_sync_outbox('stock_movements');
 
 -- +goose Down

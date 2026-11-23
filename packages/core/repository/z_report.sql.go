@@ -8,6 +8,8 @@ package repository
 import (
 	"context"
 	"encoding/json"
+
+	"github.com/google/uuid"
 )
 
 const getCashierSessionZReport = `-- name: GetCashierSessionZReport :one
@@ -23,7 +25,7 @@ WITH session_scope AS (
     JOIN organizations o ON o.id = s.organization_id
     JOIN cashiers c ON c.id = cs.cashier_id AND c.store_id = s.id
     JOIN users u ON u.id = c.user_id
-    WHERE cs.id = $1::int
+    WHERE cs.id = $1::uuid
       AND s.organization_id = $2::int
       AND EXISTS (
           SELECT 1 FROM users viewer
@@ -175,12 +177,12 @@ CROSS JOIN payment_totals pt CROSS JOIN cash_totals ct CROSS JOIN drawer d
 `
 
 type GetCashierSessionZReportParams struct {
-	CashierSessionID int32 `json:"cashier_session_id"`
-	OrganizationID   int32 `json:"organization_id"`
-	UserID           int32 `json:"user_id"`
-	StoreID          int32 `json:"store_id"`
-	PosTerminalID    int32 `json:"pos_terminal_id"`
-	CashierID        int32 `json:"cashier_id"`
+	CashierSessionID uuid.UUID `json:"cashier_session_id"`
+	OrganizationID   int32     `json:"organization_id"`
+	UserID           int32     `json:"user_id"`
+	StoreID          int32     `json:"store_id"`
+	PosTerminalID    int32     `json:"pos_terminal_id"`
+	CashierID        int32     `json:"cashier_id"`
 }
 
 // One statement gives every section the same PostgreSQL snapshot. Aggregate

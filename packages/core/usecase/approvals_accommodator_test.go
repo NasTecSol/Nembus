@@ -7,15 +7,16 @@ import (
 	"testing"
 
 	"github.com/NasTecSol/nembus-core/repository"
+	"github.com/google/uuid"
 )
 
 type mockSAPInvoicePoster struct {
 	postCalled bool
-	lastTxID   int64
+	lastTxID   uuid.UUID
 	lastForce  bool
 }
 
-func (m *mockSAPInvoicePoster) PostHeldInvoiceToSAP(ctx context.Context, transactionID int64, force bool) (int, int, error) {
+func (m *mockSAPInvoicePoster) PostHeldInvoiceToSAP(ctx context.Context, transactionID uuid.UUID, force bool) (int, int, error) {
 	m.postCalled = true
 	m.lastTxID = transactionID
 	m.lastForce = force
@@ -81,7 +82,7 @@ func TestSAPInvoiceStockAccommodator_Poster(t *testing.T) {
 	}
 
 	payload := SAPInvoiceStockPayload{
-		TransactionID:     42,
+		TransactionID:     uuid.MustParse("00000000-0000-0000-0000-000000000042"),
 		TransactionNumber: "TX-42",
 		ShortageItems: []ShortageItemInfo{
 			{ProductID: 10, ProductSKU: "SKU-1", Quantity: 2, SAPOnHand: 0},
@@ -128,7 +129,7 @@ func TestApprovalsUseCase_AccommodatorRegistration(t *testing.T) {
 
 func TestUpdateStockHoldPayloadOnHand(t *testing.T) {
 	raw, _ := json.Marshal(SAPInvoiceStockPayload{
-		TransactionID: 653872,
+		TransactionID: uuid.MustParse("00000000-0000-0000-0000-000000653872"),
 		StoreID:       3,
 		ShortageItems: []ShortageItemInfo{
 			{ProductID: 27512, ProductSKU: "INV10473", Quantity: 1, SAPOnHand: 0},

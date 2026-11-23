@@ -60,7 +60,7 @@ func GuardZatcaClone(ctx context.Context, pool *pgxpool.Pool, cloudURL, tenant, 
 		return err
 	}
 	var pending int
-	if err := pool.QueryRow(ctx, `SELECT count(*) FROM sync_queue WHERE status IN ('pending','failed') AND ((entity_type='zatca_device_configs' AND entity_id=$1) OR (entity_type='zatca_document_chain' AND (payload->>'device_config_id')::int=$1))`, id).Scan(&pending); err != nil {
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM sync_queue WHERE status IN ('pending','failed') AND ((entity_type='zatca_device_configs' AND entity_id=$1::text) OR (entity_type='zatca_document_chain' AND (payload->>'device_config_id')::int=$1))`, id).Scan(&pending); err != nil {
 		return err
 	}
 	if pending > 0 {
