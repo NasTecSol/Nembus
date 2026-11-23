@@ -23,6 +23,32 @@ BEGIN
 END;
 $$;
 
+-- Some restored tenant schemas already have UUID columns while others still
+-- hold legacy integer IDs. Preserve UUID values while the migration converts
+-- the remaining integer columns.
+CREATE OR REPLACE FUNCTION pg_temp.det_uuid(tbl text, existing_id uuid)
+RETURNS uuid
+LANGUAGE sql
+IMMUTABLE
+STRICT
+AS $$
+    SELECT existing_id;
+$$;
+
+CREATE OR REPLACE FUNCTION pg_temp.det_uuid(tbl text, legacy_id text)
+RETURNS uuid
+LANGUAGE plpgsql
+IMMUTABLE
+STRICT
+AS $$
+BEGIN
+    IF legacy_id ~ '^[0-9]+$' THEN
+        RETURN pg_temp.det_uuid(tbl, legacy_id::bigint);
+    END IF;
+    RETURN legacy_id::uuid;
+END;
+$$;
+
 -- 1. Drop dependent views before altering column types (SQLSTATE 2BP01)
 DROP VIEW IF EXISTS
     public.vw_customer_aging_report,
@@ -1822,4 +1848,6 @@ SET payload = jsonb_set(e.payload, '{transaction_id}', to_jsonb(r.transaction_uu
 FROM ranked r
 WHERE e.id = r.id;
 
+DROP FUNCTION IF EXISTS pg_temp.det_uuid(text, text);
+DROP FUNCTION IF EXISTS pg_temp.det_uuid(text, uuid);
 DROP FUNCTION IF EXISTS pg_temp.det_uuid(text, bigint);
