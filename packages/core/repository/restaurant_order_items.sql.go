@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -22,7 +23,7 @@ RETURNING id, order_id, menu_item_id, menu_item_name, quantity, unit_price, modi
 `
 
 type CreateRestaurantOrderItemParams struct {
-	OrderID           int32           `json:"order_id"`
+	OrderID           uuid.UUID       `json:"order_id"`
 	MenuItemID        int32           `json:"menu_item_id"`
 	Quantity          pgtype.Numeric  `json:"quantity"`
 	UnitPrice         pgtype.Numeric  `json:"unit_price"`
@@ -110,7 +111,7 @@ RETURNING id, order_id, menu_item_id, menu_item_name, quantity, unit_price, modi
 `
 
 type CreateRestaurantOrderItemFullParams struct {
-	OrderID                 int32           `json:"order_id"`
+	OrderID                 uuid.UUID       `json:"order_id"`
 	MenuItemID              int32           `json:"menu_item_id"`
 	MenuItemName            pgtype.Text     `json:"menu_item_name"`
 	Quantity                pgtype.Numeric  `json:"quantity"`
@@ -186,7 +187,7 @@ DELETE FROM restaurant_order_items
 WHERE id = $1
 `
 
-func (q *Queries) DeleteRestaurantOrderItem(ctx context.Context, id int32) error {
+func (q *Queries) DeleteRestaurantOrderItem(ctx context.Context, id uuid.UUID) error {
 	_, err := q.db.Exec(ctx, deleteRestaurantOrderItem, id)
 	return err
 }
@@ -196,7 +197,7 @@ DELETE FROM restaurant_order_items
 WHERE order_id = $1
 `
 
-func (q *Queries) DeleteRestaurantOrderItemsByOrderID(ctx context.Context, orderID int32) error {
+func (q *Queries) DeleteRestaurantOrderItemsByOrderID(ctx context.Context, orderID uuid.UUID) error {
 	_, err := q.db.Exec(ctx, deleteRestaurantOrderItemsByOrderID, orderID)
 	return err
 }
@@ -208,7 +209,7 @@ WHERE id = $1 LIMIT 1
 `
 
 // restaurant_order_items.sql
-func (q *Queries) GetRestaurantOrderItem(ctx context.Context, id int32) (RestaurantOrderItem, error) {
+func (q *Queries) GetRestaurantOrderItem(ctx context.Context, id uuid.UUID) (RestaurantOrderItem, error) {
 	row := q.db.QueryRow(ctx, getRestaurantOrderItem, id)
 	var i RestaurantOrderItem
 	err := row.Scan(
@@ -244,7 +245,7 @@ WHERE order_id = $1
 ORDER BY line_number
 `
 
-func (q *Queries) ListRestaurantOrderItems(ctx context.Context, orderID int32) ([]RestaurantOrderItem, error) {
+func (q *Queries) ListRestaurantOrderItems(ctx context.Context, orderID uuid.UUID) ([]RestaurantOrderItem, error) {
 	rows, err := q.db.Query(ctx, listRestaurantOrderItems, orderID)
 	if err != nil {
 		return nil, err
@@ -306,8 +307,8 @@ ORDER BY roi.line_number, roi.id
 `
 
 type ListRestaurantOrderItemsDetailedRow struct {
-	ID                      int32            `json:"id"`
-	OrderID                 int32            `json:"order_id"`
+	ID                      uuid.UUID        `json:"id"`
+	OrderID                 uuid.UUID        `json:"order_id"`
 	MenuItemID              int32            `json:"menu_item_id"`
 	MenuItemName            pgtype.Text      `json:"menu_item_name"`
 	Quantity                pgtype.Numeric   `json:"quantity"`
@@ -338,7 +339,7 @@ type ListRestaurantOrderItemsDetailedRow struct {
 	MenuCategoryName        pgtype.Text      `json:"menu_category_name"`
 }
 
-func (q *Queries) ListRestaurantOrderItemsDetailed(ctx context.Context, orderID int32) ([]ListRestaurantOrderItemsDetailedRow, error) {
+func (q *Queries) ListRestaurantOrderItemsDetailed(ctx context.Context, orderID uuid.UUID) ([]ListRestaurantOrderItemsDetailedRow, error) {
 	rows, err := q.db.Query(ctx, listRestaurantOrderItemsDetailed, orderID)
 	if err != nil {
 		return nil, err
@@ -403,13 +404,13 @@ SELECT
 FROM restaurant_order_items roi
 JOIN menu_items mi ON roi.menu_item_id = mi.id
 LEFT JOIN menu_categories mc ON mi.menu_category_id = mc.id
-WHERE roi.order_id = ANY($1::int[])
+WHERE roi.order_id = ANY($1::uuid[])
 ORDER BY roi.order_id, roi.line_number, roi.id
 `
 
 type ListRestaurantOrderItemsDetailedByOrderIDsRow struct {
-	ID                      int32            `json:"id"`
-	OrderID                 int32            `json:"order_id"`
+	ID                      uuid.UUID        `json:"id"`
+	OrderID                 uuid.UUID        `json:"order_id"`
 	MenuItemID              int32            `json:"menu_item_id"`
 	MenuItemName            pgtype.Text      `json:"menu_item_name"`
 	Quantity                pgtype.Numeric   `json:"quantity"`
@@ -440,7 +441,7 @@ type ListRestaurantOrderItemsDetailedByOrderIDsRow struct {
 	MenuCategoryName        pgtype.Text      `json:"menu_category_name"`
 }
 
-func (q *Queries) ListRestaurantOrderItemsDetailedByOrderIDs(ctx context.Context, orderIds []int32) ([]ListRestaurantOrderItemsDetailedByOrderIDsRow, error) {
+func (q *Queries) ListRestaurantOrderItemsDetailedByOrderIDs(ctx context.Context, orderIds []uuid.UUID) ([]ListRestaurantOrderItemsDetailedByOrderIDsRow, error) {
 	rows, err := q.db.Query(ctx, listRestaurantOrderItemsDetailedByOrderIDs, orderIds)
 	if err != nil {
 		return nil, err
@@ -513,7 +514,7 @@ RETURNING id, order_id, menu_item_id, menu_item_name, quantity, unit_price, modi
 `
 
 type UpdateRestaurantOrderItemParams struct {
-	ID                int32           `json:"id"`
+	ID                uuid.UUID       `json:"id"`
 	MenuItemID        int32           `json:"menu_item_id"`
 	Quantity          pgtype.Numeric  `json:"quantity"`
 	UnitPrice         pgtype.Numeric  `json:"unit_price"`
@@ -584,7 +585,7 @@ RETURNING id, order_id, menu_item_id, menu_item_name, quantity, unit_price, modi
 `
 
 type UpdateRestaurantOrderItemStatusParams struct {
-	ID     int32       `json:"id"`
+	ID     uuid.UUID   `json:"id"`
 	Status pgtype.Text `json:"status"`
 }
 

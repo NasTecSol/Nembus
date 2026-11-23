@@ -9,6 +9,7 @@ import (
 
 	"github.com/NasTecSol/nembus-core/payment/geidea"
 	"github.com/NasTecSol/nembus-core/repository"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -49,18 +50,18 @@ func (uc *GeideaPaymentUseCase) WithRepository(repo *repository.Queries) *Geidea
 }
 
 type InitiateGeideaPurchaseInput struct {
-	TransactionID  int32   `json:"transaction_id"`
-	TerminalID     int32   `json:"terminal_id"`
-	Amount         float64 `json:"amount"`
-	ECRReferenceID string  `json:"ecr_reference_id"`
+	TransactionID  uuid.UUID `json:"transaction_id"`
+	TerminalID     int32     `json:"terminal_id"`
+	Amount         float64   `json:"amount"`
+	ECRReferenceID string    `json:"ecr_reference_id"`
 }
 
 type ResolveUncertainInput struct {
-	PaymentID      int32  `json:"payment_id"`
-	ResolutionType string `json:"resolution_type"` // "query", "reversal", "manual_slip"
-	RRN            string `json:"rrn,omitempty"`
-	AuthCode       string `json:"auth_code,omitempty"`
-	Notes          string `json:"notes,omitempty"`
+	PaymentID      uuid.UUID `json:"payment_id"`
+	ResolutionType string    `json:"resolution_type"` // "query", "reversal", "manual_slip"
+	RRN            string    `json:"rrn,omitempty"`
+	AuthCode       string    `json:"auth_code,omitempty"`
+	Notes          string    `json:"notes,omitempty"`
 }
 
 func (uc *GeideaPaymentUseCase) Purchase(ctx context.Context, in InitiateGeideaPurchaseInput) (*repository.PosPayment, *geidea.TransactionResponse, error) {

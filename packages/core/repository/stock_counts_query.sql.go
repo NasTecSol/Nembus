@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -23,7 +24,7 @@ RETURNING id, count_number, store_id, storage_location_id, count_type, status, s
 `
 
 type ApproveStockCountParams struct {
-	ID         int32       `json:"id"`
+	ID         uuid.UUID   `json:"id"`
 	ApprovedBy pgtype.Int4 `json:"approved_by"`
 }
 
@@ -59,7 +60,7 @@ WHERE id = $1
 RETURNING id, count_number, store_id, storage_location_id, count_type, status, scheduled_date, started_at, completed_at, counted_by, approved_by, metadata, created_at, updated_at
 `
 
-func (q *Queries) CompleteStockCount(ctx context.Context, id int32) (StockCount, error) {
+func (q *Queries) CompleteStockCount(ctx context.Context, id uuid.UUID) (StockCount, error) {
 	row := q.db.QueryRow(ctx, completeStockCount, id)
 	var i StockCount
 	err := row.Scan(
@@ -164,7 +165,7 @@ INSERT INTO stock_count_lines (
 `
 
 type CreateStockCountLineParams struct {
-	StockCountID      int32            `json:"stock_count_id"`
+	StockCountID      uuid.UUID        `json:"stock_count_id"`
 	ProductID         int32            `json:"product_id"`
 	ProductVariantID  pgtype.Int4      `json:"product_variant_id"`
 	StorageLocationID pgtype.Int4      `json:"storage_location_id"`
@@ -225,7 +226,7 @@ DELETE FROM stock_counts
 WHERE id = $1
 `
 
-func (q *Queries) DeleteStockCount(ctx context.Context, id int32) error {
+func (q *Queries) DeleteStockCount(ctx context.Context, id uuid.UUID) error {
 	_, err := q.db.Exec(ctx, deleteStockCount, id)
 	return err
 }
@@ -235,7 +236,7 @@ DELETE FROM stock_count_lines
 WHERE id = $1
 `
 
-func (q *Queries) DeleteStockCountLine(ctx context.Context, id int32) error {
+func (q *Queries) DeleteStockCountLine(ctx context.Context, id uuid.UUID) error {
 	_, err := q.db.Exec(ctx, deleteStockCountLine, id)
 	return err
 }
@@ -245,7 +246,7 @@ DELETE FROM stock_count_lines
 WHERE stock_count_id = $1
 `
 
-func (q *Queries) DeleteStockCountLinesByCountID(ctx context.Context, stockCountID int32) error {
+func (q *Queries) DeleteStockCountLinesByCountID(ctx context.Context, stockCountID uuid.UUID) error {
 	_, err := q.db.Exec(ctx, deleteStockCountLinesByCountID, stockCountID)
 	return err
 }
@@ -255,7 +256,7 @@ SELECT id, count_number, store_id, storage_location_id, count_type, status, sche
 WHERE id = $1
 `
 
-func (q *Queries) GetStockCount(ctx context.Context, id int32) (StockCount, error) {
+func (q *Queries) GetStockCount(ctx context.Context, id uuid.UUID) (StockCount, error) {
 	row := q.db.QueryRow(ctx, getStockCount, id)
 	var i StockCount
 	err := row.Scan(
@@ -309,7 +310,7 @@ SELECT id, stock_count_id, product_id, product_variant_id, storage_location_id, 
 WHERE id = $1
 `
 
-func (q *Queries) GetStockCountLine(ctx context.Context, id int32) (StockCountLine, error) {
+func (q *Queries) GetStockCountLine(ctx context.Context, id uuid.UUID) (StockCountLine, error) {
 	row := q.db.QueryRow(ctx, getStockCountLine, id)
 	var i StockCountLine
 	err := row.Scan(
@@ -353,7 +354,7 @@ type GetStockCountSummaryRow struct {
 	NegativeVariance   pgtype.Numeric `json:"negative_variance"`
 }
 
-func (q *Queries) GetStockCountSummary(ctx context.Context, stockCountID int32) (GetStockCountSummaryRow, error) {
+func (q *Queries) GetStockCountSummary(ctx context.Context, stockCountID uuid.UUID) (GetStockCountSummaryRow, error) {
 	row := q.db.QueryRow(ctx, getStockCountSummary, stockCountID)
 	var i GetStockCountSummaryRow
 	err := row.Scan(
@@ -382,7 +383,7 @@ WHERE sc.id = $1
 `
 
 type GetStockCountWithDetailsRow struct {
-	ID                  int32            `json:"id"`
+	ID                  uuid.UUID        `json:"id"`
 	CountNumber         string           `json:"count_number"`
 	StoreID             int32            `json:"store_id"`
 	StorageLocationID   pgtype.Int4      `json:"storage_location_id"`
@@ -402,7 +403,7 @@ type GetStockCountWithDetailsRow struct {
 	ApprovedByName      pgtype.Text      `json:"approved_by_name"`
 }
 
-func (q *Queries) GetStockCountWithDetails(ctx context.Context, id int32) (GetStockCountWithDetailsRow, error) {
+func (q *Queries) GetStockCountWithDetails(ctx context.Context, id uuid.UUID) (GetStockCountWithDetailsRow, error) {
 	row := q.db.QueryRow(ctx, getStockCountWithDetails, id)
 	var i GetStockCountWithDetailsRow
 	err := row.Scan(
@@ -434,7 +435,7 @@ WHERE stock_count_id = $1
 ORDER BY id
 `
 
-func (q *Queries) ListStockCountLines(ctx context.Context, stockCountID int32) ([]StockCountLine, error) {
+func (q *Queries) ListStockCountLines(ctx context.Context, stockCountID uuid.UUID) ([]StockCountLine, error) {
 	rows, err := q.db.Query(ctx, listStockCountLines, stockCountID)
 	if err != nil {
 		return nil, err
@@ -491,8 +492,8 @@ ORDER BY scl.id
 `
 
 type ListStockCountLinesWithDetailsRow struct {
-	ID                  int32            `json:"id"`
-	StockCountID        int32            `json:"stock_count_id"`
+	ID                  uuid.UUID        `json:"id"`
+	StockCountID        uuid.UUID        `json:"stock_count_id"`
 	ProductID           int32            `json:"product_id"`
 	ProductVariantID    pgtype.Int4      `json:"product_variant_id"`
 	StorageLocationID   pgtype.Int4      `json:"storage_location_id"`
@@ -516,7 +517,7 @@ type ListStockCountLinesWithDetailsRow struct {
 	UomName             pgtype.Text      `json:"uom_name"`
 }
 
-func (q *Queries) ListStockCountLinesWithDetails(ctx context.Context, stockCountID int32) ([]ListStockCountLinesWithDetailsRow, error) {
+func (q *Queries) ListStockCountLinesWithDetails(ctx context.Context, stockCountID uuid.UUID) ([]ListStockCountLinesWithDetailsRow, error) {
 	rows, err := q.db.Query(ctx, listStockCountLinesWithDetails, stockCountID)
 	if err != nil {
 		return nil, err
@@ -716,7 +717,7 @@ ORDER BY sc.created_at DESC
 `
 
 type ListStockCountsWithDetailsRow struct {
-	ID                  int32            `json:"id"`
+	ID                  uuid.UUID        `json:"id"`
 	CountNumber         string           `json:"count_number"`
 	StoreID             int32            `json:"store_id"`
 	StorageLocationID   pgtype.Int4      `json:"storage_location_id"`
@@ -790,7 +791,7 @@ WHERE id = $1
 RETURNING id, count_number, store_id, storage_location_id, count_type, status, scheduled_date, started_at, completed_at, counted_by, approved_by, metadata, created_at, updated_at
 `
 
-func (q *Queries) ReconcileStockCountStatus(ctx context.Context, id int32) (StockCount, error) {
+func (q *Queries) ReconcileStockCountStatus(ctx context.Context, id uuid.UUID) (StockCount, error) {
 	row := q.db.QueryRow(ctx, reconcileStockCountStatus, id)
 	var i StockCount
 	err := row.Scan(
@@ -822,7 +823,7 @@ WHERE id = $1
 RETURNING id, count_number, store_id, storage_location_id, count_type, status, scheduled_date, started_at, completed_at, counted_by, approved_by, metadata, created_at, updated_at
 `
 
-func (q *Queries) StartStockCount(ctx context.Context, id int32) (StockCount, error) {
+func (q *Queries) StartStockCount(ctx context.Context, id uuid.UUID) (StockCount, error) {
 	row := q.db.QueryRow(ctx, startStockCount, id)
 	var i StockCount
 	err := row.Scan(
@@ -859,7 +860,7 @@ RETURNING id, count_number, store_id, storage_location_id, count_type, status, s
 `
 
 type UpdateStockCountParams struct {
-	ID                int32           `json:"id"`
+	ID                uuid.UUID       `json:"id"`
 	StorageLocationID pgtype.Int4     `json:"storage_location_id"`
 	CountType         pgtype.Text     `json:"count_type"`
 	Status            pgtype.Text     `json:"status"`
@@ -914,7 +915,7 @@ RETURNING id, stock_count_id, product_id, product_variant_id, storage_location_i
 `
 
 type UpdateStockCountLineParams struct {
-	ID              int32            `json:"id"`
+	ID              uuid.UUID        `json:"id"`
 	CountedQuantity pgtype.Numeric   `json:"counted_quantity"`
 	Variance        pgtype.Numeric   `json:"variance"`
 	VarianceValue   pgtype.Numeric   `json:"variance_value"`

@@ -12,9 +12,9 @@ import (
 )
 
 func TestParseDeviceIdentity(t *testing.T) {
-	for _, raw := range []string{`{"store_id":"1","terminal_id":"7"}`, `{"store_id":1,"terminal_id":7}`} {
+	for _, raw := range []string{`{"store_id":"1","terminal_id":"7","terminal_code":"T07"}`, `{"store_id":1,"terminal_id":7,"terminal_code":"T07"}`} {
 		device, err := ParseDeviceIdentity(raw)
-		if err != nil || device.StoreID != 1 || device.TerminalID == nil || *device.TerminalID != 7 || device.Name != "POS Terminal" {
+		if err != nil || device.StoreID != 1 || device.TerminalID == nil || *device.TerminalID != 7 || device.TerminalCode != "T07" || device.Name != "POS Terminal" {
 			t.Fatalf("parse %s: device=%+v err=%v", raw, device, err)
 		}
 	}
@@ -107,5 +107,20 @@ func TestSaveDeviceIdentityAndPreserveExistingConfiguration(t *testing.T) {
 	var count int
 	if err := pool.QueryRow(ctx, "SELECT count(*) FROM local_device_config").Scan(&count); err != nil || count != 1 {
 		t.Fatalf("save created duplicates: %d %v", count, err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE pos_terminals SET terminal_code = 'TERM-07' WHERE id = 7`); err != nil {
+		t.Fatal(err)
+	}
+	tID := int32(7)
+	if err := SaveDeviceIdentity(ctx, pool, DeviceIdentity{StoreID: 1, TerminalID: &tID, Name: "Till renamed"}); err != nil {
+		t.Fatal(err)
+	}
+	if gotCode := ReadLocalTerminalCode(ctx, pool); gotCode != "TERM-07" {
+		t.Fatalf("ReadLocalTerminalCode = %q, want TERM-07", gotCode)
+	}
+	enriched := EnrichDeviceConfigJSON(ctx, pool, `{"store_id":"1","terminal_id":"7"}`)
+	parsedEnriched, err := ParseDeviceIdentity(enriched)
+	if err != nil || parsedEnriched.TerminalCode != "TERM-07" {
+		t.Fatalf("EnrichDeviceConfigJSON(%s): parsed=%+v err=%v", enriched, parsedEnriched, err)
 	}
 }

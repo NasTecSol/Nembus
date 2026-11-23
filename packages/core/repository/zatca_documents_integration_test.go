@@ -30,11 +30,11 @@ func TestZatcaDocumentLocationsPostgres(t *testing.T) {
 	_, err = tx.Exec(ctx, `
 CREATE TEMP TABLE stores (id int PRIMARY KEY, organization_id int);
 CREATE TEMP TABLE pos_terminals (id int PRIMARY KEY, store_id int);
-CREATE TEMP TABLE cashier_sessions (id int PRIMARY KEY, pos_terminal_id int);
+CREATE TEMP TABLE cashier_sessions (id uuid PRIMARY KEY, pos_terminal_id int);
 CREATE TEMP TABLE sales_orders_v2 (id uuid PRIMARY KEY, organization_id int, store_id int, pos_terminal_id int);
-CREATE TEMP TABLE pos_transactions (id int PRIMARY KEY, store_id int, pos_terminal_id int, cashier_session_id int);
+CREATE TEMP TABLE pos_transactions (id uuid PRIMARY KEY, store_id int, pos_terminal_id int, cashier_session_id uuid);
 CREATE TEMP TABLE invoices (id uuid PRIMARY KEY, organization_id int, store_id int, sales_order_id uuid);
-CREATE TEMP TABLE sales_returns (id int PRIMARY KEY, store_id int, cashier_session_id int);
+CREATE TEMP TABLE sales_returns (id uuid PRIMARY KEY, store_id int, cashier_session_id uuid);
 CREATE TEMP TABLE zatca_document_chain (
  id bigint PRIMARY KEY, entity_type text, entity_id text, device_config_id int DEFAULT 99,
  organization_id int DEFAULT 7, zatca_uuid uuid DEFAULT '00000000-0000-4000-8000-000000000099',
@@ -45,30 +45,41 @@ CREATE TEMP TABLE zatca_document_chain (
 );
 INSERT INTO stores VALUES (3,7),(4,7),(5,9);
 INSERT INTO pos_terminals VALUES (8,3),(9,3),(10,4),(11,5);
-INSERT INTO cashier_sessions VALUES (20,8),(21,9),(22,10);
+INSERT INTO cashier_sessions VALUES
+ ('00000000-0000-4000-8000-000000000020',8),
+ ('00000000-0000-4000-8000-000000000021',9),
+ ('00000000-0000-4000-8000-000000000022',10);
 INSERT INTO sales_orders_v2 VALUES
  ('00000000-0000-4000-8000-000000000001',7,3,8),
  ('00000000-0000-4000-8000-000000000002',7,4,10),
  ('00000000-0000-4000-8000-000000000003',7,3,NULL),
  ('00000000-0000-4000-8000-000000000004',9,5,11);
-INSERT INTO pos_transactions VALUES (1,3,9,21),(2,3,NULL,20),(3,5,11,NULL);
+INSERT INTO pos_transactions VALUES
+ ('00000000-0000-4000-8000-000000000101',3,9,'00000000-0000-4000-8000-000000000021'),
+ ('00000000-0000-4000-8000-000000000102',3,NULL,'00000000-0000-4000-8000-000000000020'),
+ ('00000000-0000-4000-8000-000000000103',5,11,NULL);
 INSERT INTO invoices VALUES
  ('00000000-0000-4000-8000-000000000001',7,3,'00000000-0000-4000-8000-000000000001'),
  ('00000000-0000-4000-8000-000000000002',7,4,NULL);
 -- Return terminal is where the return was processed, not the original sale.
-INSERT INTO sales_returns VALUES (1,3,21),(2,4,NULL),(3,3,22);
+INSERT INTO sales_returns VALUES
+ ('00000000-0000-4000-8000-000000000201',3,'00000000-0000-4000-8000-000000000021'),
+ ('00000000-0000-4000-8000-000000000202',4,NULL),
+ ('00000000-0000-4000-8000-000000000203',3,'00000000-0000-4000-8000-000000000022');
 INSERT INTO zatca_document_chain (id,entity_type,entity_id) VALUES
  (1,'sales_order_v2','00000000-0000-4000-8000-000000000001'),
  (2,'sales_order_v2','00000000-0000-4000-8000-000000000002'),
- (3,'pos_transaction','1'),(4,'pos_transaction','2'),
+ (3,'pos_transaction','00000000-0000-4000-8000-000000000101'),
+ (4,'pos_transaction','00000000-0000-4000-8000-000000000102'),
  (5,'invoice','00000000-0000-4000-8000-000000000001'),
  (6,'invoice','00000000-0000-4000-8000-000000000002'),
- (7,'sales_return','1'),(8,'sales_return','2'),
+ (7,'sales_return','00000000-0000-4000-8000-000000000201'),
+ (8,'sales_return','00000000-0000-4000-8000-000000000202'),
  (9,'sales_order_v2','00000000-0000-4000-8000-000000000003'),
  (10,'pos_transaction','deleted-or-invalid'),(11,'unknown','1'),
- (12,'sales_return','3'),
+ (12,'sales_return','00000000-0000-4000-8000-000000000203'),
  (13,'sales_order_v2','00000000-0000-4000-8000-000000000004'),
- (14,'pos_transaction','3');
+ (14,'pos_transaction','00000000-0000-4000-8000-000000000103');
 INSERT INTO zatca_document_chain (id,organization_id,entity_type,entity_id)
  VALUES (15,9,'sales_order_v2','00000000-0000-4000-8000-000000000004');
 `)

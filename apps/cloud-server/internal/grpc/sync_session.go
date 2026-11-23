@@ -23,6 +23,11 @@ import (
 const TenantSlugMetadataKey = "x-tenant-id"
 
 func (s *SyncServer) verifyStreamAuth(ctx context.Context, tenantSlug, deviceID string, storeID int32) error {
+	_, _, err := s.verifyStreamAuthIdentity(ctx, tenantSlug, deviceID, storeID)
+	return err
+}
+
+func (s *SyncServer) verifyStreamAuthIdentity(ctx context.Context, tenantSlug, deviceID string, storeID int32) (int32, int32, error) {
 	var rawToken string
 	if md, ok := metadata.FromIncomingContext(ctx); ok {
 		if vals := md.Get(syncpb.SyncTokenMetadataKey); len(vals) > 0 {
@@ -44,22 +49,22 @@ func (s *SyncServer) verifyStreamAuth(ctx context.Context, tenantSlug, deviceID 
 
 	if rawToken == "" {
 		if s.requireTokenAuth {
-			return status.Error(codes.Unauthenticated, "missing terminal sync token")
+			return 0, 0, status.Error(codes.Unauthenticated, "missing terminal sync token")
 		}
-		return nil
+		return 0, storeID, nil
 	}
 
 	if tenantSlug == "" {
-		return status.Error(codes.InvalidArgument, "tenant_slug is required for token verification")
+		return 0, 0, status.Error(codes.InvalidArgument, "tenant_slug is required for token verification")
 	}
 	pool, err := s.getTenantPool(ctx, tenantSlug)
 	if err != nil {
-		return status.Errorf(codes.NotFound, "tenant DB pool unavailable: %v", err)
+		return 0, 0, status.Errorf(codes.NotFound, "tenant DB pool unavailable: %v", err)
 	}
 
 	candidateHash := usecase.HashSyncToken(rawToken)
 	rows, err := pool.Query(ctx, `
-		SELECT COALESCE(sync_token_hash, '')
+		SELECT id, store_id, COALESCE(sync_token_hash, '')
 		FROM pos_terminals
 		WHERE sync_token_hash IS NOT NULL
 		  AND ($1 <= 0 OR store_id = $1)
@@ -67,28 +72,38 @@ func (s *SyncServer) verifyStreamAuth(ctx context.Context, tenantSlug, deviceID 
 	`, storeID)
 	if err != nil {
 		if s.requireTokenAuth {
-			return status.Errorf(codes.Internal, "verify terminal sync token: %v", err)
+			return 0, 0, status.Errorf(codes.Internal, "verify terminal sync token: %v", err)
 		}
-		return nil
+		return 0, storeID, nil
 	}
 	defer rows.Close()
 
-	matched := false
+	var (
+		matched           bool
+		matchedTerminalID int32
+		matchedStoreID    int32
+	)
 	for rows.Next() {
-		var storedHash string
-		if err := rows.Scan(&storedHash); err != nil {
+		var (
+			termID     int32
+			termStore  int32
+			storedHash string
+		)
+		if err := rows.Scan(&termID, &termStore, &storedHash); err != nil {
 			continue
 		}
 		if len(storedHash) == len(candidateHash) &&
 			subtle.ConstantTimeCompare([]byte(storedHash), []byte(candidateHash)) == 1 {
 			matched = true
+			matchedTerminalID = termID
+			matchedStoreID = termStore
 			break
 		}
 	}
 	if !matched {
-		return status.Error(codes.Unauthenticated, "invalid or revoked terminal sync token")
+		return 0, 0, status.Error(codes.Unauthenticated, "invalid or revoked terminal sync token")
 	}
-	return nil
+	return matchedTerminalID, matchedStoreID, nil
 }
 
 // ChangeNotifyHub manages per-tenant PostgreSQL LISTEN/NOTIFY ("nembus_changes")
@@ -252,9 +267,15 @@ func (s *SyncServer) StreamSession(stream syncpb.SyncService_StreamSessionServer
 		}
 	}
 
-	var authChecked bool
+	var (
+		authChecked    bool
+		authTerminalID int32
+		authStoreID    int32
+	)
 	if tenantSlug != "" {
-		if err := s.verifyStreamAuth(ctx, tenantSlug, deviceID, storeID); err != nil {
+		var err error
+		authTerminalID, authStoreID, err = s.verifyStreamAuthIdentity(ctx, tenantSlug, deviceID, storeID)
+		if err != nil {
 			return err
 		}
 		authChecked = true
@@ -324,8 +345,10 @@ func (s *SyncServer) StreamSession(stream syncpb.SyncService_StreamSessionServer
 
 		if pushEv := clientMsg.GetPushEvent(); pushEv != nil {
 			if !authChecked && pushEv.TenantSlug != "" {
-				if err := s.verifyStreamAuth(ctx, pushEv.TenantSlug, pushEv.DeviceId, pushEv.StoreId); err != nil {
-					return err
+				var authErr error
+				authTerminalID, authStoreID, authErr = s.verifyStreamAuthIdentity(ctx, pushEv.TenantSlug, pushEv.DeviceId, pushEv.StoreId)
+				if authErr != nil {
+					return authErr
 				}
 				authChecked = true
 			}
@@ -333,9 +356,31 @@ func (s *SyncServer) StreamSession(stream syncpb.SyncService_StreamSessionServer
 				startSubscription(pushEv.TenantSlug)
 			}
 
+			if authStoreID > 0 && pushEv.StoreId > 0 && pushEv.StoreId != authStoreID {
+				ack := &syncpb.SyncAck{
+					Id:           pushEv.Id,
+					BatchId:      pushEv.BatchId,
+					OutboxUuid:   pushEv.OutboxUuid,
+					EntityType:   pushEv.EntityType,
+					EntityId:     pushEv.EntityId,
+					EntityKey:    syncpb.ResolveEntityKey(pushEv.EntityKey, pushEv.EntityId),
+					Success:      false,
+					ErrorMessage: fmt.Sprintf("store_id mismatch: event store %d does not match authenticated terminal store %d", pushEv.StoreId, authStoreID),
+					ProcessedAt:  timestamppb.Now(),
+				}
+				if err := sendServerMsg(&syncpb.SessionServerMsg{
+					Msg: &syncpb.SessionServerMsg_PushAck{PushAck: ack},
+				}); err != nil {
+					return err
+				}
+				currentBatchID = ""
+				currentBatch = nil
+				continue
+			}
+
 			// Single-event mode when batch_id is empty
 			if strings.TrimSpace(pushEv.BatchId) == "" || pushEv.BatchSize <= 0 {
-				ack := s.handleSinglePushEvent(ctx, pushEv)
+				ack := s.handleSinglePushEventWithAuth(ctx, pushEv, authTerminalID, authStoreID)
 				if err := sendServerMsg(&syncpb.SessionServerMsg{
 					Msg: &syncpb.SessionServerMsg_PushAck{PushAck: ack},
 				}); err != nil {
@@ -349,6 +394,7 @@ func (s *SyncServer) StreamSession(stream syncpb.SyncService_StreamSessionServer
 				ack := &syncpb.SyncAck{
 					Id:           pushEv.Id,
 					BatchId:      currentBatchID,
+					EntityKey:    syncpb.ResolveEntityKey(pushEv.EntityKey, pushEv.EntityId),
 					Success:      false,
 					ErrorMessage: fmt.Sprintf("incomplete batch %s before new batch %s", currentBatchID, pushEv.BatchId),
 					ProcessedAt:  timestamppb.Now(),
@@ -373,7 +419,7 @@ func (s *SyncServer) StreamSession(stream syncpb.SyncService_StreamSessionServer
 				currentBatchID = ""
 				currentBatch = nil
 
-				ack := s.processPushBatch(ctx, batchToApply)
+				ack := s.processPushBatchWithAuth(ctx, batchToApply, authTerminalID, authStoreID)
 				if err := sendServerMsg(&syncpb.SessionServerMsg{
 					Msg: &syncpb.SessionServerMsg_PushAck{PushAck: ack},
 				}); err != nil {

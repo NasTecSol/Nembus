@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -24,7 +25,7 @@ INSERT INTO pos_payments (
 `
 
 type AddPaymentToTransactionParams struct {
-	TransactionID   int32           `json:"transaction_id"`
+	TransactionID   uuid.UUID       `json:"transaction_id"`
 	PaymentMethod   string          `json:"payment_method"`
 	PaymentGateway  pgtype.Text     `json:"payment_gateway"`
 	Amount          pgtype.Numeric  `json:"amount"`
@@ -61,7 +62,7 @@ RETURNING id, transaction_id, payment_method, payment_gateway, amount, payment_r
 `
 
 type CreatePosPaymentParams struct {
-	TransactionID    int32           `json:"transaction_id"`
+	TransactionID    uuid.UUID       `json:"transaction_id"`
 	PaymentMethod    string          `json:"payment_method"`
 	PaymentGateway   pgtype.Text     `json:"payment_gateway"`
 	Amount           pgtype.Numeric  `json:"amount"`
@@ -112,7 +113,7 @@ DELETE FROM pos_payments
 WHERE id = $1
 `
 
-func (q *Queries) DeletePosPayment(ctx context.Context, id int32) error {
+func (q *Queries) DeletePosPayment(ctx context.Context, id uuid.UUID) error {
 	_, err := q.db.Exec(ctx, deletePosPayment, id)
 	return err
 }
@@ -137,7 +138,7 @@ type GetPaymentsForTransactionRow struct {
 	CreatedAt       pgtype.Timestamp `json:"created_at"`
 }
 
-func (q *Queries) GetPaymentsForTransaction(ctx context.Context, transactionID int32) ([]GetPaymentsForTransactionRow, error) {
+func (q *Queries) GetPaymentsForTransaction(ctx context.Context, transactionID uuid.UUID) ([]GetPaymentsForTransactionRow, error) {
 	rows, err := q.db.Query(ctx, getPaymentsForTransaction, transactionID)
 	if err != nil {
 		return nil, err
@@ -169,7 +170,7 @@ WHERE transaction_id = $1
 ORDER BY created_at
 `
 
-func (q *Queries) GetPaymentsForTransactionFull(ctx context.Context, transactionID int32) ([]PosPayment, error) {
+func (q *Queries) GetPaymentsForTransactionFull(ctx context.Context, transactionID uuid.UUID) ([]PosPayment, error) {
 	rows, err := q.db.Query(ctx, getPaymentsForTransactionFull, transactionID)
 	if err != nil {
 		return nil, err
@@ -216,7 +217,7 @@ SELECT id, transaction_id, payment_method, payment_gateway, amount, payment_refe
 WHERE id = $1
 `
 
-func (q *Queries) GetPosPayment(ctx context.Context, id int32) (PosPayment, error) {
+func (q *Queries) GetPosPayment(ctx context.Context, id uuid.UUID) (PosPayment, error) {
 	row := q.db.QueryRow(ctx, getPosPayment, id)
 	var i PosPayment
 	err := row.Scan(
@@ -264,7 +265,7 @@ type GetTransactionPaymentSummaryRow struct {
 	PaymentDetails []byte      `json:"payment_details"`
 }
 
-func (q *Queries) GetTransactionPaymentSummary(ctx context.Context, transactionID int32) (GetTransactionPaymentSummaryRow, error) {
+func (q *Queries) GetTransactionPaymentSummary(ctx context.Context, transactionID uuid.UUID) (GetTransactionPaymentSummaryRow, error) {
 	row := q.db.QueryRow(ctx, getTransactionPaymentSummary, transactionID)
 	var i GetTransactionPaymentSummaryRow
 	err := row.Scan(&i.TotalPaid, &i.PaymentDetails)
@@ -285,7 +286,7 @@ RETURNING id, transaction_id, payment_method, payment_gateway, amount, payment_r
 `
 
 type UpdatePosPaymentParams struct {
-	ID               int32           `json:"id"`
+	ID               uuid.UUID       `json:"id"`
 	PaymentMethod    string          `json:"payment_method"`
 	PaymentGateway   pgtype.Text     `json:"payment_gateway"`
 	Amount           pgtype.Numeric  `json:"amount"`

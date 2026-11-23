@@ -1,8 +1,14 @@
 package syncpb
 
+import (
+	"strconv"
+	"strings"
+)
+
 // A timestamp and row ID form a bounded pull cursor, including timestamp ties.
 // Metadata keeps the existing protobuf wire format compatible.
 const PullCursorKey = "nembus-pull-after-id"
+const PullCursorAfterKey = "nembus-pull-after-key"
 const PullCursorVersionKey = "nembus-pull-cursor-version"
 const PullPageLimit = 200
 
@@ -134,4 +140,98 @@ func PushEntityRank(entity, action string) int {
 	default:
 		return 90
 	}
+}
+
+// IsUUIDEntity reports whether entityType uses a UUID primary key.
+//
+// Categories covered:
+//   - 15 M1-migrated push-synced tables (5 also in PullEntityTypes, 1 in LeafDeleteEntityTypes):
+//     user_biometric_templates, cashier_sessions, stock_movements, stock_counts, stock_count_lines,
+//     customers, pos_transactions, pos_transaction_lines, pos_payments, restaurant_orders,
+//     restaurant_order_items, waste_logs, kiosk_sessions, sales_returns, sales_return_lines.
+//   - 6 already-UUID sync-referenced tables (isSupportedPushEntity / validTables / PushEntityRank):
+//     carts, cart_items, sales_orders_v2, sales_order_lines_v2, draft_cart_templates, notification_events.
+//   - 18 additional already-UUID domain tables in packages/core/db/schema/*.sql:
+//     draft_cart_template_items, restaurant_carts, restaurant_cart_items, order_fulfillments,
+//     order_fulfillment_items, invoices, invoice_lines, invoice_payments, quotes, quote_lines,
+//     user_notifications, notification_deliveries, customer_payments, vendor_payments,
+//     rfqs, rfq_items, rfq_responses, rfq_response_items.
+//
+// All 27 remaining integer PullEntityTypes(), zatca_device_configs, and zatca_document_chain return false.
+func IsUUIDEntity(entityType string) bool {
+	switch entityType {
+	case // 15 M1-migrated push-synced tables
+		"user_biometric_templates",
+		"cashier_sessions",
+		"stock_movements",
+		"stock_counts",
+		"stock_count_lines",
+		"customers",
+		"pos_transactions",
+		"pos_transaction_lines",
+		"pos_payments",
+		"restaurant_orders",
+		"restaurant_order_items",
+		"waste_logs",
+		"kiosk_sessions",
+		"sales_returns",
+		"sales_return_lines",
+		// 6 already-UUID sync-referenced tables
+		"carts",
+		"cart_items",
+		"sales_orders_v2",
+		"sales_order_lines_v2",
+		"draft_cart_templates",
+		"notification_events",
+		// 18 additional already-UUID domain tables in packages/core/db/schema/*.sql
+		"draft_cart_template_items",
+		"restaurant_carts",
+		"restaurant_cart_items",
+		"order_fulfillments",
+		"order_fulfillment_items",
+		"invoices",
+		"invoice_lines",
+		"invoice_payments",
+		"quotes",
+		"quote_lines",
+		"user_notifications",
+		"notification_deliveries",
+		"customer_payments",
+		"vendor_payments",
+		"rfqs",
+		"rfq_items",
+		"rfq_responses",
+		"rfq_response_items":
+		return true
+	default:
+		return false
+	}
+}
+
+// ResolveEntityKey returns the canonical string entity key from entityKey if
+// non-empty after trimming whitespace, or formats positive legacy entityID as
+// base-10. Returns "" when neither is valid.
+func ResolveEntityKey(entityKey string, entityID int64) string {
+	if trimmed := strings.TrimSpace(entityKey); trimmed != "" {
+		return trimmed
+	}
+	if entityID > 0 {
+		return strconv.FormatInt(entityID, 10)
+	}
+	return ""
+}
+
+// ParseNumericEntityID parses key as a positive base-10 int64 entity ID.
+// Returns (0, false) for empty, whitespace-only, leading '+', non-positive,
+// overflowing, or non-numeric strings (such as UUIDs).
+func ParseNumericEntityID(key string) (int64, bool) {
+	trimmed := strings.TrimSpace(key)
+	if trimmed == "" || strings.HasPrefix(trimmed, "+") {
+		return 0, false
+	}
+	id, err := strconv.ParseInt(trimmed, 10, 64)
+	if err != nil || id <= 0 {
+		return 0, false
+	}
+	return id, true
 }

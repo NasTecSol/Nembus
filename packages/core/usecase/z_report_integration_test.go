@@ -2,12 +2,18 @@ package usecase
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"testing"
 
 	"github.com/NasTecSol/nembus-core/repository"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 )
+
+func zReportTestUUID(n uint32) uuid.UUID {
+	return uuid.MustParse(fmt.Sprintf("00000000-0000-4000-8000-%012x", n))
+}
 
 // These temporary tables shadow application tables and disappear on rollback.
 // Use a dedicated PostgreSQL database, never an application connection string.
@@ -27,21 +33,24 @@ func TestZReportPostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer tx.Rollback(ctx)
-	_, err = tx.Exec(ctx, `
+	s845 := zReportTestUUID(845)
+	s846 := zReportTestUUID(846)
+	txn := func(n uint32) uuid.UUID { return zReportTestUUID(n) }
+	_, err = tx.Exec(ctx, fmt.Sprintf(`
 CREATE TEMP TABLE organizations (id int, currency_code text);
 CREATE TEMP TABLE stores (id int, organization_id int, name text, timezone text);
 CREATE TEMP TABLE users (id int, organization_id int, first_name text, last_name text, is_active boolean);
 CREATE TEMP TABLE user_store_access (user_id int, store_id int);
 CREATE TEMP TABLE cashiers (id int, user_id int, store_id int, cashier_code text);
 CREATE TEMP TABLE pos_terminals (id int, store_id int, terminal_code text, terminal_name text);
-CREATE TEMP TABLE cashier_sessions (id int, cashier_id int, pos_terminal_id int, session_number text,
+CREATE TEMP TABLE cashier_sessions (id uuid, cashier_id int, pos_terminal_id int, session_number text,
  opening_time timestamp, closing_time timestamp, opening_balance numeric(15,2), closing_balance numeric(15,2),
  expected_balance numeric(15,2), status text);
-CREATE TEMP TABLE pos_transactions (id int PRIMARY KEY, cashier_session_id int, store_id int, cashier_id int,
+CREATE TEMP TABLE pos_transactions (id uuid PRIMARY KEY, cashier_session_id uuid, store_id int, cashier_id int,
  pos_terminal_id int, transaction_type text, status text, total_amount numeric(15,2), tax_amount numeric(15,2),
  discount_amount numeric(15,2), change_given numeric(15,2), metadata jsonb);
-CREATE TEMP TABLE pos_payments (transaction_id int, payment_method text, amount numeric(15,2), metadata jsonb);
-CREATE TEMP TABLE sales_returns (cashier_session_id int, store_id int, cashier_id int, status text,
+CREATE TEMP TABLE pos_payments (transaction_id uuid, payment_method text, amount numeric(15,2), metadata jsonb);
+CREATE TEMP TABLE sales_returns (cashier_session_id uuid, store_id int, cashier_id int, status text,
  total_refund_amount numeric(15,2), tax_amount numeric(15,2), refund_method text);
 INSERT INTO organizations VALUES (1, 'SAR');
 INSERT INTO stores VALUES (3,1,'Main','Asia/Riyadh');
@@ -50,28 +59,29 @@ INSERT INTO user_store_access VALUES (10,3), (12,3);
 INSERT INTO cashiers VALUES (12,10,3,'CASH-012');
 INSERT INTO pos_terminals VALUES (7,3,'POS-02','Counter 2');
 INSERT INTO cashier_sessions VALUES
- (845,12,7,'SESSION-845','2026-10-19 09:00',NULL,200,NULL,965,'open'),
- (846,12,7,'SESSION-846','2026-10-19 09:00',NULL,100,NULL,100,'open');
+ ('%[1]s'::uuid,12,7,'SESSION-845','2026-10-19 09:00',NULL,200,NULL,965,'open'),
+ ('%[2]s'::uuid,12,7,'SESSION-846','2026-10-19 09:00',NULL,100,NULL,100,'open');
 INSERT INTO pos_transactions VALUES
- (1,845,3,12,7,'sale','completed',1150,150,100,50,'{}'),
- (2,845,3,12,7,'sale','refunded',230,30,0,0,'{}'),
- (3,845,3,12,7,'sale','partially_refunded',115,15,0,0,'{}'),
- (4,845,3,12,7,'sale','voided',80,0,0,0,'{}'),
- (5,845,3,12,7,'sale','draft',999,0,0,0,'{}'),
- (6,845,3,99,7,'sale','completed',35,0,0,0,'{}');
+ ('%[3]s'::uuid,'%[1]s'::uuid,3,12,7,'sale','completed',1150,150,100,50,'{}'),
+ ('%[4]s'::uuid,'%[1]s'::uuid,3,12,7,'sale','refunded',230,30,0,0,'{}'),
+ ('%[5]s'::uuid,'%[1]s'::uuid,3,12,7,'sale','partially_refunded',115,15,0,0,'{}'),
+ ('%[6]s'::uuid,'%[1]s'::uuid,3,12,7,'sale','voided',80,0,0,0,'{}'),
+ ('%[7]s'::uuid,'%[1]s'::uuid,3,12,7,'sale','draft',999,0,0,0,'{}'),
+ ('%[8]s'::uuid,'%[1]s'::uuid,3,99,7,'sale','completed',35,0,0,0,'{}');
 INSERT INTO pos_payments VALUES
- (1,' CASH ',700,'{}'), (1,'card',500,'{}'),
- (2,'cash',230,'{"change_given":"20"}'), (3,'card',115,'{}'),
- (4,'cash',80,'{}'), (5,'cash',999,'{}');
+ ('%[3]s'::uuid,' CASH ',700,'{}'), ('%[3]s'::uuid,'card',500,'{}'),
+ ('%[4]s'::uuid,'cash',230,'{"change_given":"20"}'), ('%[5]s'::uuid,'card',115,'{}'),
+ ('%[6]s'::uuid,'cash',80,'{}'), ('%[7]s'::uuid,'cash',999,'{}');
 INSERT INTO sales_returns VALUES
- (845,3,12,'completed',115,15,'cash'), (845,3,12,'completed',23,3,'card'),
- (845,3,12,'pending',999,0,'cash'), (846,3,12,'cancelled',100,0,'cash');
-`)
+ ('%[1]s'::uuid,3,12,'completed',115,15,'cash'), ('%[1]s'::uuid,3,12,'completed',23,3,'card'),
+ ('%[1]s'::uuid,3,12,'pending',999,0,'cash'), ('%[2]s'::uuid,3,12,'cancelled',100,0,'cash');
+`, s845.String(), s846.String(), txn(1).String(), txn(2).String(), txn(3).String(), txn(4).String(), txn(5).String(), txn(6).String()),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
 	repo := repository.New(tx)
-	filters := repository.GetCashierSessionZReportParams{CashierSessionID: 845, OrganizationID: 1, UserID: 10}
+	filters := repository.GetCashierSessionZReportParams{CashierSessionID: s845, OrganizationID: 1, UserID: 10}
 	calculate := func(t *testing.T, filters repository.GetCashierSessionZReportParams) ZReport {
 		t.Helper()
 		resp := CalculateCashierSessionZReport(ctx, repo, filters)
@@ -116,7 +126,7 @@ INSERT INTO sales_returns VALUES
 		}
 	})
 	t.Run("closed session and fresh calculation", func(t *testing.T) {
-		_, err := tx.Exec(ctx, `UPDATE cashier_sessions SET status='closed', closing_time='2026-10-19 17:00', closing_balance=960 WHERE id=845`)
+		_, err := tx.Exec(ctx, `UPDATE cashier_sessions SET status='closed', closing_time='2026-10-19 17:00', closing_balance=960 WHERE id=$1`, s845)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -125,7 +135,7 @@ INSERT INTO sales_returns VALUES
 			t.Fatal("closed session must be finalized with variance")
 		}
 		assertMoney("variance", *r.Drawer.Variance, "-5.00")
-		_, err = tx.Exec(ctx, `INSERT INTO sales_returns VALUES (845,3,12,'completed',11.50,1.50,'cash')`)
+		_, err = tx.Exec(ctx, `INSERT INTO sales_returns VALUES ($1,3,12,'completed',11.50,1.50,'cash')`, s845)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -138,7 +148,7 @@ INSERT INTO sales_returns VALUES
 	})
 	t.Run("empty session", func(t *testing.T) {
 		f := filters
-		f.CashierSessionID = 846
+		f.CashierSessionID = s846
 		r := calculate(t, f)
 		if r.Payments == nil || len(r.Payments) != 0 || r.Sales.TransactionCount != 0 {
 			t.Fatal("empty session arrays/counts")
@@ -147,13 +157,14 @@ INSERT INTO sales_returns VALUES
 		assertMoney("empty cash", r.Drawer.CalculatedExpectedCash, "100.00")
 	})
 	t.Run("missing payments and unknown refund", func(t *testing.T) {
-		_, err := tx.Exec(ctx, `INSERT INTO pos_transactions VALUES (7,846,3,12,7,'sale','completed',10,0,0,0,'{}');
-INSERT INTO sales_returns VALUES (846,3,12,'completed',2,0,NULL)`)
-		if err != nil {
+		if _, err := tx.Exec(ctx, `INSERT INTO pos_transactions VALUES ($1,$2,3,12,7,'sale','completed',10,0,0,0,'{}')`, txn(7), s846); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tx.Exec(ctx, `INSERT INTO sales_returns VALUES ($1,3,12,'completed',2,0,NULL)`, s846); err != nil {
 			t.Fatal(err)
 		}
 		f := filters
-		f.CashierSessionID = 846
+		f.CashierSessionID = s846
 		r := calculate(t, f)
 		if !hasWarning(r, "MISSING_PAYMENTS") || !hasWarning(r, "UNKNOWN_PAYMENT_METHOD") || !hasWarning(r, "PAYMENT_MISMATCH") {
 			t.Fatal("missing data warnings")
@@ -169,7 +180,7 @@ INSERT INTO sales_returns VALUES (846,3,12,'completed',2,0,NULL)`)
 			func(f *repository.GetCashierSessionZReportParams) { f.StoreID = 99 },
 			func(f *repository.GetCashierSessionZReportParams) { f.PosTerminalID = 99 },
 			func(f *repository.GetCashierSessionZReportParams) { f.CashierID = 99 },
-			func(f *repository.GetCashierSessionZReportParams) { f.CashierSessionID = 99 },
+			func(f *repository.GetCashierSessionZReportParams) { f.CashierSessionID = zReportTestUUID(99) },
 		} {
 			f := filters
 			change(&f)

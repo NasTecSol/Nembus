@@ -123,7 +123,7 @@ CREATE TABLE IF NOT EXISTS partner_contacts (
 -- =====================================================
 
 CREATE TABLE customers (
-    id SERIAL PRIMARY KEY,
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
     customer_code VARCHAR(50) NOT NULL,
     name VARCHAR(255) NOT NULL,
@@ -289,7 +289,7 @@ CREATE TABLE sales_orders (
     id SERIAL PRIMARY KEY,
     organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
     order_number VARCHAR(50) UNIQUE NOT NULL,
-    customer_id INTEGER REFERENCES customers(id) ON DELETE SET NULL,
+    customer_id UUID REFERENCES customers(id) ON DELETE SET NULL,
     store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
     order_date DATE NOT NULL,
     delivery_date DATE,
@@ -343,7 +343,7 @@ CREATE TABLE carts (
     store_id INTEGER REFERENCES stores(id) ON DELETE SET NULL,
     
     -- Customer information
-    customer_id INTEGER REFERENCES customers(id) ON DELETE SET NULL, -- NULL for guest carts
+    customer_id UUID REFERENCES customers(id) ON DELETE SET NULL, -- NULL for guest carts
     guest_identifier VARCHAR(255), -- Session ID or device ID for guest users
     guest_email VARCHAR(255),
     guest_phone VARCHAR(50),

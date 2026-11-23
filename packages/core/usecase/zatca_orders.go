@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
-	"strconv"
 	"time"
 
 	"github.com/NasTecSol/nembus-core/repository"
@@ -38,7 +37,7 @@ func (uc *ZatcaUseCase) OriginalIssuedInvoiceNumber(ctx context.Context, txn *re
 
 // IssuedTransactionDocument resolves the immutable source of a return.
 func (uc *ZatcaUseCase) IssuedTransactionDocument(ctx context.Context, txn *repository.PosTransaction) (repository.ZatcaDocumentChain, error) {
-	entry, err := uc.repo.GetChainEntryByEntity(ctx, repository.GetChainEntryByEntityParams{EntityType: "pos_transaction", EntityID: strconv.Itoa(int(txn.ID))})
+	entry, err := uc.repo.GetChainEntryByEntity(ctx, repository.GetChainEntryByEntityParams{EntityType: "pos_transaction", EntityID: txn.ID.String()})
 	if errors.Is(err, pgx.ErrNoRows) && txn.SalesOrderID.Valid {
 		entry, err = uc.repo.GetChainEntryByEntity(ctx, repository.GetChainEntryByEntityParams{EntityType: ZatcaSalesOrderEntity, EntityID: uuid.UUID(txn.SalesOrderID.Bytes).String()})
 	}
@@ -85,7 +84,7 @@ func (uc *ZatcaUseCase) EnsureSalesOrderDocument(ctx context.Context, id uuid.UU
 		}
 		oldTransaction, err := repo.GetLegacyZatcaOrderTransaction(ctx, id)
 		if err == nil {
-			old, err := repo.GetChainEntryByEntity(ctx, repository.GetChainEntryByEntityParams{EntityType: "pos_transaction", EntityID: strconv.Itoa(int(oldTransaction))})
+			old, err := repo.GetChainEntryByEntity(ctx, repository.GetChainEntryByEntityParams{EntityType: "pos_transaction", EntityID: oldTransaction.String()})
 			if err != nil {
 				return err
 			}

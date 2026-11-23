@@ -38,7 +38,7 @@ func TestZatcaPushRequiresDurableMatchingAcknowledgment(t *testing.T) {
 			}))
 			defer server.Close()
 			client := &ZatcaCloud{baseURL: server.URL, tenant: "test-tenant", token: "test-token", http: server.Client()}
-			err := client.Push(context.Background(), OutboxItem{ID: 42, EntityID: 1, EntityType: "zatca_device_configs", Action: "UPDATE"}, repository.ZatcaSyncSnapshot{Device: json.RawMessage(`{"store_id":1}`)})
+			err := client.Push(context.Background(), OutboxItem{ID: 42, EntityID: "1", EntityType: "zatca_device_configs", Action: "UPDATE"}, repository.ZatcaSyncSnapshot{Device: json.RawMessage(`{"store_id":1}`)})
 			if (err == nil) != tc.ok {
 				t.Fatalf("durability check: %v", err)
 			}

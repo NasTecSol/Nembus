@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -42,9 +43,9 @@ type CreateSalesReturnParams struct {
 	ReturnNumber          string           `json:"return_number"`
 	StoreID               int32            `json:"store_id"`
 	CashierID             pgtype.Int4      `json:"cashier_id"`
-	CashierSessionID      pgtype.Int4      `json:"cashier_session_id"`
-	CustomerID            pgtype.Int4      `json:"customer_id"`
-	OriginalTransactionID pgtype.Int4      `json:"original_transaction_id"`
+	CashierSessionID      pgtype.UUID      `json:"cashier_session_id"`
+	CustomerID            pgtype.UUID      `json:"customer_id"`
+	OriginalTransactionID pgtype.UUID      `json:"original_transaction_id"`
 	ReturnDate            pgtype.Timestamp `json:"return_date"`
 	ReturnReason          pgtype.Text      `json:"return_reason"`
 	Status                pgtype.Text      `json:"status"`
@@ -127,10 +128,10 @@ RETURNING id, return_id, product_id, product_variant_id, original_line_id, quant
 `
 
 type CreateSalesReturnLineParams struct {
-	ReturnID         int32           `json:"return_id"`
+	ReturnID         uuid.UUID       `json:"return_id"`
 	ProductID        int32           `json:"product_id"`
 	ProductVariantID pgtype.Int4     `json:"product_variant_id"`
-	OriginalLineID   pgtype.Int4     `json:"original_line_id"`
+	OriginalLineID   pgtype.UUID     `json:"original_line_id"`
 	Quantity         pgtype.Numeric  `json:"quantity"`
 	UnitPrice        pgtype.Numeric  `json:"unit_price"`
 	RefundAmount     pgtype.Numeric  `json:"refund_amount"`
@@ -185,7 +186,7 @@ SELECT id, return_number, store_id, cashier_id, cashier_session_id, customer_id,
 WHERE id = $1
 `
 
-func (q *Queries) GetSalesReturnByID(ctx context.Context, id int32) (SalesReturn, error) {
+func (q *Queries) GetSalesReturnByID(ctx context.Context, id uuid.UUID) (SalesReturn, error) {
 	row := q.db.QueryRow(ctx, getSalesReturnByID, id)
 	var i SalesReturn
 	err := row.Scan(
@@ -218,7 +219,7 @@ SELECT id, return_number, store_id, cashier_id, cashier_session_id, customer_id,
 WHERE original_transaction_id = $1
 `
 
-func (q *Queries) ListSalesReturnsByTransaction(ctx context.Context, originalTransactionID pgtype.Int4) ([]SalesReturn, error) {
+func (q *Queries) ListSalesReturnsByTransaction(ctx context.Context, originalTransactionID pgtype.UUID) ([]SalesReturn, error) {
 	rows, err := q.db.Query(ctx, listSalesReturnsByTransaction, originalTransactionID)
 	if err != nil {
 		return nil, err

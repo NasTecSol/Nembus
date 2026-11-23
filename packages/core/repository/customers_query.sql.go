@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -26,7 +27,7 @@ RETURNING id, organization_id, customer_code, name, email, phone, address, custo
 `
 
 type AdjustCustomerLoyaltyPointsParams struct {
-	ID            int32          `json:"id"`
+	ID            uuid.UUID      `json:"id"`
 	LoyaltyPoints pgtype.Numeric `json:"loyalty_points"`
 }
 
@@ -133,7 +134,7 @@ DELETE FROM customers
 WHERE id = $1
 `
 
-func (q *Queries) DeleteCustomer(ctx context.Context, id int32) error {
+func (q *Queries) DeleteCustomer(ctx context.Context, id uuid.UUID) error {
 	_, err := q.db.Exec(ctx, deleteCustomer, id)
 	return err
 }
@@ -143,7 +144,7 @@ SELECT id, organization_id, customer_code, name, email, phone, address, customer
 WHERE id = $1
 `
 
-func (q *Queries) GetCustomer(ctx context.Context, id int32) (Customer, error) {
+func (q *Queries) GetCustomer(ctx context.Context, id uuid.UUID) (Customer, error) {
 	row := q.db.QueryRow(ctx, getCustomer, id)
 	var i Customer
 	err := row.Scan(
@@ -215,14 +216,14 @@ WHERE id = $1
 `
 
 type GetCustomerCreditStatusRow struct {
-	ID                 int32          `json:"id"`
+	ID                 uuid.UUID      `json:"id"`
 	Name               string         `json:"name"`
 	CreditLimit        pgtype.Numeric `json:"credit_limit"`
 	OutstandingBalance pgtype.Numeric `json:"outstanding_balance"`
 	AvailableCredit    int32          `json:"available_credit"`
 }
 
-func (q *Queries) GetCustomerCreditStatus(ctx context.Context, id int32) (GetCustomerCreditStatusRow, error) {
+func (q *Queries) GetCustomerCreditStatus(ctx context.Context, id uuid.UUID) (GetCustomerCreditStatusRow, error) {
 	row := q.db.QueryRow(ctx, getCustomerCreditStatus, id)
 	var i GetCustomerCreditStatusRow
 	err := row.Scan(
@@ -242,14 +243,14 @@ WHERE id = $1
 `
 
 type GetCustomerLoyaltyBalanceRow struct {
-	ID            int32          `json:"id"`
+	ID            uuid.UUID      `json:"id"`
 	Name          string         `json:"name"`
 	LoyaltyPoints pgtype.Numeric `json:"loyalty_points"`
 	LoyaltyTier   pgtype.Text    `json:"loyalty_tier"`
 }
 
 // Lightweight fetch for POS validation before redemption
-func (q *Queries) GetCustomerLoyaltyBalance(ctx context.Context, id int32) (GetCustomerLoyaltyBalanceRow, error) {
+func (q *Queries) GetCustomerLoyaltyBalance(ctx context.Context, id uuid.UUID) (GetCustomerLoyaltyBalanceRow, error) {
 	row := q.db.QueryRow(ctx, getCustomerLoyaltyBalance, id)
 	var i GetCustomerLoyaltyBalanceRow
 	err := row.Scan(
@@ -504,7 +505,7 @@ RETURNING id, organization_id, customer_code, name, email, phone, address, custo
 `
 
 type ToggleCustomerActiveParams struct {
-	ID       int32       `json:"id"`
+	ID       uuid.UUID   `json:"id"`
 	IsActive pgtype.Bool `json:"is_active"`
 }
 
@@ -550,7 +551,7 @@ RETURNING id, organization_id, customer_code, name, email, phone, address, custo
 `
 
 type UpdateCustomerParams struct {
-	ID           int32           `json:"id"`
+	ID           uuid.UUID       `json:"id"`
 	Name         string          `json:"name"`
 	Email        pgtype.Text     `json:"email"`
 	Phone        pgtype.Text     `json:"phone"`
@@ -606,7 +607,7 @@ RETURNING id, organization_id, customer_code, name, email, phone, address, custo
 `
 
 type UpdateCustomerBalanceParams struct {
-	ID                 int32          `json:"id"`
+	ID                 uuid.UUID      `json:"id"`
 	OutstandingBalance pgtype.Numeric `json:"outstanding_balance"`
 }
 

@@ -28,15 +28,15 @@ type SAPClient interface {
 type NembusClient interface {
 	FetchApprovedPendingPOSTransactions(ctx context.Context, limit int) ([]nembus.POSTransaction, error)
 	FetchUnpostedPOSTransactions(ctx context.Context, limit int) ([]nembus.POSTransaction, error)
-	FetchTransactionLines(ctx context.Context, transactionID int64) ([]nembus.POSTransactionLine, error)
-	FetchTransactionPayments(ctx context.Context, transactionID int64) ([]nembus.POSPayment, error)
-	MarkTransactionPostedToSAP(ctx context.Context, transactionID int64, sapDocEntry, sapDocNum int) error
-	FetchCustomerSAPCode(ctx context.Context, customerID int32) (string, error)
+	FetchTransactionLines(ctx context.Context, transactionID uuid.UUID) ([]nembus.POSTransactionLine, error)
+	FetchTransactionPayments(ctx context.Context, transactionID uuid.UUID) ([]nembus.POSPayment, error)
+	MarkTransactionPostedToSAP(ctx context.Context, transactionID uuid.UUID, sapDocEntry, sapDocNum int) error
+	FetchCustomerSAPCode(ctx context.Context, customerID uuid.UUID) (string, error)
 	FetchUnpostedSalesReturns(ctx context.Context, limit int) ([]nembus.SalesReturn, error)
-	FetchSalesReturnLines(ctx context.Context, returnID int64) ([]nembus.SalesReturnLine, error)
-	MarkSalesReturnPostedToSAP(ctx context.Context, returnID int64, sapDocEntry, sapDocNum int) error
-	FetchOriginalSAPDocEntry(ctx context.Context, originalTxID int32) (int, error)
-	HoldTransactionForStockReview(ctx context.Context, txID int64, txNum string, storeID int32, whCode string, totalAmount float64, shortageItems []nembus.ShortageItem, summary string) error
+	FetchSalesReturnLines(ctx context.Context, returnID uuid.UUID) ([]nembus.SalesReturnLine, error)
+	MarkSalesReturnPostedToSAP(ctx context.Context, returnID uuid.UUID, sapDocEntry, sapDocNum int) error
+	FetchOriginalSAPDocEntry(ctx context.Context, originalTxID uuid.UUID) (int, error)
+	HoldTransactionForStockReview(ctx context.Context, txID uuid.UUID, txNum string, storeID int32, whCode string, totalAmount float64, shortageItems []nembus.ShortageItem, summary string) error
 	FetchApprovedPendingSalesOrdersV2(ctx context.Context, limit int) ([]nembus.SalesOrderV2, error)
 	FetchUnpostedSalesOrdersV2(ctx context.Context, limit int) ([]nembus.SalesOrderV2, error)
 	FetchSalesOrderLinesV2(ctx context.Context, orderID uuid.UUID) ([]nembus.SalesOrderLineV2, error)
@@ -749,15 +749,15 @@ func (s *UpstreamSync) postTransactionToSAP(ctx context.Context, tx *nembus.POST
 	return s.nembusClient.MarkTransactionPostedToSAP(ctx, tx.ID, sapInv.DocEntry, sapInv.DocNum)
 }
 
-func (s *UpstreamSync) resolveDocumentCardCode(ctx context.Context, customerSAPCode string, customerID *int32) string {
+func (s *UpstreamSync) resolveDocumentCardCode(ctx context.Context, customerSAPCode string, customerID *uuid.UUID) string {
 	if trimmed := strings.TrimSpace(customerSAPCode); trimmed != "" {
 		return trimmed
 	}
 	return s.resolveCardCode(ctx, customerID)
 }
 
-func (s *UpstreamSync) resolveCardCode(ctx context.Context, customerID *int32) string {
-	if customerID == nil {
+func (s *UpstreamSync) resolveCardCode(ctx context.Context, customerID *uuid.UUID) string {
+	if customerID == nil || *customerID == uuid.Nil {
 		if s.cfg.NembusDefaultCustomer != "" {
 			return s.cfg.NembusDefaultCustomer
 		}
@@ -788,11 +788,11 @@ func (s *UpstreamSync) postSalesReturnToSAP(ctx context.Context, ret *nembus.Sal
 	if ret.OriginalSAPDocEntry > 0 {
 		entry := ret.OriginalSAPDocEntry
 		baseDocEntry = &entry
-	} else if ret.OriginalTransactionID != nil && *ret.OriginalTransactionID > 0 {
+	} else if ret.OriginalTransactionID != nil && *ret.OriginalTransactionID != uuid.Nil {
 		if entry, err := s.nembusClient.FetchOriginalSAPDocEntry(ctx, *ret.OriginalTransactionID); err == nil && entry > 0 {
 			baseDocEntry = &entry
 		} else {
-			log.Printf("⚠️ [SalesReturn %s] Original transaction ID %d has no SAP DocEntry (err: %v); posting as standalone credit memo", ret.ReturnNumber, *ret.OriginalTransactionID, err)
+			log.Printf("⚠️ [SalesReturn %s] Original transaction ID %s has no SAP DocEntry (err: %v); posting as standalone credit memo", ret.ReturnNumber, ret.OriginalTransactionID.String(), err)
 		}
 	}
 

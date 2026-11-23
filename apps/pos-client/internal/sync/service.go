@@ -21,9 +21,12 @@ import (
 	"time"
 
 	"github.com/NasTecSol/nembus-core/grpc/syncpb"
+	"github.com/NasTecSol/nembus-core/middleware"
+	"github.com/NasTecSol/nembus-core/repository"
 	"github.com/NasTecSol/nembus-core/telemetry"
-	corezatca "github.com/NasTecSol/nembus-core/zatca"
+	orderautomationschema "github.com/NasTecSol/nembus-core/zatca/schema"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -38,6 +41,9 @@ import (
 
 const OutboxResilienceDDL = `
 ALTER TABLE IF EXISTS sync_queue
+	ALTER COLUMN entity_id TYPE TEXT USING entity_id::text;
+ALTER TABLE IF EXISTS sync_queue
+	ADD COLUMN IF NOT EXISTS priority INTEGER DEFAULT 0,
 	ADD COLUMN IF NOT EXISTS error_class VARCHAR(32),
 	ADD COLUMN IF NOT EXISTS next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 	ADD COLUMN IF NOT EXISTS quarantined_at TIMESTAMPTZ,
@@ -49,7 +55,8 @@ CREATE INDEX IF NOT EXISTS idx_sync_queue_correlation
 	ON sync_queue(correlation_id, id ASC)
 	WHERE status = 'pending';
 ALTER TABLE IF EXISTS local_device_config
-	ADD COLUMN IF NOT EXISTS sync_token TEXT;
+	ADD COLUMN IF NOT EXISTS sync_token TEXT,
+	ADD COLUMN IF NOT EXISTS terminal_code TEXT;
 
 CREATE OR REPLACE FUNCTION trg_enqueue_sync_outbox()
 RETURNS TRIGGER AS $$
@@ -76,7 +83,7 @@ BEGIN
     FROM sync_queue
     WHERE correlation_id = corr_id
       AND entity_type = entity_name
-      AND entity_id = NEW.id
+      AND entity_id = NEW.id::text
       AND status = 'pending'
     ORDER BY id DESC
     LIMIT 1;
@@ -89,7 +96,7 @@ BEGIN
         INSERT INTO sync_queue (entity_type, entity_id, action, payload, status, priority, correlation_id)
         VALUES (
             entity_name,
-            NEW.id,
+            NEW.id::text,
             TG_OP,
             row_to_json(NEW)::jsonb,
             'pending',
@@ -126,6 +133,11 @@ DROP TRIGGER IF EXISTS trg_sync_stock_movements ON stock_movements;
 CREATE TRIGGER trg_sync_stock_movements AFTER INSERT ON stock_movements FOR EACH ROW WHEN (NEW.movement_type IN ('stock_adjustment', 'adjustment', 'waste', 'damage', 'physical_count', 'recipe_deduction', 'recipe_reversal')) EXECUTE FUNCTION trg_enqueue_sync_outbox('stock_movements');
 `
 
+// OrderSubmitter submits a fulfilled sales order to ZATCA (satisfied by *localzatca.Reporter and *corezatca.Service).
+type OrderSubmitter interface {
+	SubmitSalesOrder(context.Context, uuid.UUID) (*repository.ZatcaDocumentChain, error)
+}
+
 type SyncService struct {
 	ctx                  context.Context
 	cancel               context.CancelFunc
@@ -141,7 +153,7 @@ type SyncService struct {
 	orderAutomationReady atomic.Bool
 	missingStoreLogged   atomic.Bool
 	lastAppliedSeq       atomic.Int64
-	orderSubmitter       corezatca.OrderSubmitter
+	orderSubmitter       OrderSubmitter
 	syncMu               sync.Mutex
 	connMu               sync.Mutex
 	conn                 *grpc.ClientConn
@@ -151,7 +163,7 @@ type SyncService struct {
 type QuarantinedOutboxItem struct {
 	ID            int64      `json:"id"`
 	EntityType    string     `json:"entity_type"`
-	EntityID      int64      `json:"entity_id"`
+	EntityID      string     `json:"entity_id"`
 	Action        string     `json:"action"`
 	LastError     string     `json:"last_error"`
 	ErrorClass    string     `json:"error_class"`
@@ -170,7 +182,7 @@ type OutboxItem struct {
 	ID            int64           `json:"id"`
 	OutboxUUID    string          `json:"outbox_uuid"`
 	EntityType    string          `json:"entity_type"`
-	EntityID      int64           `json:"entity_id"`
+	EntityID      string          `json:"entity_id"`
 	Action        string          `json:"action"`
 	Payload       json.RawMessage `json:"payload"`
 	CreatedAt     time.Time       `json:"created_at"`
@@ -291,7 +303,7 @@ func (s *SyncService) ConfigureZatcaSync(cloudURL string) { s.zatcaCloudURL = cl
 
 func (s *SyncService) ConfigureGRPCInsecure(insecure bool) { s.grpcInsecure = insecure }
 
-func (s *SyncService) ConfigureOrderAutomation(submitter corezatca.OrderSubmitter) {
+func (s *SyncService) ConfigureOrderAutomation(submitter OrderSubmitter) {
 	s.orderSubmitter = submitter
 }
 
@@ -489,7 +501,7 @@ func (s *SyncService) performSync() {
 	started := time.Now()
 	if s.orderSubmitter != nil {
 		if !s.orderAutomationReady.Load() {
-			if _, err := s.masterPool.Exec(s.ctx, corezatca.OrderAutomationDDL); err != nil {
+			if _, err := s.masterPool.Exec(s.ctx, orderautomationschema.DDL); err != nil {
 				log.Printf("[ZATCA ORDER] Job installation failed: %v", err)
 			} else {
 				s.orderAutomationReady.Store(true)
@@ -498,7 +510,7 @@ func (s *SyncService) performSync() {
 		if s.orderAutomationReady.Load() {
 			orderCtx, cancel := context.WithTimeout(telemetry.WithTenantSlug(s.ctx, s.tenantSlug), 60*time.Second)
 			zatcaStart := time.Now()
-			if err := corezatca.ProcessOrderAutomationBatch(orderCtx, s.masterPool, s.orderSubmitter); err != nil && orderCtx.Err() == nil {
+			if err := processPOSOrderAutomationBatch(orderCtx, s.masterPool, s.orderSubmitter); err != nil && orderCtx.Err() == nil {
 				telemetry.RecordZatcaSubmission(orderCtx, "nembus-pos-client", s.tenantSlug, "error", float64(time.Since(zatcaStart).Microseconds())/1000.0)
 				log.Printf("[ZATCA ORDER] Automatic submission failed: %v", err)
 			}
@@ -569,7 +581,7 @@ func (s *SyncService) recordOutboxMetrics() {
 // inside their CorrelationBatch, while cross-transaction children remain blocked if an earlier parent
 // transaction is still pending, failed, or quarantined.
 const pendingOutboxSQL = `
-	SELECT q.id, COALESCE(q.outbox_uuid::text, ''), q.entity_type, q.entity_id, q.action, q.payload, q.created_at, q.correlation_id
+	SELECT q.id, COALESCE(q.outbox_uuid::text, ''), q.entity_type, q.entity_id::text, q.action, q.payload, q.created_at, q.correlation_id
 	FROM sync_queue q
 	WHERE q.status = 'pending'
 	  AND COALESCE(q.next_attempt_at, q.created_at, NOW()) <= NOW()
@@ -579,15 +591,15 @@ const pendingOutboxSQL = `
 		WHERE (
 			(q.entity_type IN ('pos_transaction_lines', 'pos_payments')
 			AND parent.entity_type = 'pos_transactions'
-			AND parent.entity_id = (q.payload->>'transaction_id')::bigint)
+			AND parent.entity_id = (q.payload->>'transaction_id'))
 			OR
 			(q.entity_type IN ('pos_transactions', 'sales_returns')
 			AND parent.entity_type = 'customers'
-			AND parent.entity_id = (q.payload->>'customer_id')::bigint)
+			AND parent.entity_id = (q.payload->>'customer_id'))
 			OR
 			(q.entity_type = 'sales_return_lines'
 			AND parent.entity_type = 'sales_returns'
-			AND parent.entity_id = (q.payload->>'return_id')::bigint)
+			AND parent.entity_id = (q.payload->>'return_id'))
 		)
 		AND parent.status IN ('pending', 'failed', 'quarantined')
 		AND (
@@ -880,7 +892,7 @@ func (s *SyncService) pushCorrelationBatchesWindowed(
 					BatchSize:   batchSize,
 					SeqInBatch:  int32(idx + 1),
 					EntityType:  item.EntityType,
-					EntityId:    item.EntityID,
+					EntityKey:   strings.TrimSpace(item.EntityID),
 					Action:      item.Action,
 					PayloadJson: item.Payload,
 					StoreId:     storeID,
@@ -888,6 +900,9 @@ func (s *SyncService) pushCorrelationBatchesWindowed(
 					EventTime:   timestamppb.New(item.CreatedAt),
 					Sha256:      checksum,
 					IsLastChunk: true,
+				}
+				if numID, ok := syncpb.ParseNumericEntityID(item.EntityID); ok {
+					event.EntityId = numID
 				}
 				if item.CorrelationID != nil {
 					event.CorrelationId = *item.CorrelationID
@@ -1016,21 +1031,25 @@ func (s *SyncService) transactionParentsContext(ctx context.Context, item Outbox
 		return nil, nil
 	}
 	var refs struct {
-		ID           int64   `json:"id"`
-		SalesOrderID *string `json:"sales_order_id"`
-		SourceCartID *string `json:"source_cart_id"`
+		ID           json.RawMessage `json:"id"`
+		SalesOrderID *string         `json:"sales_order_id"`
+		SourceCartID *string         `json:"source_cart_id"`
 	}
 	if err := json.Unmarshal(item.Payload, &refs); err != nil {
 		return nil, fmt.Errorf("invalid transaction payload: %w", err)
 	}
-	if refs.SalesOrderID == nil && refs.SourceCartID == nil && refs.ID == 0 {
+	txID := strings.Trim(strings.TrimSpace(string(refs.ID)), `"`)
+	if txID == "null" || txID == "0" {
+		txID = ""
+	}
+	if refs.SalesOrderID == nil && refs.SourceCartID == nil && txID == "" {
 		return nil, nil
 	}
 	rows, err := s.masterPool.Query(ctx, `
 		WITH pt AS (
 			SELECT sales_order_id, source_cart_id
 			FROM pos_transactions
-			WHERE id = $3
+			WHERE id::text = NULLIF($3, '')
 		),
 		ctx AS (
 			SELECT
@@ -1054,7 +1073,7 @@ func (s *SyncService) transactionParentsContext(ctx context.Context, item Outbox
 			FROM carts c, ctx
 			WHERE ctx.cart_id IS NOT NULL AND c.id = ctx.cart_id
 		) parents ORDER BY seq;
-	`, refs.SalesOrderID, refs.SourceCartID, refs.ID)
+	`, refs.SalesOrderID, refs.SourceCartID, txID)
 	if err != nil {
 		return nil, fmt.Errorf("read transaction parents: %w", err)
 	}
@@ -1135,10 +1154,13 @@ func pushOutboxItem(stream syncpb.SyncService_StreamPushClient, item OutboxItem,
 	hash := sha256.Sum256(item.Payload)
 	checksum := hex.EncodeToString(hash[:])
 	event := &syncpb.SyncEvent{
-		Id: item.ID, OutboxUuid: item.OutboxUUID, EntityType: item.EntityType, EntityId: item.EntityID,
+		Id: item.ID, OutboxUuid: item.OutboxUUID, EntityType: item.EntityType, EntityKey: strings.TrimSpace(item.EntityID),
 		Action: item.Action, PayloadJson: item.Payload, StoreId: storeID,
 		TenantSlug: tenantSlug, EventTime: timestamppb.New(item.CreatedAt),
 		Sha256: checksum, IsLastChunk: true,
+	}
+	if numID, ok := syncpb.ParseNumericEntityID(item.EntityID); ok {
+		event.EntityId = numID
 	}
 	if item.CorrelationID != nil {
 		event.CorrelationId = *item.CorrelationID
@@ -1251,7 +1273,7 @@ func (s *SyncService) GetQueueStatus(ctx context.Context) (*SyncQueueStatus, err
 	}
 
 	rows, err := s.masterPool.Query(queryCtx, `
-		SELECT id, entity_type, entity_id, action, COALESCE(last_error, ''),
+		SELECT id, entity_type, entity_id::text, action, COALESCE(last_error, ''),
 		       COALESCE(error_class, 'permanent'), COALESCE(retry_count, 0),
 		       COALESCE(created_at, NOW()), quarantined_at
 		FROM sync_queue
@@ -1362,6 +1384,96 @@ func (s *SyncService) ResetFailedItems() (int64, error) {
 		log.Printf("[gRPC SYNC] Reset %d failed sync_queue items to pending for retry", count)
 	}
 	return count, nil
+}
+
+func processPOSOrderAutomationBatch(ctx context.Context, pool *pgxpool.Pool, submitter OrderSubmitter) error {
+	if pool == nil || submitter == nil {
+		return nil
+	}
+	conn, err := pool.Acquire(ctx)
+	if err != nil {
+		return err
+	}
+	defer conn.Release()
+	var locked bool
+	if err := conn.QueryRow(ctx, `SELECT pg_try_advisory_lock(hashtext('nembus.zatca.order_jobs'))`).Scan(&locked); err != nil || !locked {
+		return err
+	}
+	defer func() {
+		_, _ = conn.Exec(context.Background(), `SELECT pg_advisory_unlock(hashtext('nembus.zatca.order_jobs'))`)
+	}()
+	rows, err := conn.Query(ctx, `SELECT order_id,revision FROM zatca_order_jobs WHERE status='pending' AND next_attempt_at<=now() ORDER BY next_attempt_at,order_id LIMIT 10`)
+	if err != nil {
+		return err
+	}
+	type job struct {
+		id       uuid.UUID
+		revision int64
+	}
+	jobs := make([]job, 0, 10)
+	for rows.Next() {
+		var current job
+		if err := rows.Scan(&current.id, &current.revision); err != nil {
+			rows.Close()
+			return err
+		}
+		jobs = append(jobs, current)
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return err
+	}
+	for _, current := range jobs {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		var fulfilled bool
+		if err := conn.QueryRow(ctx, `SELECT fulfillment_status='fulfilled' FROM sales_orders_v2 WHERE id=$1`, current.id).Scan(&fulfilled); err != nil {
+			return err
+		}
+		if !fulfilled {
+			if _, err := conn.Exec(ctx, `UPDATE zatca_order_jobs SET status='not_fulfilled',last_error=NULL,updated_at=now() WHERE order_id=$1 AND revision=$2`, current.id, current.revision); err != nil {
+				return err
+			}
+			continue
+		}
+		var savedStatus string
+		statusErr := conn.QueryRow(ctx, `SELECT zatca_status::text FROM zatca_document_chain WHERE entity_type='sales_order_v2' AND entity_id=$1::text ORDER BY id DESC LIMIT 1`, current.id).Scan(&savedStatus)
+		if statusErr != nil && !errors.Is(statusErr, pgx.ErrNoRows) {
+			return statusErr
+		}
+		if savedStatus == "reported" || savedStatus == "cleared" || savedStatus == "rejected" {
+			if _, err := conn.Exec(ctx, `UPDATE zatca_order_jobs SET status=$3,last_error=NULL,updated_at=now() WHERE order_id=$1 AND revision=$2`, current.id, current.revision, savedStatus); err != nil {
+				return err
+			}
+			continue
+		}
+		orderCtx, cancel := context.WithTimeout(ctx, 45*time.Second)
+		orderCtx = context.WithValue(orderCtx, middleware.RepoKey, repository.New(pool))
+		entry, submitErr := submitter.SubmitSalesOrder(orderCtx, current.id)
+		cancel()
+		jobStatus, delay, message := "done", time.Duration(0), ""
+		if submitErr != nil && strings.Contains(strings.ToLower(submitErr.Error()), "zatca e-invoicing is not enabled") {
+			jobStatus = "disabled"
+		} else if entry != nil && entry.ZatcaStatus.Valid && entry.ZatcaStatus.ZatcaDocStatus == repository.ZatcaDocStatusRejected {
+			jobStatus = "rejected"
+			message = "ZATCA rejected the saved document; inspect zatca_document_chain.zatca_response"
+		} else if submitErr != nil {
+			jobStatus, delay, message = "pending", time.Minute, submitErr.Error()
+			if strings.Contains(message, "owned by its POS") {
+				jobStatus = "delegated"
+			}
+		}
+		if len(message) > 500 {
+			message = message[:500]
+		}
+		_, err := conn.Exec(ctx, `UPDATE zatca_order_jobs SET status=$3,attempts=attempts+1,next_attempt_at=now()+$4::interval,last_error=NULLIF($5,''),updated_at=now() WHERE order_id=$1 AND revision=$2`, current.id, current.revision, jobStatus, fmt.Sprintf("%d seconds", int(delay.Seconds())), message)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Ensure io import is used

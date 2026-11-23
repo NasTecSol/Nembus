@@ -105,9 +105,9 @@ ORDER BY tl.line_number;
 SELECT COUNT(*)
 FROM pos_transactions t
 WHERE ($1::int = 0 OR t.cashier_id = $1::int)
-  AND ($2::int = 0 OR t.cashier_session_id = $2::int)
-  AND ($3::timestamp IS NULL OR t.transaction_date >= $3)
-  AND ($4::timestamp IS NULL OR t.transaction_date <= $4);
+  AND (sqlc.narg('cashier_session_id')::uuid IS NULL OR t.cashier_session_id = sqlc.narg('cashier_session_id')::uuid)
+  AND (sqlc.narg('from_date')::timestamp IS NULL OR t.transaction_date >= sqlc.narg('from_date'))
+  AND (sqlc.narg('to_date')::timestamp IS NULL OR t.transaction_date <= sqlc.narg('to_date'));
 
 -- name: ListPosTransactionsByCashierSession :many
 SELECT 
@@ -178,9 +178,9 @@ LEFT JOIN product_barcodes pb
    AND pb.is_primary = true
    AND (pb.product_variant_id = tl.product_variant_id OR tl.product_variant_id IS NULL)
 WHERE ($1::int = 0 OR t.cashier_id = $1::int)
-  AND ($2::int = 0 OR t.cashier_session_id = $2::int)
-  AND ($3::timestamp IS NULL OR t.transaction_date >= $3)
-  AND ($4::timestamp IS NULL OR t.transaction_date <= $4)
+  AND (sqlc.narg('cashier_session_id')::uuid IS NULL OR t.cashier_session_id = sqlc.narg('cashier_session_id')::uuid)
+  AND (sqlc.narg('from_date')::timestamp IS NULL OR t.transaction_date >= sqlc.narg('from_date'))
+  AND (sqlc.narg('to_date')::timestamp IS NULL OR t.transaction_date <= sqlc.narg('to_date'))
 GROUP BY
     t.id,
     t.store_id,

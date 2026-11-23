@@ -11,6 +11,7 @@ import (
 	"github.com/NasTecSol/nembus-core/utils"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
 
 type InvoiceHandler struct {
@@ -200,9 +201,8 @@ func (h *InvoiceHandler) ListInvoices(c *gin.Context) {
 	}
 
 	if custIDStr := c.Query("customer_id"); custIDStr != "" {
-		if cID, err := strconv.ParseInt(custIDStr, 10, 32); err == nil && cID > 0 {
-			cu := int32(cID)
-			filter.CustomerID = &cu
+		if cID, err := uuid.Parse(custIDStr); err == nil && cID != uuid.Nil {
+			filter.CustomerID = &cID
 		}
 	}
 
@@ -238,7 +238,7 @@ func (h *InvoiceHandler) ListInvoices(c *gin.Context) {
 // @Security     BearerAuth
 // @Param        x-tenant-id     header    string  true   "Tenant identifier"
 // @Param        Authorization   header    string  true   "Bearer token"
-// @Param        customer_id     path      int     true   "Customer ID"
+// @Param        customer_id     path      string  true   "Customer ID (UUID)"
 // @Param        organization_id query     int     true   "Organization ID"
 // @Param        page            query     int     false  "Page number" default(1)
 // @Param        limit           query     int     false  "Number of records per page" default(50)
@@ -254,8 +254,8 @@ func (h *InvoiceHandler) ListCustomerInvoices(c *gin.Context) {
 	h.useCase.SetRepository(repo)
 
 	custIDStr := c.Param("customer_id")
-	custID, err := strconv.ParseInt(custIDStr, 10, 32)
-	if err != nil || custID <= 0 {
+	custID, err := uuid.Parse(custIDStr)
+	if err != nil || custID == uuid.Nil {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid customer_id", nil))
 		return
 	}
@@ -272,7 +272,7 @@ func (h *InvoiceHandler) ListCustomerInvoices(c *gin.Context) {
 	page, _ := strconv.ParseInt(pageStr, 10, 32)
 	limit, _ := strconv.ParseInt(limitStr, 10, 32)
 
-	resp := h.useCase.ListCustomerInvoices(c.Request.Context(), int32(custID), int32(orgID), int32(page), int32(limit))
+	resp := h.useCase.ListCustomerInvoices(c.Request.Context(), custID, int32(orgID), int32(page), int32(limit))
 	c.JSON(resp.StatusCode, resp)
 }
 

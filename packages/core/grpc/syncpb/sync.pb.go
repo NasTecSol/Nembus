@@ -42,6 +42,7 @@ type SyncEvent struct {
 	BatchId       string                 `protobuf:"bytes,15,opt,name=batch_id,json=batchId,proto3" json:"batch_id,omitempty"`                   // Correlation batch identifier (empty = legacy single-event apply)
 	BatchSize     int32                  `protobuf:"varint,16,opt,name=batch_size,json=batchSize,proto3" json:"batch_size,omitempty"`            // Total events in this correlation batch
 	SeqInBatch    int32                  `protobuf:"varint,17,opt,name=seq_in_batch,json=seqInBatch,proto3" json:"seq_in_batch,omitempty"`       // 1-based position within the batch (1..batch_size)
+	EntityKey     string                 `protobuf:"bytes,18,opt,name=entity_key,json=entityKey,proto3" json:"entity_key,omitempty"`             // Canonical string PK (UUID string or decimal int)
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -195,6 +196,13 @@ func (x *SyncEvent) GetSeqInBatch() int32 {
 	return 0
 }
 
+func (x *SyncEvent) GetEntityKey() string {
+	if x != nil {
+		return x.EntityKey
+	}
+	return ""
+}
+
 // SyncAck acknowledges receipt and processing of a SyncEvent or atomic correlation batch
 type SyncAck struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -209,6 +217,7 @@ type SyncAck struct {
 	OutboxUuid    string                 `protobuf:"bytes,9,opt,name=outbox_uuid,json=outboxUuid,proto3" json:"outbox_uuid,omitempty"`       // Outbox UUID acknowledged (or failed item's UUID)
 	FailedSeq     int32                  `protobuf:"varint,10,opt,name=failed_seq,json=failedSeq,proto3" json:"failed_seq,omitempty"`        // 1-based seq_in_batch of offending event on batch failure
 	SqlState      string                 `protobuf:"bytes,11,opt,name=sql_state,json=sqlState,proto3" json:"sql_state,omitempty"`            // 5-char PostgreSQL SQLSTATE if failed due to DB error
+	EntityKey     string                 `protobuf:"bytes,12,opt,name=entity_key,json=entityKey,proto3" json:"entity_key,omitempty"`         // Canonical string PK acknowledged (UUID string or decimal int)
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -320,6 +329,13 @@ func (x *SyncAck) GetSqlState() string {
 	return ""
 }
 
+func (x *SyncAck) GetEntityKey() string {
+	if x != nil {
+		return x.EntityKey
+	}
+	return ""
+}
+
 // PullRequest initiates incremental delta-fetch from Cloud (legacy)
 type PullRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -328,6 +344,7 @@ type PullRequest struct {
 	Since         *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=since,proto3" json:"since,omitempty"`                                // Sync watermark timestamp (records updated_at > since)
 	EntityTypes   []string               `protobuf:"bytes,4,rep,name=entity_types,json=entityTypes,proto3" json:"entity_types,omitempty"` // Filter requested entities (empty = all)
 	Limit         int32                  `protobuf:"varint,5,opt,name=limit,proto3" json:"limit,omitempty"`                               // Maximum records to fetch
+	AfterKey      string                 `protobuf:"bytes,6,opt,name=after_key,json=afterKey,proto3" json:"after_key,omitempty"`          // Optional tie-breaker cursor PK (UUID string or decimal int)
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -395,6 +412,13 @@ func (x *PullRequest) GetLimit() int32 {
 		return x.Limit
 	}
 	return 0
+}
+
+func (x *PullRequest) GetAfterKey() string {
+	if x != nil {
+		return x.AfterKey
+	}
+	return ""
 }
 
 // StreamChangesRequest initiates gap-safe change_log pull from Cloud
@@ -486,6 +510,7 @@ type ChangeEvent struct {
 	ChangedAt      *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=changed_at,json=changedAt,proto3" json:"changed_at,omitempty"`                   // Timestamp when the change was recorded
 	IsSnapshotMode bool                   `protobuf:"varint,8,opt,name=is_snapshot_mode,json=isSnapshotMode,proto3" json:"is_snapshot_mode,omitempty"` // True when catching up across compacted change_log history
 	SnapshotMaxSeq int64                  `protobuf:"varint,9,opt,name=snapshot_max_seq,json=snapshotMaxSeq,proto3" json:"snapshot_max_seq,omitempty"` // Target sequence cursor to advance to once snapshot catchup finishes
+	EntityKey      string                 `protobuf:"bytes,10,opt,name=entity_key,json=entityKey,proto3" json:"entity_key,omitempty"`                  // Canonical string PK (UUID string or decimal int)
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -581,6 +606,13 @@ func (x *ChangeEvent) GetSnapshotMaxSeq() int64 {
 		return x.SnapshotMaxSeq
 	}
 	return 0
+}
+
+func (x *ChangeEvent) GetEntityKey() string {
+	if x != nil {
+		return x.EntityKey
+	}
+	return ""
 }
 
 // SessionClientMsg is sent by POS over the persistent StreamSession RPC
@@ -798,7 +830,7 @@ var File_packages_core_grpc_syncpb_sync_proto protoreflect.FileDescriptor
 
 const file_packages_core_grpc_syncpb_sync_proto_rawDesc = "" +
 	"\n" +
-	"$packages/core/grpc/syncpb/sync.proto\x12\x04sync\x1a\x1fgoogle/protobuf/timestamp.proto\"\xab\x04\n" +
+	"$packages/core/grpc/syncpb/sync.proto\x12\x04sync\x1a\x1fgoogle/protobuf/timestamp.proto\"\xca\x04\n" +
 	"\tSyncEvent\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x1f\n" +
 	"\ventity_type\x18\x02 \x01(\tR\n" +
@@ -823,7 +855,9 @@ const file_packages_core_grpc_syncpb_sync_proto_rawDesc = "" +
 	"\n" +
 	"batch_size\x18\x10 \x01(\x05R\tbatchSize\x12 \n" +
 	"\fseq_in_batch\x18\x11 \x01(\x05R\n" +
-	"seqInBatch\"\xe5\x02\n" +
+	"seqInBatch\x12\x1d\n" +
+	"\n" +
+	"entity_key\x18\x12 \x01(\tR\tentityKey\"\x84\x03\n" +
 	"\aSyncAck\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x1f\n" +
 	"\ventity_type\x18\x02 \x01(\tR\n" +
@@ -839,21 +873,24 @@ const file_packages_core_grpc_syncpb_sync_proto_rawDesc = "" +
 	"\n" +
 	"failed_seq\x18\n" +
 	" \x01(\x05R\tfailedSeq\x12\x1b\n" +
-	"\tsql_state\x18\v \x01(\tR\bsqlState\"\xb4\x01\n" +
+	"\tsql_state\x18\v \x01(\tR\bsqlState\x12\x1d\n" +
+	"\n" +
+	"entity_key\x18\f \x01(\tR\tentityKey\"\xd1\x01\n" +
 	"\vPullRequest\x12\x1f\n" +
 	"\vtenant_slug\x18\x01 \x01(\tR\n" +
 	"tenantSlug\x12\x19\n" +
 	"\bstore_id\x18\x02 \x01(\x05R\astoreId\x120\n" +
 	"\x05since\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\x05since\x12!\n" +
 	"\fentity_types\x18\x04 \x03(\tR\ventityTypes\x12\x14\n" +
-	"\x05limit\x18\x05 \x01(\x05R\x05limit\"\xa0\x01\n" +
+	"\x05limit\x18\x05 \x01(\x05R\x05limit\x12\x1b\n" +
+	"\tafter_key\x18\x06 \x01(\tR\bafterKey\"\xa0\x01\n" +
 	"\x14StreamChangesRequest\x12\x1f\n" +
 	"\vtenant_slug\x18\x01 \x01(\tR\n" +
 	"tenantSlug\x12\x19\n" +
 	"\bstore_id\x18\x02 \x01(\x05R\astoreId\x12\x19\n" +
 	"\bfrom_seq\x18\x03 \x01(\x03R\afromSeq\x12\x14\n" +
 	"\x05limit\x18\x04 \x01(\x05R\x05limit\x12\x1b\n" +
-	"\tdevice_id\x18\x05 \x01(\tR\bdeviceId\"\xb7\x02\n" +
+	"\tdevice_id\x18\x05 \x01(\tR\bdeviceId\"\xd6\x02\n" +
 	"\vChangeEvent\x12\x10\n" +
 	"\x03seq\x18\x01 \x01(\x03R\x03seq\x12\x1f\n" +
 	"\ventity_type\x18\x02 \x01(\tR\n" +
@@ -865,7 +902,10 @@ const file_packages_core_grpc_syncpb_sync_proto_rawDesc = "" +
 	"\n" +
 	"changed_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\tchangedAt\x12(\n" +
 	"\x10is_snapshot_mode\x18\b \x01(\bR\x0eisSnapshotMode\x12(\n" +
-	"\x10snapshot_max_seq\x18\t \x01(\x03R\x0esnapshotMaxSeq\"o\n" +
+	"\x10snapshot_max_seq\x18\t \x01(\x03R\x0esnapshotMaxSeq\x12\x1d\n" +
+	"\n" +
+	"entity_key\x18\n" +
+	" \x01(\tR\tentityKey\"o\n" +
 	"\x10SessionClientMsg\x120\n" +
 	"\n" +
 	"push_event\x18\x01 \x01(\v2\x0f.sync.SyncEventH\x00R\tpushEvent\x12\"\n" +

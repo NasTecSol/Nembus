@@ -4,18 +4,18 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strconv"
 	"strings"
 
 	"github.com/NasTecSol/nembus-core/repository"
 	"github.com/NasTecSol/nembus-core/utils"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
 // CustomerOutput is the response shape for customer APIs
 type CustomerOutput struct {
-	ID                 int32            `json:"id"`
+	ID                 uuid.UUID        `json:"id"`
 	OrganizationID     int32            `json:"organization_id"`
 	CustomerCode       string           `json:"customer_code"`
 	Name               string           `json:"name"`
@@ -112,8 +112,17 @@ func (uc *CustomerUseCase) CreateCustomer(
 	if organizationID == 0 {
 		return utils.NewResponse(utils.CodeBadReq, "organization_id is required", nil)
 	}
-	if customerCode == "" {
-		return utils.NewResponse(utils.CodeBadReq, "customer_code is required", nil)
+	if IsWeakOrEmptyDocNumber(customerCode) {
+		termCode := "POS"
+		if len(metadata) > 0 {
+			var metaMap map[string]interface{}
+			if json.Unmarshal(metadata, &metaMap) == nil {
+				if tc, ok := metaMap["terminal_code"].(string); ok && strings.TrimSpace(tc) != "" {
+					termCode = tc
+				}
+			}
+		}
+		customerCode = GenerateTerminalDocNumber("CUST", termCode)
 	}
 	if name == "" {
 		return utils.NewResponse(utils.CodeBadReq, "name is required", nil)
@@ -206,8 +215,8 @@ func (uc *CustomerUseCase) CreateCustomer(
 			OrganizationID: customer.OrganizationID,
 			EventTypeID:    "customer.created",
 			EntityType:     "customer",
-			EntityID:       strconv.FormatInt(int64(customer.ID), 10),
-			IdempotencyKey: fmt.Sprintf("customer-created-%d", customer.ID),
+			EntityID:       customer.ID.String(),
+			IdempotencyKey: fmt.Sprintf("customer-created-%s", customer.ID.String()),
 			Payload:        payloadBytes,
 		})
 	}
@@ -220,12 +229,12 @@ func (uc *CustomerUseCase) GetCustomerByID(ctx context.Context, id string) *repo
 		return utils.NewResponse(utils.CodeError, "repository not set", nil)
 	}
 
-	customerID, err := strconv.ParseInt(id, 10, 32)
+	customerID, err := uuid.Parse(strings.TrimSpace(id))
 	if err != nil {
 		return utils.NewResponse(utils.CodeBadReq, "invalid customer id", nil)
 	}
 
-	customer, err := uc.repo.GetCustomer(ctx, int32(customerID))
+	customer, err := uc.repo.GetCustomer(ctx, customerID)
 	if err != nil {
 		return utils.NewResponse(utils.CodeNotFound, "customer not found", nil)
 	}
@@ -372,18 +381,18 @@ func (uc *CustomerUseCase) UpdateCustomer(
 		return utils.NewResponse(utils.CodeError, "repository not set", nil)
 	}
 
-	customerID, err := strconv.ParseInt(id, 10, 32)
+	customerID, err := uuid.Parse(strings.TrimSpace(id))
 	if err != nil {
 		return utils.NewResponse(utils.CodeBadReq, "invalid customer id", nil)
 	}
 
-	current, err := uc.repo.GetCustomer(ctx, int32(customerID))
+	current, err := uc.repo.GetCustomer(ctx, customerID)
 	if err != nil {
 		return utils.NewResponse(utils.CodeNotFound, "customer not found", nil)
 	}
 
 	params := repository.UpdateCustomerParams{
-		ID: int32(customerID),
+		ID: customerID,
 	}
 
 	if name != nil && *name != "" {
@@ -465,13 +474,13 @@ func (uc *CustomerUseCase) ToggleCustomerActive(ctx context.Context, id string, 
 		return utils.NewResponse(utils.CodeError, "repository not set", nil)
 	}
 
-	customerID, err := strconv.ParseInt(id, 10, 32)
+	customerID, err := uuid.Parse(strings.TrimSpace(id))
 	if err != nil {
 		return utils.NewResponse(utils.CodeBadReq, "invalid customer id", nil)
 	}
 
 	customer, err := uc.repo.ToggleCustomerActive(ctx, repository.ToggleCustomerActiveParams{
-		ID:       int32(customerID),
+		ID:       customerID,
 		IsActive: pgtype.Bool{Bool: isActive, Valid: true},
 	})
 	if err != nil {
@@ -486,13 +495,13 @@ func (uc *CustomerUseCase) UpdateCustomerBalance(ctx context.Context, id string,
 		return utils.NewResponse(utils.CodeError, "repository not set", nil)
 	}
 
-	customerID, err := strconv.ParseInt(id, 10, 32)
+	customerID, err := uuid.Parse(strings.TrimSpace(id))
 	if err != nil {
 		return utils.NewResponse(utils.CodeBadReq, "invalid customer id", nil)
 	}
 
 	customer, err := uc.repo.UpdateCustomerBalance(ctx, repository.UpdateCustomerBalanceParams{
-		ID:                 int32(customerID),
+		ID:                 customerID,
 		OutstandingBalance: amount,
 	})
 	if err != nil {
@@ -507,12 +516,12 @@ func (uc *CustomerUseCase) DeleteCustomer(ctx context.Context, id string) *repos
 		return utils.NewResponse(utils.CodeError, "repository not set", nil)
 	}
 
-	customerID, err := strconv.ParseInt(id, 10, 32)
+	customerID, err := uuid.Parse(strings.TrimSpace(id))
 	if err != nil {
 		return utils.NewResponse(utils.CodeBadReq, "invalid customer id", nil)
 	}
 
-	err = uc.repo.DeleteCustomer(ctx, int32(customerID))
+	err = uc.repo.DeleteCustomer(ctx, customerID)
 	if err != nil {
 		return utils.NewResponse(utils.CodeError, err.Error(), nil)
 	}
@@ -546,12 +555,12 @@ func (uc *CustomerUseCase) GetCustomerCreditStatus(ctx context.Context, id strin
 		return utils.NewResponse(utils.CodeError, "repository not set", nil)
 	}
 
-	customerID, err := strconv.ParseInt(id, 10, 32)
+	customerID, err := uuid.Parse(strings.TrimSpace(id))
 	if err != nil {
 		return utils.NewResponse(utils.CodeBadReq, "invalid customer id", nil)
 	}
 
-	data, err := uc.repo.GetCustomerCreditStatus(ctx, int32(customerID))
+	data, err := uc.repo.GetCustomerCreditStatus(ctx, customerID)
 	if err != nil {
 		return utils.NewResponse(utils.CodeNotFound, "customer not found", nil)
 	}

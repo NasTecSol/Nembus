@@ -199,12 +199,12 @@ func (uc *AuthUseCase) LoginWithBiometric(ctx context.Context, fmdBase64 string,
 		for _, t := range templates {
 			candBytes, decErr := biometrics.ValidateAndDecodeFMD(t.FmdBase64)
 			if decErr != nil {
-				log.Printf("[BIOMETRICS] 1:1 decode candidate template failed (id=%d): %v", t.ID, decErr)
+				log.Printf("[BIOMETRICS] 1:1 decode candidate template failed (id=%s): %v", t.ID.String(), decErr)
 				continue
 			}
 			score, ok, cmpErr := biometrics.Compare(probeFMD, candBytes, biometrics.DefaultMaxFalseMatchScore)
 			if cmpErr != nil {
-				log.Printf("[BIOMETRICS] 1:1 Compare error (template_id=%d, finger=%d): %v", t.ID, t.FingerIndex, cmpErr)
+				log.Printf("[BIOMETRICS] 1:1 Compare error (template_id=%s, finger=%d): %v", t.ID.String(), t.FingerIndex, cmpErr)
 				continue
 			}
 			if ok {
@@ -308,7 +308,7 @@ func (uc *AuthUseCase) AuthorizeActionWithBiometric(
 		for _, t := range templates {
 			candBytes, decErr := biometrics.ValidateAndDecodeFMD(t.FmdBase64)
 			if decErr != nil {
-				log.Printf("[BIOMETRICS] supervisor override decode template failed (id=%d): %v", t.ID, decErr)
+				log.Printf("[BIOMETRICS] supervisor override decode template failed (id=%s): %v", t.ID.String(), decErr)
 				continue
 			}
 			score, ok, cmpErr := biometrics.Compare(probeFMD, candBytes, biometrics.DefaultMaxFalseMatchScore)

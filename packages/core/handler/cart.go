@@ -247,7 +247,7 @@ func (h *CartHandler) CreateCart(c *gin.Context) {
 		CartNumber:      req.CartNumber,
 		OrganizationID:  req.OrganizationID,
 		StoreID:         int4Ptr(req.StoreID),
-		CustomerID:      int4Ptr(req.CustomerID),
+		CustomerID:      uuidPtr(req.CustomerID),
 		GuestIdentifier: textPtr(req.GuestIdentifier),
 		GuestEmail:      textPtr(req.GuestEmail),
 		GuestPhone:      textPtr(req.GuestPhone),
@@ -308,7 +308,7 @@ func (h *CartHandler) CreateNewCart(c *gin.Context) {
 	}
 
 	storeID := int4Ptr(req.StoreID)
-	customerID := int4Ptr(req.CustomerID)
+	customerID := uuidPtr(req.CustomerID)
 	createdBy := int4Ptr(req.CreatedByUserID)
 	cashierID := int4Ptr(req.CashierID)
 	posID := int4Ptr(req.PosTerminalID)
@@ -402,7 +402,7 @@ func (h *CartHandler) GetActiveCartByCustomer(c *gin.Context) {
 
 	customerIDStr := c.Query("customer_id")
 	storeIDStr := c.Query("store_id")
-	customerID64, err := strconv.ParseInt(customerIDStr, 10, 32)
+	customerID, err := uuid.Parse(customerIDStr)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid customer_id", nil))
 		return
@@ -414,7 +414,7 @@ func (h *CartHandler) GetActiveCartByCustomer(c *gin.Context) {
 	}
 
 	arg := repository.GetCartByCustomerParams{
-		CustomerID: pgtype.Int4{Int32: int32(customerID64), Valid: true},
+		CustomerID: pgtype.UUID{Bytes: customerID, Valid: true},
 		StoreID:    pgtype.Int4{Int32: int32(storeID64), Valid: true},
 	}
 
@@ -823,7 +823,7 @@ func (h *CartHandler) UpdateCartCustomer(c *gin.Context) {
 
 	arg := repository.UpdateCartCustomerParams{
 		ID:         cartID,
-		CustomerID: pgtype.Int4{Int32: req.CustomerID, Valid: true},
+		CustomerID: pgtype.UUID{Bytes: req.CustomerID, Valid: true},
 	}
 
 	resp := h.useCase.UpdateCartCustomer(c.Request.Context(), arg)

@@ -8,7 +8,7 @@ CREATE TABLE sales_analytics (
     store_id INTEGER,
     product_id INTEGER,
     category_id INTEGER,
-    customer_id INTEGER,
+    customer_id UUID,
     date DATE NOT NULL,
     hour INTEGER,
     day_of_week INTEGER,

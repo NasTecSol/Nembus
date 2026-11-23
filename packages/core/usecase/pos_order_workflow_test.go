@@ -21,7 +21,7 @@ type workflowMockDBTX struct {
 	order                repository.SalesOrdersV2
 	orderLines           []repository.ListSalesOrderLinesV2Row
 	commits, rollbacks   int
-	legacyTransactionID  int32
+	legacyTransactionID  uuid.UUID
 
 	// Recorded AdjustInventoryStock calls
 	adjustedStocks []repository.AdjustInventoryStockByProductAndStoreParams
@@ -106,7 +106,7 @@ func (m *mockDashboardRows) Conn() *pgx.Conn                { return nil }
 func (m *workflowMockDBTX) Exec(ctx context.Context, sql string, args ...interface{}) (pgconn.CommandTag, error) {
 	if strings.Contains(sql, "UPDATE pos_transactions") && strings.Contains(sql, "sales_order_id") {
 		if len(args) >= 2 {
-			id := args[0].(int32)
+			id := args[0].(uuid.UUID)
 			soID := args[1].(pgtype.UUID)
 			m.linkedOrders = append(m.linkedOrders, repository.LinkPosTransactionToSalesOrderParams{
 				ID:           id,
@@ -116,7 +116,7 @@ func (m *workflowMockDBTX) Exec(ctx context.Context, sql string, args ...interfa
 	}
 	if strings.Contains(sql, "UPDATE pos_transactions") && strings.Contains(sql, "metadata") {
 		if len(args) >= 2 {
-			id := args[0].(int32)
+			id := args[0].(uuid.UUID)
 			meta, _ := args[1].(json.RawMessage)
 			m.updatedPosMetadata = append(m.updatedPosMetadata, repository.UpdatePosTransactionMetadataParams{
 				ID:       id,
@@ -126,7 +126,7 @@ func (m *workflowMockDBTX) Exec(ctx context.Context, sql string, args ...interfa
 	}
 	if strings.Contains(sql, "UPDATE sales_returns") && strings.Contains(sql, "metadata") {
 		if len(args) >= 2 {
-			id := args[0].(int32)
+			id := args[0].(uuid.UUID)
 			meta, _ := args[1].(json.RawMessage)
 			m.updatedReturnMetadata = append(m.updatedReturnMetadata, repository.UpdateSalesReturnMetadataParams{
 				ID:       id,
@@ -186,8 +186,8 @@ func (r *workflowMockRow) Scan(dest ...interface{}) error {
 		}
 		return pgx.ErrNoRows
 	case strings.Contains(s, "GetLegacyZatcaOrderTransaction"):
-		if r.mock.legacyTransactionID > 0 {
-			*dest[0].(*int32) = r.mock.legacyTransactionID
+		if r.mock.legacyTransactionID != uuid.Nil {
+			*dest[0].(*uuid.UUID) = r.mock.legacyTransactionID
 			return nil
 		}
 		return pgx.ErrNoRows
@@ -303,8 +303,8 @@ func (r *workflowMockRow) Scan(dest ...interface{}) error {
 	case strings.Contains(s, "CreatePosTransaction :one") || strings.Contains(s, "INSERT INTO pos_transactions ("):
 		r.mock.createdTransactions++
 		if len(dest) >= 7 {
-			if idPtr, ok := dest[0].(*int32); ok {
-				*idPtr = 77
+			if idPtr, ok := dest[0].(*uuid.UUID); ok {
+				*idPtr = uuid.MustParse("00000000-0000-0000-0000-000000000077")
 			}
 			if numPtr, ok := dest[6].(*string); ok {
 				*numPtr = "POS-TXN-0077"
@@ -324,11 +324,11 @@ func (r *workflowMockRow) Scan(dest ...interface{}) error {
 
 	case strings.Contains(s, "CreatePosTransactionLine") || strings.Contains(s, "INSERT INTO pos_transaction_lines"):
 		if len(dest) >= 7 {
-			if idPtr, ok := dest[0].(*int32); ok {
-				*idPtr = 101
+			if idPtr, ok := dest[0].(*uuid.UUID); ok {
+				*idPtr = uuid.MustParse("00000000-0000-0000-0000-000000000101")
 			}
-			if txIDPtr, ok := dest[1].(*int32); ok {
-				*txIDPtr = 77
+			if txIDPtr, ok := dest[1].(*uuid.UUID); ok {
+				*txIDPtr = uuid.MustParse("00000000-0000-0000-0000-000000000077")
 			}
 			if pIDPtr, ok := dest[2].(*int32); ok {
 				if len(r.args) >= 3 {
@@ -375,7 +375,7 @@ func (r *workflowMockRow) Scan(dest ...interface{}) error {
 			r.mock.stockMovements = append(r.mock.stockMovements, repository.CreateStockMovementParams{
 				MovementType:  r.args[0].(string),
 				ReferenceType: r.args[1].(pgtype.Text),
-				ReferenceID:   r.args[2].(pgtype.Int4),
+				ReferenceID:   r.args[2].(pgtype.Text),
 				ProductID:     r.args[3].(int32),
 				Quantity:      r.args[9].(pgtype.Numeric),
 				CostPerUnit:   costPerUnit,
@@ -425,8 +425,8 @@ func (r *workflowMockRow) Scan(dest ...interface{}) error {
 
 	case strings.Contains(s, "GetPosTransactionLineByID") || strings.Contains(s, "FROM pos_transaction_lines"):
 		if len(dest) >= 5 {
-			if idPtr, ok := dest[0].(*int32); ok {
-				*idPtr = 101
+			if idPtr, ok := dest[0].(*uuid.UUID); ok {
+				*idPtr = uuid.MustParse("00000000-0000-0000-0000-000000000101")
 			}
 			if qtyPtr, ok := dest[4].(*pgtype.Numeric); ok {
 				_ = qtyPtr.Scan("5.000")
@@ -455,8 +455,8 @@ func (r *workflowMockRow) Scan(dest ...interface{}) error {
 
 	case strings.Contains(s, "CreateSalesReturn :one") || strings.Contains(s, "INSERT INTO sales_returns ("):
 		if len(dest) >= 8 {
-			if idPtr, ok := dest[0].(*int32); ok {
-				*idPtr = 55
+			if idPtr, ok := dest[0].(*uuid.UUID); ok {
+				*idPtr = uuid.MustParse("00000000-0000-0000-0000-000000000055")
 			}
 			if numPtr, ok := dest[1].(*string); ok {
 				*numPtr = "RET-2026-0055"
@@ -478,11 +478,11 @@ func (r *workflowMockRow) Scan(dest ...interface{}) error {
 
 	case strings.Contains(s, "CreateSalesReturnLine") || strings.Contains(s, "INSERT INTO sales_return_lines"):
 		if len(dest) >= 5 {
-			if idPtr, ok := dest[0].(*int32); ok {
-				*idPtr = 201
+			if idPtr, ok := dest[0].(*uuid.UUID); ok {
+				*idPtr = uuid.MustParse("00000000-0000-0000-0000-000000000201")
 			}
-			if retIDPtr, ok := dest[1].(*int32); ok {
-				*retIDPtr = 55
+			if retIDPtr, ok := dest[1].(*uuid.UUID); ok {
+				*retIDPtr = uuid.MustParse("00000000-0000-0000-0000-000000000055")
 			}
 			if pIDPtr, ok := dest[2].(*int32); ok {
 				if len(r.args) >= 2 {
@@ -499,8 +499,8 @@ func (r *workflowMockRow) Scan(dest ...interface{}) error {
 
 	case strings.Contains(s, "GetPosTransaction"):
 		if len(dest) >= 7 {
-			if idPtr, ok := dest[0].(*int32); ok {
-				*idPtr = 77
+			if idPtr, ok := dest[0].(*uuid.UUID); ok {
+				*idPtr = uuid.MustParse("00000000-0000-0000-0000-000000000077")
 			}
 			if numPtr, ok := dest[6].(*string); ok {
 				*numPtr = "POS-TXN-0077"
@@ -537,7 +537,7 @@ func TestPosTransactionInventoryDeduction(t *testing.T) {
 	input := &PosCreateTransactionInput{
 		StoreID:           1,
 		CashierID:         10,
-		CashierSessionID:  88,
+		CashierSessionID:  uuid.MustParse("00000000-0000-0000-0000-000000000088"),
 		PosTerminalID:     2,
 		TransactionNumber: "POS-TXN-0077",
 		Lines: []PosCreateTransactionLineInput{
@@ -591,8 +591,8 @@ func TestPosTransactionInventoryDeduction(t *testing.T) {
 	if mov1.ReferenceType.String != "pos_transaction" {
 		t.Errorf("Expected reference_type 'pos_transaction', got '%s'", mov1.ReferenceType.String)
 	}
-	if mov1.ReferenceID.Int32 != 77 {
-		t.Errorf("Expected reference_id 77, got %d", mov1.ReferenceID.Int32)
+	if mov1.ReferenceID.String != "00000000-0000-0000-0000-000000000077" {
+		t.Errorf("Expected reference_id 00000000-0000-0000-0000-000000000077, got %s", mov1.ReferenceID.String)
 	}
 }
 
@@ -639,7 +639,7 @@ func TestPosTransactionZatcaSigningAndChaining(t *testing.T) {
 	input := &PosCreateTransactionInput{
 		StoreID:           1,
 		CashierID:         10,
-		CashierSessionID:  88,
+		CashierSessionID:  uuid.MustParse("00000000-0000-0000-0000-000000000088"),
 		PosTerminalID:     2,
 		TransactionNumber: "POS-TXN-0077",
 		Subtotal:          price, TaxAmount: tax, TotalAmount: total,
@@ -702,8 +702,8 @@ func TestPosTransactionZatcaSigningAndChaining(t *testing.T) {
 	if len(mockDB.updatedPosMetadata) == 0 {
 		t.Fatal("Expected pos_transactions.metadata to be updated in database")
 	}
-	if mockDB.updatedPosMetadata[0].ID != 77 {
-		t.Errorf("Expected updated pos_transaction ID 77, got %d", mockDB.updatedPosMetadata[0].ID)
+	if mockDB.updatedPosMetadata[0].ID != uuid.MustParse("00000000-0000-0000-0000-000000000077") {
+		t.Errorf("Expected updated pos_transaction ID 00000000-0000-0000-0000-000000000077, got %s", mockDB.updatedPosMetadata[0].ID)
 	}
 }
 
@@ -740,7 +740,7 @@ func TestSalesReturnRestockingAndCreditNote(t *testing.T) {
 	salesReturnUC.SetRepository(repo)
 	salesReturnUC.SetZatcaUseCase(zatcaUC)
 
-	origTxnID := int32(77)
+	origTxnID := uuid.MustParse("00000000-0000-0000-0000-000000000077")
 	input := ProcessReturnInput{
 		StoreID:               1,
 		OriginalTransactionID: &origTxnID,
@@ -835,8 +835,8 @@ func TestSalesReturnRestockingAndCreditNote(t *testing.T) {
 	if len(mockDB.updatedReturnMetadata) == 0 {
 		t.Fatal("Expected sales_returns.metadata to be updated in database")
 	}
-	if mockDB.updatedReturnMetadata[0].ID != 55 {
-		t.Errorf("Expected updated sales_return ID 55, got %d", mockDB.updatedReturnMetadata[0].ID)
+	if mockDB.updatedReturnMetadata[0].ID != uuid.MustParse("00000000-0000-0000-0000-000000000055") {
+		t.Errorf("Expected updated sales_return ID 00000000-0000-0000-0000-000000000055, got %s", mockDB.updatedReturnMetadata[0].ID)
 	}
 }
 
@@ -855,7 +855,7 @@ func TestDualOrderHarmonization(t *testing.T) {
 	input := &PosCreateTransactionInput{
 		StoreID:           1,
 		CashierID:         10,
-		CashierSessionID:  88,
+		CashierSessionID:  uuid.MustParse("00000000-0000-0000-0000-000000000088"),
 		PosTerminalID:     2,
 		TransactionNumber: "POS-TXN-0077",
 		Lines: []PosCreateTransactionLineInput{
@@ -891,8 +891,8 @@ func TestDualOrderHarmonization(t *testing.T) {
 		t.Fatalf("Expected pos_transactions to be linked to sales_orders_v2, got %d links", len(mockDB.linkedOrders))
 	}
 	link := mockDB.linkedOrders[0]
-	if link.ID != 77 {
-		t.Errorf("Expected linked pos_transaction ID 77, got %d", link.ID)
+	if link.ID != uuid.MustParse("00000000-0000-0000-0000-000000000077") {
+		t.Errorf("Expected linked pos_transaction ID 00000000-0000-0000-0000-000000000077, got %s", link.ID)
 	}
 	if !link.SalesOrderID.Valid {
 		t.Error("Expected valid SalesOrderID UUID linked to pos_transactions")

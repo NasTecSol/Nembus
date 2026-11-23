@@ -192,11 +192,10 @@ func (h *RestaurantHandler) GetActiveRestaurantCart(c *gin.Context) {
 		return
 	}
 
-	var customerID *int32
+	var customerID *uuid.UUID
 	if cidStr := strings.TrimSpace(c.Query("customer_id")); cidStr != "" {
-		if cid, err := strconv.ParseInt(cidStr, 10, 32); err == nil && cid > 0 {
-			v := int32(cid)
-			customerID = &v
+		if cid, err := uuid.Parse(cidStr); err == nil && cid != uuid.Nil {
+			customerID = &cid
 		}
 	}
 
@@ -355,7 +354,7 @@ func (h *RestaurantHandler) UpdateRestaurantCart(c *gin.Context) {
 		ID:              cartID,
 		TableID:         utils.Int32ToPgInt4(req.TableID),
 		OrderType:       optText(req.OrderType),
-		CustomerID:      utils.Int32ToPgInt4(req.CustomerID),
+		CustomerID:      utils.UUIDPtrToPgUUID(req.CustomerID),
 		GuestIdentifier: optText(req.GuestIdentifier),
 		GuestName:       optText(req.GuestName),
 		GuestEmail:      optText(req.GuestEmail),
@@ -794,13 +793,13 @@ func (h *RestaurantHandler) ReopenRestaurantOrder(c *gin.Context) {
 		return
 	}
 
-	orderID, err := strconv.ParseInt(c.Param("order_id"), 10, 32)
+	orderID, err := uuid.Parse(c.Param("order_id"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid order_id", nil))
 		return
 	}
 
-	resp := uc.ReopenOrderToCart(c.Request.Context(), int32(orderID))
+	resp := uc.ReopenOrderToCart(c.Request.Context(), orderID)
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -812,7 +811,7 @@ func (h *RestaurantHandler) ReopenRestaurantOrder(c *gin.Context) {
 // @Produce      json
 // @Security     BearerAuth
 // @Param        x-tenant-id  header    string                     true  "Tenant identifier"
-// @Param        order_id     path      int                        true  "Order ID"
+// @Param        order_id     path      string                     true  "Order ID (UUID)"
 // @Param        body         body      RestaurantLineItemRequest  true  "Order line item payload"
 // @Success      201          {object}  SuccessResponse
 // @Failure      400          {object}  ErrorResponse
@@ -824,7 +823,7 @@ func (h *RestaurantHandler) AddRestaurantOrderItem(c *gin.Context) {
 		return
 	}
 
-	orderID, err := strconv.ParseInt(c.Param("order_id"), 10, 32)
+	orderID, err := uuid.Parse(c.Param("order_id"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid order_id", nil))
 		return
@@ -836,7 +835,7 @@ func (h *RestaurantHandler) AddRestaurantOrderItem(c *gin.Context) {
 		return
 	}
 
-	resp := uc.AddOrderItem(c.Request.Context(), int32(orderID), usecase.RestaurantLineItemInput{
+	resp := uc.AddOrderItem(c.Request.Context(), orderID, usecase.RestaurantLineItemInput{
 		MenuItemID:           req.MenuItemID,
 		Quantity:             req.Quantity,
 		UnitPrice:            req.UnitPrice,
@@ -861,7 +860,7 @@ func (h *RestaurantHandler) AddRestaurantOrderItem(c *gin.Context) {
 // @Produce      json
 // @Security     BearerAuth
 // @Param        x-tenant-id  header    string                                     true  "Tenant identifier"
-// @Param        order_id     path      int                                        true  "Order ID"
+// @Param        order_id     path      string                                     true  "Order ID (UUID)"
 // @Param        body         body      UpdateRestaurantOrderPaymentStatusRequest  true  "Payment status payload"
 // @Success      200          {object}  SuccessResponse
 // @Failure      400          {object}  ErrorResponse
@@ -873,7 +872,7 @@ func (h *RestaurantHandler) UpdateRestaurantOrderPaymentStatus(c *gin.Context) {
 		return
 	}
 
-	orderID, err := strconv.ParseInt(c.Param("order_id"), 10, 32)
+	orderID, err := uuid.Parse(c.Param("order_id"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid order_id", nil))
 		return
@@ -885,7 +884,7 @@ func (h *RestaurantHandler) UpdateRestaurantOrderPaymentStatus(c *gin.Context) {
 		return
 	}
 
-	resp := uc.UpdateOrderPaymentStatus(c.Request.Context(), int32(orderID), req.PaymentStatus, req.AmountPaid, req.ChangeGiven)
+	resp := uc.UpdateOrderPaymentStatus(c.Request.Context(), orderID, req.PaymentStatus, req.AmountPaid, req.ChangeGiven)
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -976,12 +975,12 @@ func (h *RestaurantHandler) GetRestaurantOrderStatusHistory(c *gin.Context) {
 		return
 	}
 
-	orderID, err := strconv.ParseInt(c.Param("order_id"), 10, 32)
+	orderID, err := uuid.Parse(c.Param("order_id"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid order_id", nil))
 		return
 	}
 
-	resp := uc.GetOrderStatusHistory(c.Request.Context(), int32(orderID))
+	resp := uc.GetOrderStatusHistory(c.Request.Context(), orderID)
 	c.JSON(resp.StatusCode, resp)
 }
