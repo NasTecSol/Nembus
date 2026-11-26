@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -435,6 +436,43 @@ func (c *Client) ResolveInvoiceBaseLine(ctx context.Context, baseDocEntry int, i
 		return nil, nil
 	}
 	return &lineNum, nil
+}
+
+// ResolveDefaultTransferAccount looks up a default active bank G/L account in SAP B1
+// (House Bank Accounts DSC1 first, then OACT bank/cash clearing accounts) for incoming
+// non-cash (card/Mada/bank transfer) ORCT payments when SAPBankTransferAccount is unset.
+func (c *Client) ResolveDefaultTransferAccount(ctx context.Context) (string, error) {
+	if c.sqlDB == nil {
+		return "", nil
+	}
+	var acct string
+	// 1. Prefer House Bank Account G/L from DSC1 (linked to an active postable OACT account)
+	err := c.sqlDB.QueryRowContext(ctx, `
+		SELECT TOP 1 d.GLAccount
+		FROM DSC1 d WITH (NOLOCK)
+		INNER JOIN OACT a WITH (NOLOCK) ON a.AcctCode = d.GLAccount
+		WHERE d.GLAccount IS NOT NULL AND LTRIM(RTRIM(d.GLAccount)) <> ''
+		  AND ISNULL(a.Postable, 'Y') = 'Y'
+		  AND ISNULL(a.FrozenFor, 'N') <> 'Y'
+		ORDER BY d.AbsEntry ASC
+	`).Scan(&acct)
+	if err == nil && strings.TrimSpace(acct) != "" {
+		return strings.TrimSpace(acct), nil
+	}
+
+	// 2. Fallback: first active postable Cash/Bank G/L account in OACT (Finanse = 'Y')
+	err = c.sqlDB.QueryRowContext(ctx, `
+		SELECT TOP 1 AcctCode
+		FROM OACT WITH (NOLOCK)
+		WHERE Finanse = 'Y'
+		  AND ISNULL(Postable, 'Y') = 'Y'
+		  AND ISNULL(FrozenFor, 'N') <> 'Y'
+		ORDER BY AcctCode ASC
+	`).Scan(&acct)
+	if err == nil && strings.TrimSpace(acct) != "" {
+		return strings.TrimSpace(acct), nil
+	}
+	return "", nil
 }
 
 // CheckItemWarehouseStock retrieves the current OnHand stock for an item in a specific warehouse.
