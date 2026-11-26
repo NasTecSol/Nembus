@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/NasTecSol/nembus-core/repository"
+	"github.com/NasTecSol/nembus-core/utils"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -183,8 +184,9 @@ func TestZatcaSignCreditNote(t *testing.T) {
 	zatcaUC := NewZatcaUseCase(cfg)
 	zatcaUC.SetRepository(repo)
 
+	retID := utils.DetUUIDFromLegacyID("sales_returns", 42)
 	salesReturn := repository.SalesReturn{
-		ID:                42,
+		ID:                retID,
 		StoreID:           1,
 		ReturnNumber:      "RET-2026-0042",
 		ReturnDate:        pgtype.Timestamp{Time: time.Now(), Valid: true},
@@ -198,8 +200,8 @@ func TestZatcaSignCreditNote(t *testing.T) {
 
 	returnLines := []repository.SalesReturnLine{
 		{
-			ID:           1,
-			ReturnID:     42,
+			ID:           utils.DetUUIDFromLegacyID("sales_return_lines", 1),
+			ReturnID:     retID,
 			ProductID:    101,
 			LineNumber:   pgtype.Int4{Int32: 1, Valid: true},
 			Quantity:     pgtype.Numeric{Valid: true},
@@ -272,8 +274,8 @@ func TestZatcaSignCreditNote(t *testing.T) {
 	if mockDB.insertedChainParams.EntityType != "sales_return" {
 		t.Errorf("Expected chain EntityType 'sales_return', got '%s'", mockDB.insertedChainParams.EntityType)
 	}
-	if mockDB.insertedChainParams.EntityID != "42" {
-		t.Errorf("Expected chain EntityID '42', got '%s'", mockDB.insertedChainParams.EntityID)
+	if mockDB.insertedChainParams.EntityID != retID.String() {
+		t.Errorf("Expected chain EntityID %q, got %q", retID.String(), mockDB.insertedChainParams.EntityID)
 	}
 	if chainEntry == nil {
 		t.Error("Expected non-nil chainEntry")

@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -38,8 +39,8 @@ RETURNING id, store_id, cashier_id, cashier_session_id, customer_id, pos_termina
 type CreatePosTransactionForRestaurantOrderParams struct {
 	StoreID           int32           `json:"store_id"`
 	CashierID         int32           `json:"cashier_id"`
-	CashierSessionID  int32           `json:"cashier_session_id"`
-	CustomerID        pgtype.Int4     `json:"customer_id"`
+	CashierSessionID  uuid.UUID       `json:"cashier_session_id"`
+	CustomerID        pgtype.UUID     `json:"customer_id"`
 	PosTerminalID     pgtype.Int4     `json:"pos_terminal_id"`
 	TransactionNumber string          `json:"transaction_number"`
 	TransactionType   pgtype.Text     `json:"transaction_type"`
@@ -124,7 +125,7 @@ INSERT INTO stock_movements (
 
 type CreateRestaurantIngredientStockMovementParams struct {
 	MovementType     string          `json:"movement_type"`
-	ReferenceID      pgtype.Int4     `json:"reference_id"`
+	ReferenceID      pgtype.Text     `json:"reference_id"`
 	ProductID        int32           `json:"product_id"`
 	ProductVariantID pgtype.Int4     `json:"product_variant_id"`
 	FromStoreID      pgtype.Int4     `json:"from_store_id"`
@@ -191,8 +192,8 @@ type CreateRestaurantOrderParams struct {
 	StoreID          int32            `json:"store_id"`
 	TableID          pgtype.Int4      `json:"table_id"`
 	CashierID        pgtype.Int4      `json:"cashier_id"`
-	CashierSessionID pgtype.Int4      `json:"cashier_session_id"`
-	CustomerID       pgtype.Int4      `json:"customer_id"`
+	CashierSessionID pgtype.UUID      `json:"cashier_session_id"`
+	CustomerID       pgtype.UUID      `json:"customer_id"`
 	OrderNumber      string           `json:"order_number"`
 	OrderSource      string           `json:"order_source"`
 	Status           string           `json:"status"`
@@ -203,7 +204,7 @@ type CreateRestaurantOrderParams struct {
 	AmountPaid       pgtype.Numeric   `json:"amount_paid"`
 	ChangeGiven      pgtype.Numeric   `json:"change_given"`
 	Notes            pgtype.Text      `json:"notes"`
-	PosTransactionID pgtype.Int4      `json:"pos_transaction_id"`
+	PosTransactionID pgtype.UUID      `json:"pos_transaction_id"`
 	Metadata         json.RawMessage  `json:"metadata"`
 	OrderedAt        pgtype.Timestamp `json:"ordered_at"`
 }
@@ -318,10 +319,10 @@ type CreateRestaurantOrderFullParams struct {
 	StoreID          int32            `json:"store_id"`
 	TableID          pgtype.Int4      `json:"table_id"`
 	CashierID        pgtype.Int4      `json:"cashier_id"`
-	CashierSessionID pgtype.Int4      `json:"cashier_session_id"`
-	CustomerID       pgtype.Int4      `json:"customer_id"`
+	CashierSessionID pgtype.UUID      `json:"cashier_session_id"`
+	CustomerID       pgtype.UUID      `json:"customer_id"`
 	PosTerminalID    pgtype.Int4      `json:"pos_terminal_id"`
-	KioskSessionID   pgtype.Int4      `json:"kiosk_session_id"`
+	KioskSessionID   pgtype.UUID      `json:"kiosk_session_id"`
 	CreatedByUserID  pgtype.Int4      `json:"created_by_user_id"`
 	SourceCartID     pgtype.UUID      `json:"source_cart_id"`
 	OrderNumber      string           `json:"order_number"`
@@ -340,7 +341,7 @@ type CreateRestaurantOrderFullParams struct {
 	AmountPaid       pgtype.Numeric   `json:"amount_paid"`
 	ChangeGiven      pgtype.Numeric   `json:"change_given"`
 	Notes            pgtype.Text      `json:"notes"`
-	PosTransactionID pgtype.Int4      `json:"pos_transaction_id"`
+	PosTransactionID pgtype.UUID      `json:"pos_transaction_id"`
 	Metadata         json.RawMessage  `json:"metadata"`
 	OrderedAt        pgtype.Timestamp `json:"ordered_at"`
 	CouponCode       pgtype.Text      `json:"coupon_code"`
@@ -440,7 +441,7 @@ INSERT INTO restaurant_order_status_history (
 `
 
 type CreateRestaurantOrderStatusHistoryParams struct {
-	RestaurantOrderID int32           `json:"restaurant_order_id"`
+	RestaurantOrderID uuid.UUID       `json:"restaurant_order_id"`
 	StoreID           int32           `json:"store_id"`
 	FromStatus        pgtype.Text     `json:"from_status"`
 	ToStatus          string          `json:"to_status"`
@@ -550,7 +551,7 @@ DELETE FROM restaurant_orders
 WHERE id = $1
 `
 
-func (q *Queries) DeleteRestaurantOrder(ctx context.Context, id int32) error {
+func (q *Queries) DeleteRestaurantOrder(ctx context.Context, id uuid.UUID) error {
 	_, err := q.db.Exec(ctx, deleteRestaurantOrder, id)
 	return err
 }
@@ -578,9 +579,9 @@ type FindOpenCashierSessionForRestaurantStoreParams struct {
 }
 
 type FindOpenCashierSessionForRestaurantStoreRow struct {
-	ID            int32 `json:"id"`
-	CashierID     int32 `json:"cashier_id"`
-	PosTerminalID int32 `json:"pos_terminal_id"`
+	ID            uuid.UUID `json:"id"`
+	CashierID     int32     `json:"cashier_id"`
+	PosTerminalID int32     `json:"pos_terminal_id"`
 }
 
 func (q *Queries) FindOpenCashierSessionForRestaurantStore(ctx context.Context, arg FindOpenCashierSessionForRestaurantStoreParams) (FindOpenCashierSessionForRestaurantStoreRow, error) {
@@ -597,7 +598,7 @@ WHERE id = $1 LIMIT 1
 `
 
 // restaurant_orders.sql
-func (q *Queries) GetRestaurantOrder(ctx context.Context, id int32) (RestaurantOrder, error) {
+func (q *Queries) GetRestaurantOrder(ctx context.Context, id uuid.UUID) (RestaurantOrder, error) {
 	row := q.db.QueryRow(ctx, getRestaurantOrder, id)
 	var i RestaurantOrder
 	err := row.Scan(
@@ -762,8 +763,8 @@ RETURNING id, organization_id, store_id, table_id, cashier_id, cashier_session_i
 `
 
 type LinkRestaurantOrderToPosTransactionParams struct {
-	ID               int32          `json:"id"`
-	PosTransactionID pgtype.Int4    `json:"pos_transaction_id"`
+	ID               uuid.UUID      `json:"id"`
+	PosTransactionID pgtype.UUID    `json:"pos_transaction_id"`
 	Status           string         `json:"status"`
 	PaymentStatus    string         `json:"payment_status"`
 	AmountPaid       pgtype.Numeric `json:"amount_paid"`
@@ -860,7 +861,7 @@ ORDER BY ro.ordered_at ASC, ro.id ASC
 `
 
 type ListKdsRestaurantOrdersByStoreRow struct {
-	OrderID             int32            `json:"order_id"`
+	OrderID             uuid.UUID        `json:"order_id"`
 	OrderNumber         string           `json:"order_number"`
 	StoreID             int32            `json:"store_id"`
 	OrderSource         string           `json:"order_source"`
@@ -881,7 +882,7 @@ type ListKdsRestaurantOrdersByStoreRow struct {
 	TableSection        pgtype.Text      `json:"table_section"`
 	CashierID           pgtype.Int4      `json:"cashier_id"`
 	WaiterName          string           `json:"waiter_name"`
-	CustomerID          pgtype.Int4      `json:"customer_id"`
+	CustomerID          pgtype.UUID      `json:"customer_id"`
 	CustomerName        string           `json:"customer_name"`
 	MinutesSinceOrdered int32            `json:"minutes_since_ordered"`
 }
@@ -939,7 +940,7 @@ WHERE reference_type = 'restaurant_order'
 ORDER BY id ASC
 `
 
-func (q *Queries) ListRestaurantOrderRecipeMovements(ctx context.Context, referenceID pgtype.Int4) ([]StockMovement, error) {
+func (q *Queries) ListRestaurantOrderRecipeMovements(ctx context.Context, referenceID pgtype.Text) ([]StockMovement, error) {
 	rows, err := q.db.Query(ctx, listRestaurantOrderRecipeMovements, referenceID)
 	if err != nil {
 		return nil, err
@@ -1004,7 +1005,7 @@ ORDER BY h.changed_at ASC, h.id ASC
 
 type ListRestaurantOrderStatusHistoryRow struct {
 	ID                int64            `json:"id"`
-	RestaurantOrderID int32            `json:"restaurant_order_id"`
+	RestaurantOrderID uuid.UUID        `json:"restaurant_order_id"`
 	StoreID           int32            `json:"store_id"`
 	FromStatus        pgtype.Text      `json:"from_status"`
 	ToStatus          string           `json:"to_status"`
@@ -1017,7 +1018,7 @@ type ListRestaurantOrderStatusHistoryRow struct {
 	ChangedAt         pgtype.Timestamp `json:"changed_at"`
 }
 
-func (q *Queries) ListRestaurantOrderStatusHistory(ctx context.Context, restaurantOrderID int32) ([]ListRestaurantOrderStatusHistoryRow, error) {
+func (q *Queries) ListRestaurantOrderStatusHistory(ctx context.Context, restaurantOrderID uuid.UUID) ([]ListRestaurantOrderStatusHistoryRow, error) {
 	rows, err := q.db.Query(ctx, listRestaurantOrderStatusHistory, restaurantOrderID)
 	if err != nil {
 		return nil, err
@@ -1135,7 +1136,7 @@ WHERE ro.id = $1
 RETURNING ro.id, ro.organization_id, ro.store_id, ro.table_id, ro.cashier_id, ro.cashier_session_id, ro.customer_id, ro.pos_terminal_id, ro.kiosk_session_id, ro.created_by_user_id, ro.source_cart_id, ro.order_number, ro.order_source, ro.order_type, ro.status, ro.payment_status, ro.customer_name, ro.customer_email, ro.customer_phone, ro.delivery_address, ro.subtotal, ro.discount_amount, ro.tax_amount, ro.total_amount, ro.amount_paid, ro.change_given, ro.coupon_code, ro.discount_code, ro.notes, ro.pos_transaction_id, ro.ordered_at, ro.confirmed_at, ro.served_at, ro.paid_at, ro.metadata, ro.created_at, ro.updated_at
 `
 
-func (q *Queries) RecalculateRestaurantOrderTotals(ctx context.Context, id int32) (RestaurantOrder, error) {
+func (q *Queries) RecalculateRestaurantOrderTotals(ctx context.Context, id uuid.UUID) (RestaurantOrder, error) {
 	row := q.db.QueryRow(ctx, recalculateRestaurantOrderTotals, id)
 	var i RestaurantOrder
 	err := row.Scan(
@@ -1314,11 +1315,11 @@ RETURNING id, organization_id, store_id, table_id, cashier_id, cashier_session_i
 `
 
 type UpdateRestaurantOrderParams struct {
-	ID               int32            `json:"id"`
+	ID               uuid.UUID        `json:"id"`
 	TableID          pgtype.Int4      `json:"table_id"`
 	CashierID        pgtype.Int4      `json:"cashier_id"`
-	CashierSessionID pgtype.Int4      `json:"cashier_session_id"`
-	CustomerID       pgtype.Int4      `json:"customer_id"`
+	CashierSessionID pgtype.UUID      `json:"cashier_session_id"`
+	CustomerID       pgtype.UUID      `json:"customer_id"`
 	Status           string           `json:"status"`
 	Subtotal         pgtype.Numeric   `json:"subtotal"`
 	DiscountAmount   pgtype.Numeric   `json:"discount_amount"`
@@ -1327,7 +1328,7 @@ type UpdateRestaurantOrderParams struct {
 	AmountPaid       pgtype.Numeric   `json:"amount_paid"`
 	ChangeGiven      pgtype.Numeric   `json:"change_given"`
 	Notes            pgtype.Text      `json:"notes"`
-	PosTransactionID pgtype.Int4      `json:"pos_transaction_id"`
+	PosTransactionID pgtype.UUID      `json:"pos_transaction_id"`
 	ConfirmedAt      pgtype.Timestamp `json:"confirmed_at"`
 	ServedAt         pgtype.Timestamp `json:"served_at"`
 	PaidAt           pgtype.Timestamp `json:"paid_at"`
@@ -1430,11 +1431,11 @@ RETURNING id, organization_id, store_id, table_id, cashier_id, cashier_session_i
 `
 
 type UpdateRestaurantOrderFullParams struct {
-	ID               int32            `json:"id"`
+	ID               uuid.UUID        `json:"id"`
 	TableID          pgtype.Int4      `json:"table_id"`
 	CashierID        pgtype.Int4      `json:"cashier_id"`
-	CashierSessionID pgtype.Int4      `json:"cashier_session_id"`
-	CustomerID       pgtype.Int4      `json:"customer_id"`
+	CashierSessionID pgtype.UUID      `json:"cashier_session_id"`
+	CustomerID       pgtype.UUID      `json:"customer_id"`
 	OrderType        string           `json:"order_type"`
 	Status           string           `json:"status"`
 	PaymentStatus    string           `json:"payment_status"`
@@ -1449,7 +1450,7 @@ type UpdateRestaurantOrderFullParams struct {
 	AmountPaid       pgtype.Numeric   `json:"amount_paid"`
 	ChangeGiven      pgtype.Numeric   `json:"change_given"`
 	Notes            pgtype.Text      `json:"notes"`
-	PosTransactionID pgtype.Int4      `json:"pos_transaction_id"`
+	PosTransactionID pgtype.UUID      `json:"pos_transaction_id"`
 	ConfirmedAt      pgtype.Timestamp `json:"confirmed_at"`
 	ServedAt         pgtype.Timestamp `json:"served_at"`
 	PaidAt           pgtype.Timestamp `json:"paid_at"`
@@ -1539,7 +1540,7 @@ RETURNING id, organization_id, store_id, table_id, cashier_id, cashier_session_i
 `
 
 type UpdateRestaurantOrderPaymentStatusParams struct {
-	ID            int32          `json:"id"`
+	ID            uuid.UUID      `json:"id"`
 	PaymentStatus string         `json:"payment_status"`
 	AmountPaid    pgtype.Numeric `json:"amount_paid"`
 	ChangeGiven   pgtype.Numeric `json:"change_given"`
@@ -1605,8 +1606,8 @@ RETURNING id, organization_id, store_id, table_id, cashier_id, cashier_session_i
 `
 
 type UpdateRestaurantOrderStatusParams struct {
-	ID     int32  `json:"id"`
-	Status string `json:"status"`
+	ID     uuid.UUID `json:"id"`
+	Status string    `json:"status"`
 }
 
 func (q *Queries) UpdateRestaurantOrderStatus(ctx context.Context, arg UpdateRestaurantOrderStatusParams) (RestaurantOrder, error) {
@@ -1667,8 +1668,8 @@ RETURNING id, organization_id, store_id, table_id, cashier_id, cashier_session_i
 `
 
 type UpdateRestaurantOrderStatusWithTimestampsParams struct {
-	ID     int32  `json:"id"`
-	Status string `json:"status"`
+	ID     uuid.UUID `json:"id"`
+	Status string    `json:"status"`
 }
 
 func (q *Queries) UpdateRestaurantOrderStatusWithTimestamps(ctx context.Context, arg UpdateRestaurantOrderStatusWithTimestampsParams) (RestaurantOrder, error) {
@@ -1730,7 +1731,7 @@ WHERE cs.id = $1
 `
 
 type ValidateRestaurantCashierSessionRow struct {
-	ID            int32            `json:"id"`
+	ID            uuid.UUID        `json:"id"`
 	CashierID     int32            `json:"cashier_id"`
 	PosTerminalID int32            `json:"pos_terminal_id"`
 	Status        pgtype.Text      `json:"status"`
@@ -1738,7 +1739,7 @@ type ValidateRestaurantCashierSessionRow struct {
 	StoreID       int32            `json:"store_id"`
 }
 
-func (q *Queries) ValidateRestaurantCashierSession(ctx context.Context, id int32) (ValidateRestaurantCashierSessionRow, error) {
+func (q *Queries) ValidateRestaurantCashierSession(ctx context.Context, id uuid.UUID) (ValidateRestaurantCashierSessionRow, error) {
 	row := q.db.QueryRow(ctx, validateRestaurantCashierSession, id)
 	var i ValidateRestaurantCashierSessionRow
 	err := row.Scan(

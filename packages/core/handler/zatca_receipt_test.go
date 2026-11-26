@@ -9,14 +9,19 @@ import (
 	"github.com/NasTecSol/nembus-core/middleware"
 	"github.com/NasTecSol/nembus-core/repository"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 )
+
+const receiptTestTransactionUUID = "00000000-0000-4000-8000-000000000006"
+const receiptTestMissingTransactionUUID = "00000000-0000-4000-8000-000000000099"
 
 type receiptQRDB struct {
 	repository.DBTX
 	qr    string
 	calls int
-	id    int32
+	txID  string
 	order string
 	err   error
 }
@@ -36,9 +41,15 @@ func (db *receiptQRDB) QueryRow(_ context.Context, _ string, args ...interface{}
 	db.calls++
 	if len(args) == 1 {
 		db.order = args[0].(string)
-	} else {
-		db.id = args[0].(int32)
-		db.order = args[1].(string)
+	} else if len(args) >= 1 {
+		if u, ok := args[0].(pgtype.UUID); ok && u.Valid {
+			db.txID = uuid.UUID(u.Bytes).String()
+		}
+		if len(args) > 1 {
+			if s, ok := args[1].(string); ok {
+				db.order = s
+			}
+		}
 	}
 	return receiptQRRow{db.qr, db.err}
 }
@@ -50,11 +61,11 @@ func TestReceiptQRLoadsOnlySavedPayloadFromRequestTenant(t *testing.T) {
 		calls       int
 		missing     bool
 	}{
-		{"sale", "transaction_id=6", 200, 1, false},
+		{"sale", "transaction_id=" + receiptTestTransactionUUID, 200, 1, false},
 		{"order", "sales_order_id=00000000-0000-4000-8000-000000000006", 200, 1, false},
-		{"bad sale", "transaction_id=0", 400, 0, false},
+		{"bad sale", "transaction_id=not-a-uuid", 400, 0, false},
 		{"bad order", "sales_order_id=invalid", 400, 0, false},
-		{"missing sale", "transaction_id=999", 404, 1, true},
+		{"missing sale", "transaction_id=" + receiptTestMissingTransactionUUID, 404, 1, true},
 		{"order without signed QR", "sales_order_id=00000000-0000-4000-8000-000000000007", 404, 1, false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -87,10 +98,10 @@ func TestReceiptQRLoadsOnlySavedPayloadFromRequestTenant(t *testing.T) {
 				if body.Data.QR != db.qr {
 					t.Fatal("saved QR changed")
 				}
-				if test.name == "sale" && db.id != 6 {
-					t.Fatal("wrong transaction lookup")
+				if test.name == "sale" && db.txID != receiptTestTransactionUUID {
+					t.Fatalf("wrong transaction lookup: got %q", db.txID)
 				}
-				if test.name == "order" && (db.id != 0 || db.order == "") {
+				if test.name == "order" && (db.txID != "" || db.order == "") {
 					t.Fatal("wrong order lookup")
 				}
 			}

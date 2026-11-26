@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
-	"strconv"
 	"strings"
 	"time"
 
@@ -293,7 +292,7 @@ func (uc *ZatcaUseCase) SignPosTransaction(ctx context.Context, txn *repository.
 	parsedUUID, _ := uuid.Parse(zatcaUUID)
 	chainParams := repository.InsertChainEntryParams{
 		EntityType:     "pos_transaction",
-		EntityID:       strconv.Itoa(int(txn.ID)),
+		EntityID:       txn.ID.String(),
 		DeviceConfigID: device.ID,
 		OrganizationID: org.ID,
 		ZatcaUuid:      parsedUUID,
@@ -424,7 +423,7 @@ func (uc *ZatcaUseCase) SignCreditNote(
 	parsedUUID, _ := uuid.Parse(zatcaUUID)
 	chainParams := repository.InsertChainEntryParams{
 		EntityType:     "sales_return",
-		EntityID:       strconv.Itoa(int(ret.ID)),
+		EntityID:       ret.ID.String(),
 		DeviceConfigID: device.ID,
 		OrganizationID: org.ID,
 		ZatcaUuid:      parsedUUID,

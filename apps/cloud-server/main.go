@@ -300,6 +300,12 @@ func setupRouter(tenantManager *manager.Manager, masterPool *pgxpool.Pool, maste
 		zatcaHandler.SetOnboarder(zatcaService.GetOnboardingService())
 		zatcaHandler.SetSubmitter(zatcaService)
 		router.RegisterZatcaRoutes(api, zatcaHandler)
+		// This endpoint only returns static capability flags. Authenticate its
+		// JWT but avoid tenant pool setup so recovery checks cannot hang on a DB
+		// migration or schema patch.
+		capabilityAPI := r.Group("/api")
+		capabilityAPI.Use(middleware.JWTAuthMiddleware())
+		router.RegisterZatcaSyncStatusRoute(capabilityAPI, zatcaHandler)
 
 		// Notification Center & Outbox Routes
 		notifUC := usecase.NewNotificationUseCase(masterRepo)

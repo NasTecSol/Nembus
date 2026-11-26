@@ -172,22 +172,50 @@ func TestCustomerPullDoesNotOverwriteUnsentLocalCreation(t *testing.T) {
 	}
 	defer pool.Close()
 	if _, err := pool.Exec(ctx, `
-		CREATE TABLE customers (id integer PRIMARY KEY, organization_id integer, customer_code text, name text);
-		CREATE TABLE sync_queue (entity_type text, entity_id bigint, status text);
+		CREATE TABLE customers (id uuid PRIMARY KEY, organization_id integer, customer_code text, name text);
+		CREATE TABLE sync_queue (entity_type text, entity_id text, status text);
 		CREATE TABLE sync_watermarks (entity_type text, store_id integer, last_sync_at timestamptz,
 			metadata jsonb, UNIQUE(entity_type,store_id));
-		INSERT INTO customers VALUES (12,1,'POS-12','Local customer');
-		INSERT INTO sync_queue VALUES ('customers',12,'failed')`); err != nil {
+		INSERT INTO customers VALUES ('00000000-0000-0000-0000-000000000012',1,'POS-12','Local customer');
+		INSERT INTO sync_queue VALUES ('customers','00000000-0000-0000-0000-000000000012','failed')`); err != nil {
 		t.Fatal(err)
 	}
 	s := NewSyncService(ctx, pool, "localhost:50051", "test")
-	event := &syncpb.SyncEvent{EntityId: 12, PayloadJson: []byte(`{"id":12,"organization_id":1,"customer_code":"CLOUD-12","name":"Cloud customer"}`)}
+	event := &syncpb.SyncEvent{EntityKey: "00000000-0000-0000-0000-000000000012", PayloadJson: []byte(`{"id":"00000000-0000-0000-0000-000000000012","organization_id":1,"customer_code":"CLOUD-12","name":"Cloud customer"}`)}
 	if err := s.saveDeltaPage(1, "customers", time.Now().UTC(), []*syncpb.SyncEvent{event}, 0); err != nil {
 		t.Fatal(err)
 	}
 	var name string
-	if err := pool.QueryRow(ctx, `SELECT name FROM customers WHERE id=12`).Scan(&name); err != nil || name != "Local customer" {
+	if err := pool.QueryRow(ctx, `SELECT name FROM customers WHERE id='00000000-0000-0000-0000-000000000012'`).Scan(&name); err != nil || name != "Local customer" {
 		t.Fatalf("unsent customer was overwritten: name=%q err=%v", name, err)
+	}
+
+	// Verify applyLeafDeleteTombstone handles both UUID leaf table (user_biometric_templates) and integer leaf table (role_permissions)
+	if _, err := pool.Exec(ctx, `
+		CREATE TABLE user_biometric_templates (id uuid PRIMARY KEY);
+		CREATE TABLE role_permissions (id integer PRIMARY KEY);
+		INSERT INTO user_biometric_templates VALUES ('00000000-0000-0000-0000-000000000099');
+		INSERT INTO role_permissions VALUES (77);
+	`); err != nil {
+		t.Fatal(err)
+	}
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback(ctx)
+	if err := applyLeafDeleteTombstone(ctx, tx, "user_biometric_templates", "00000000-0000-0000-0000-000000000099"); err != nil {
+		t.Fatalf("UUID leaf delete failed: %v", err)
+	}
+	if err := applyLeafDeleteTombstone(ctx, tx, "role_permissions", "77"); err != nil {
+		t.Fatalf("integer leaf delete failed: %v", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var bioCount, rpCount int
+	if err := pool.QueryRow(ctx, `SELECT (SELECT count(*) FROM user_biometric_templates), (SELECT count(*) FROM role_permissions)`).Scan(&bioCount, &rpCount); err != nil || bioCount != 0 || rpCount != 0 {
+		t.Fatalf("leaf delete counts: bio=%d rp=%d err=%v", bioCount, rpCount, err)
 	}
 }
 
@@ -231,6 +259,18 @@ func TestCursorTimestampTies(t *testing.T) {
 		if got := cursorAfter(test.timestamp, test.id, now, 10); got != test.want {
 			t.Fatalf("cursor timestamp=%s id=%d got=%v want=%v", test.timestamp, test.id, got, test.want)
 		}
+	}
+
+	uuidA := "00000000-0000-0000-0000-00000000000a"
+	uuidB := "00000000-0000-0000-0000-00000000000b"
+	if cursorAfterKey("customers", now, uuidA, now, uuidA) {
+		t.Fatal("expected equal UUID tie-breaker to return false")
+	}
+	if !cursorAfterKey("customers", now, uuidB, now, uuidA) {
+		t.Fatal("expected higher UUID tie-breaker to return true")
+	}
+	if cursorAfterKey("customers", now, uuidA, now, uuidB) {
+		t.Fatal("expected lower UUID tie-breaker to return false")
 	}
 }
 

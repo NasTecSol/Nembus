@@ -13,7 +13,7 @@ WITH session_scope AS (
     JOIN organizations o ON o.id = s.organization_id
     JOIN cashiers c ON c.id = cs.cashier_id AND c.store_id = s.id
     JOIN users u ON u.id = c.user_id
-    WHERE cs.id = sqlc.arg('cashier_session_id')::int
+    WHERE cs.id = sqlc.arg('cashier_session_id')::uuid
       AND s.organization_id = sqlc.arg('organization_id')::int
       AND EXISTS (
           SELECT 1 FROM users viewer

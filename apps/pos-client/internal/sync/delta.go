@@ -28,11 +28,27 @@ const (
 	ChangeLogWatermarkKey  = "__change_log__"
 )
 
+// productPricesReconcileNaturalKeySQL removes any stale local product_prices row
+// sharing the same natural key (uq_product_prices_natural_key) under a different id
+// before inserting the canonical Cloud row. This prevents SQLSTATE 23505 deadlocks
+// when Cloud deletes and re-creates a price row with a new id.
+const productPricesReconcileNaturalKeySQL = `
+	DELETE FROM product_prices p
+	USING json_populate_record(NULL::product_prices, $1::json) inc
+	WHERE p.id <> inc.id
+	  AND p.product_id = inc.product_id
+	  AND p.price_list_id = inc.price_list_id
+	  AND p.product_variant_id IS NOT DISTINCT FROM inc.product_variant_id
+	  AND p.uom_id IS NOT DISTINCT FROM inc.uom_id
+	  AND p.min_quantity IS NOT DISTINCT FROM inc.min_quantity
+`
+
 var errStreamChangesUnimplemented = errors.New("StreamChanges RPC is not implemented by cloud server")
 
 // fetchChangesGRPC pulls monotonic change_log events via StreamChanges (Phase 3),
 // falling back to legacy fetchDeltaGRPC only if the cloud server returns codes.Unimplemented.
-func (s *SyncService) fetchChangesGRPC() {
+// Returns the number of applied events and whether an error occurred.
+func (s *SyncService) fetchChangesGRPC() (int, bool) {
 	pullStart := time.Now()
 	telemetryCtx := telemetry.WithTenantSlug(s.ctx, s.tenantSlug)
 
@@ -40,27 +56,31 @@ func (s *SyncService) fetchChangesGRPC() {
 	storeID, deviceID, syncToken, err := ReadLocalDeviceCredentials(configCtx, s.masterPool)
 	cancelConfig()
 	if err != nil || storeID <= 0 {
-		log.Printf("[gRPC SYNC] Change-log pull requires a valid local store: %v", err)
-		return
+		if s.missingStoreLogged.CompareAndSwap(false, true) {
+			log.Printf("[gRPC SYNC] Change-log pull paused until a local store is configured: %v", err)
+		}
+		return 0, false
 	}
+	s.missingStoreLogged.Store(false)
 
 	conn, err := s.getOrCreateConn()
 	if err != nil {
 		telemetry.RecordSyncBatch(telemetryCtx, "pull", s.tenantSlug, "change_log", "error", 0, float64(time.Since(pullStart).Microseconds())/1000.0)
 		log.Printf("[gRPC SYNC] Change-log connection error: %v", err)
-		return
+		return 0, true
 	}
 
 	client := syncpb.NewSyncServiceClient(conn)
-	if err := s.pullChangeLog(client, storeID, deviceID, syncToken); err != nil {
+	applied, err := s.pullChangeLog(client, storeID, deviceID, syncToken)
+	if err != nil {
 		if errors.Is(err, errStreamChangesUnimplemented) {
 			log.Printf("[gRPC SYNC] Cloud server does not implement StreamChanges yet; falling back to StreamPull")
 			s.fetchDeltaGRPC()
 			telemetry.RecordSyncBatch(telemetryCtx, "pull", s.tenantSlug, "legacy_delta", "ok", 1, float64(time.Since(pullStart).Microseconds())/1000.0)
-			return
+			return 0, false
 		}
 		if s.ctx.Err() != nil {
-			return
+			return 0, false
 		}
 		telemetry.RecordSyncBatch(telemetryCtx, "pull", s.tenantSlug, "change_log", "error", 0, float64(time.Since(pullStart).Microseconds())/1000.0)
 		log.Printf("[gRPC SYNC] Change-log pull failed: %v", err)
@@ -78,12 +98,13 @@ func (s *SyncService) fetchChangesGRPC() {
 			SET metadata = COALESCE(sync_watermarks.metadata, '{}'::jsonb) || EXCLUDED.metadata
 		`, ChangeLogWatermarkKey, storeID, string(metaBytes))
 		cancelRecord()
-		return
+		return 0, true
 	}
-	telemetry.RecordSyncBatch(telemetryCtx, "pull", s.tenantSlug, "change_log", "ok", 1, float64(time.Since(pullStart).Microseconds())/1000.0)
+	telemetry.RecordSyncBatch(telemetryCtx, "pull", s.tenantSlug, "change_log", "ok", int64(applied), float64(time.Since(pullStart).Microseconds())/1000.0)
+	return applied, false
 }
 
-func (s *SyncService) pullChangeLog(client syncpb.SyncServiceClient, storeID int32, deviceID, syncToken string) error {
+func (s *SyncService) pullChangeLog(client syncpb.SyncServiceClient, storeID int32, deviceID, syncToken string) (int, error) {
 	readCtx, cancelRead := context.WithTimeout(s.ctx, 15*time.Second)
 	var fromSeq int64
 	err := s.masterPool.QueryRow(readCtx, `
@@ -93,7 +114,7 @@ func (s *SyncService) pullChangeLog(client syncpb.SyncServiceClient, storeID int
 	`, ChangeLogWatermarkKey, storeID).Scan(&fromSeq)
 	cancelRead()
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		return fmt.Errorf("read change_log watermark: %w", err)
+		return 0, fmt.Errorf("read change_log watermark: %w", err)
 	}
 	s.lastAppliedSeq.Store(fromSeq)
 
@@ -102,7 +123,7 @@ func (s *SyncService) pullChangeLog(client syncpb.SyncServiceClient, storeID int
 
 	for page := 0; page < maxChangePagesPerCycle; page++ {
 		if s.ctx.Err() != nil {
-			return s.ctx.Err()
+			return totalApplied, s.ctx.Err()
 		}
 		ctx, cancel := context.WithTimeout(s.ctx, 60*time.Second)
 		ctx = s.withSyncMetadata(ctx, storeID, deviceID, syncToken)
@@ -117,18 +138,18 @@ func (s *SyncService) pullChangeLog(client syncpb.SyncServiceClient, storeID int
 		if err != nil {
 			cancel()
 			if status.Code(err) == codes.Unimplemented {
-				return errStreamChangesUnimplemented
+				return totalApplied, errStreamChangesUnimplemented
 			}
 			if (status.Code(err) == codes.OutOfRange || strings.Contains(err.Error(), "CURSOR_EXPIRED")) && !expiredRetried {
 				expiredRetried = true
 				log.Printf("[gRPC SYNC] Change-log cursor %d expired on Cloud; resetting cursor to 0 for snapshot catchup", fromSeq)
 				if resetErr := s.resetChangeLogWatermark(storeID); resetErr != nil {
-					return resetErr
+					return totalApplied, resetErr
 				}
 				fromSeq = 0
 				continue
 			}
-			return err
+			return totalApplied, err
 		}
 
 		var (
@@ -146,30 +167,30 @@ func (s *SyncService) pullChangeLog(client syncpb.SyncServiceClient, storeID int
 			if recvErr != nil {
 				cancel()
 				if status.Code(recvErr) == codes.Unimplemented {
-					return errStreamChangesUnimplemented
+					return totalApplied, errStreamChangesUnimplemented
 				}
 				if (status.Code(recvErr) == codes.OutOfRange || strings.Contains(recvErr.Error(), "CURSOR_EXPIRED")) && !expiredRetried {
 					expiredRetried = true
 					log.Printf("[gRPC SYNC] Change-log cursor %d expired mid-stream; resetting cursor to 0 for snapshot catchup", fromSeq)
 					if resetErr := s.resetChangeLogWatermark(storeID); resetErr != nil {
-						return resetErr
+						return totalApplied, resetErr
 					}
 					fromSeq = 0
 					events = nil
 					break
 				}
-				return recvErr
+				return totalApplied, recvErr
 			}
 
 			if !syncpb.IsPullEntity(ev.EntityType) {
 				cancel()
-				return fmt.Errorf("unsupported change_log entity: %s", ev.EntityType)
+				return totalApplied, fmt.Errorf("unsupported change_log entity: %s", ev.EntityType)
 			}
 			if ev.Op != "DELETE" {
 				hash := sha256.Sum256(ev.PayloadJson)
 				if ev.Sha256 != "" && ev.Sha256 != hex.EncodeToString(hash[:]) {
 					cancel()
-					return fmt.Errorf("change_log SHA-256 mismatch for %s ID %d (seq %d)", ev.EntityType, ev.EntityId, ev.Seq)
+					return totalApplied, fmt.Errorf("change_log SHA-256 mismatch for %s ID %s (seq %d)", ev.EntityType, syncpb.ResolveEntityKey(ev.EntityKey, ev.EntityId), ev.Seq)
 				}
 			}
 			if ev.IsSnapshotMode {
@@ -183,7 +204,7 @@ func (s *SyncService) pullChangeLog(client syncpb.SyncServiceClient, storeID int
 			} else {
 				if ev.Seq <= nextSeq {
 					cancel()
-					return fmt.Errorf("non-monotonic change_log seq %d (previous %d)", ev.Seq, nextSeq)
+					return totalApplied, fmt.Errorf("non-monotonic change_log seq %d (previous %d)", ev.Seq, nextSeq)
 				}
 				nextSeq = ev.Seq
 			}
@@ -200,7 +221,7 @@ func (s *SyncService) pullChangeLog(client syncpb.SyncServiceClient, storeID int
 		}
 
 		if err := s.saveChangePage(storeID, nextSeq, events, totalApplied); err != nil {
-			return err
+			return totalApplied, err
 		}
 		s.lastAppliedSeq.Store(nextSeq)
 		s.enqueuePullAckSeq(nextSeq)
@@ -210,13 +231,13 @@ func (s *SyncService) pullChangeLog(client syncpb.SyncServiceClient, storeID int
 			if totalApplied > 0 {
 				log.Printf("[gRPC SYNC] Change-log pull applied %d events; seq watermark = %d", totalApplied, nextSeq)
 			}
-			return nil
+			return totalApplied, nil
 		}
 		fromSeq = nextSeq
 	}
 
 	log.Printf("[gRPC SYNC] Change-log pull applied %d events; remaining pages resume next cycle (seq=%d)", totalApplied, fromSeq)
-	return nil
+	return totalApplied, nil
 }
 
 func (s *SyncService) resetChangeLogWatermark(storeID int32) error {
@@ -262,8 +283,9 @@ func (s *SyncService) saveChangePageContext(ctx context.Context, storeID int32, 
 		upsertQueryCache := make(map[string]string)
 
 		for _, ev := range events {
+			entityKey := syncpb.ResolveEntityKey(ev.EntityKey, ev.EntityId)
 			if strings.EqualFold(ev.Op, "DELETE") {
-				if err := applyLeafDeleteTombstone(ctx, tx, ev.EntityType, ev.EntityId); err != nil {
+				if err := applyLeafDeleteTombstone(ctx, tx, ev.EntityType, entityKey); err != nil {
 					return err
 				}
 				continue
@@ -278,8 +300,13 @@ func (s *SyncService) saveChangePageContext(ctx context.Context, storeID int32, 
 				}
 				upsertQueryCache[ev.EntityType] = query
 			}
+			if ev.EntityType == "product_prices" {
+				if _, err := tx.Exec(ctx, productPricesReconcileNaturalKeySQL, string(ev.PayloadJson)); err != nil {
+					return fmt.Errorf("reconcile change_log product_prices ID %s (seq %d): %w", entityKey, ev.Seq, err)
+				}
+			}
 			if _, err := tx.Exec(ctx, query, string(ev.PayloadJson)); err != nil {
-				return fmt.Errorf("apply change_log %s ID %d (seq %d): %w", ev.EntityType, ev.EntityId, ev.Seq, err)
+				return fmt.Errorf("apply change_log %s ID %s (seq %d): %w", ev.EntityType, entityKey, ev.Seq, err)
 			}
 		}
 	}
@@ -311,20 +338,29 @@ func (s *SyncService) saveChangePageContext(ctx context.Context, storeID int32, 
 	return tx.Commit(ctx)
 }
 
-func applyLeafDeleteTombstone(ctx context.Context, tx pgx.Tx, entityType string, entityID int64) error {
+func applyLeafDeleteTombstone(ctx context.Context, tx pgx.Tx, entityType string, entityKey string) error {
 	if !syncpb.IsLeafDeleteEntity(entityType) {
-		log.Printf("[gRPC SYNC] Ignoring hard DELETE tombstone for non-leaf table %s (id=%d)", entityType, entityID)
+		log.Printf("[gRPC SYNC] Ignoring hard DELETE tombstone for non-leaf table %s (id=%s)", entityType, entityKey)
+		return nil
+	}
+	entityKey = strings.TrimSpace(entityKey)
+	if entityKey == "" {
 		return nil
 	}
 	if _, err := tx.Exec(ctx, "SAVEPOINT sp_change_delete"); err != nil {
 		return err
 	}
 	table := pgx.Identifier{entityType}.Sanitize()
-	_, err := tx.Exec(ctx, fmt.Sprintf("DELETE FROM %s WHERE id = $1", table), entityID)
+	var err error
+	if syncpb.IsUUIDEntity(entityType) {
+		_, err = tx.Exec(ctx, fmt.Sprintf("DELETE FROM %s WHERE id = $1::uuid", table), entityKey)
+	} else {
+		_, err = tx.Exec(ctx, fmt.Sprintf("DELETE FROM %s WHERE id = $1::bigint", table), entityKey)
+	}
 	if err != nil {
 		_, _ = tx.Exec(ctx, "ROLLBACK TO SAVEPOINT sp_change_delete")
 		_, _ = tx.Exec(ctx, "RELEASE SAVEPOINT sp_change_delete")
-		log.Printf("[gRPC SYNC] Skipped DELETE tombstone for %s ID %d due to local reference: %v", entityType, entityID, err)
+		log.Printf("[gRPC SYNC] Skipped DELETE tombstone for %s ID %s due to local reference: %v", entityType, entityKey, err)
 		return nil
 	}
 	_, _ = tx.Exec(ctx, "RELEASE SAVEPOINT sp_change_delete")
@@ -374,18 +410,31 @@ func (s *SyncService) pullEntity(client syncpb.SyncServiceClient, storeID int32,
 	readCtx, cancelRead := context.WithTimeout(s.ctx, 15*time.Second)
 	defer cancelRead()
 	since := time.Unix(0, 0).UTC()
-	var afterID int64
-	err := s.masterPool.QueryRow(readCtx, `SELECT last_sync_at, COALESCE((metadata->>'cursor_id')::bigint,0)
-		FROM sync_watermarks WHERE entity_type=$1 AND store_id=$2`, entity, storeID).Scan(&since, &afterID)
+	var afterKey string
+	err := s.masterPool.QueryRow(readCtx, `SELECT last_sync_at, COALESCE(NULLIF(metadata->>'cursor_key', ''), NULLIF(metadata->>'cursor_id', ''), '')
+		FROM sync_watermarks WHERE entity_type=$1 AND store_id=$2`, entity, storeID).Scan(&since, &afterKey)
 	if err != nil && err != pgx.ErrNoRows {
 		return fmt.Errorf("read watermark: %w", err)
 	}
 	total := 0
 	for page := 0; page < maxDeltaPagesPerEntity; page++ {
 		ctx, cancel := context.WithTimeout(s.ctx, 60*time.Second)
-		ctx = metadata.AppendToOutgoingContext(ctx, syncpb.PullCursorKey, strconv.FormatInt(afterID, 10))
-		stream, err := client.StreamPull(ctx, &syncpb.PullRequest{TenantSlug: s.tenantSlug, StoreId: storeID,
-			Since: timestamppb.New(since), EntityTypes: []string{entity}, Limit: syncpb.PullPageLimit})
+		legacyCursorID := "0"
+		if numID, ok := syncpb.ParseNumericEntityID(afterKey); ok {
+			legacyCursorID = strconv.FormatInt(numID, 10)
+		}
+		ctx = metadata.AppendToOutgoingContext(ctx,
+			syncpb.PullCursorKey, legacyCursorID,
+			syncpb.PullCursorAfterKey, afterKey,
+		)
+		stream, err := client.StreamPull(ctx, &syncpb.PullRequest{
+			TenantSlug:  s.tenantSlug,
+			StoreId:     storeID,
+			Since:       timestamppb.New(since),
+			EntityTypes: []string{entity},
+			Limit:       syncpb.PullPageLimit,
+			AfterKey:    afterKey,
+		})
 		if err != nil {
 			cancel()
 			return err
@@ -401,7 +450,7 @@ func (s *SyncService) pullEntity(client syncpb.SyncServiceClient, storeID int32,
 		}
 		var events []*syncpb.SyncEvent
 		next := since
-		nextID := afterID
+		nextKey := afterKey
 		for {
 			event, recvErr := stream.Recv()
 			if recvErr == io.EOF {
@@ -412,12 +461,13 @@ func (s *SyncService) pullEntity(client syncpb.SyncServiceClient, storeID int32,
 				return recvErr
 			}
 			hash := sha256.Sum256(event.PayloadJson)
-			if len(events) >= syncpb.PullPageLimit || event.EntityType != entity || event.Sha256 != hex.EncodeToString(hash[:]) || event.EventTime == nil || event.EventTime.CheckValid() != nil || !cursorAfter(event.EventTime.AsTime(), event.EntityId, next, nextID) {
+			eventKey := syncpb.ResolveEntityKey(event.EntityKey, event.EntityId)
+			if len(events) >= syncpb.PullPageLimit || event.EntityType != entity || event.Sha256 != hex.EncodeToString(hash[:]) || event.EventTime == nil || event.EventTime.CheckValid() != nil || !cursorAfterKey(entity, event.EventTime.AsTime(), eventKey, next, nextKey) {
 				cancel()
 				return fmt.Errorf("invalid delta payload, checksum or timestamp for %s", entity)
 			}
 			next = event.EventTime.AsTime()
-			nextID = event.EntityId
+			nextKey = eventKey
 			events = append(events, event)
 		}
 		cancel()
@@ -431,7 +481,7 @@ func (s *SyncService) pullEntity(client syncpb.SyncServiceClient, storeID int32,
 			return nil
 		}
 		since = next
-		afterID = nextID
+		afterKey = nextKey
 	}
 	log.Printf("[gRPC SYNC] %s: applied %d updates; remaining pages resume next cycle", entity, total)
 	return nil
@@ -439,6 +489,23 @@ func (s *SyncService) pullEntity(client syncpb.SyncServiceClient, storeID int32,
 
 func cursorAfter(timestamp time.Time, id int64, since time.Time, afterID int64) bool {
 	return timestamp.After(since) || (timestamp.Equal(since) && id > afterID)
+}
+
+func cursorAfterKey(entity string, timestamp time.Time, key string, since time.Time, afterKey string) bool {
+	if timestamp.After(since) {
+		return true
+	}
+	if !timestamp.Equal(since) {
+		return false
+	}
+	if !syncpb.IsUUIDEntity(entity) {
+		id, ok := syncpb.ParseNumericEntityID(key)
+		afterID, _ := syncpb.ParseNumericEntityID(afterKey)
+		if ok {
+			return id > afterID
+		}
+	}
+	return strings.ToLower(strings.TrimSpace(key)) > strings.ToLower(strings.TrimSpace(afterKey))
 }
 
 // Data and its checkpoint commit together. Failed pages remain retryable.
@@ -467,8 +534,14 @@ func (s *SyncService) saveDeltaPageContext(ctx context.Context, storeID int32, e
 			return err
 		}
 		for _, event := range events {
+			eventKey := syncpb.ResolveEntityKey(event.EntityKey, event.EntityId)
+			if entity == "product_prices" {
+				if _, err := tx.Exec(ctx, productPricesReconcileNaturalKeySQL, string(event.PayloadJson)); err != nil {
+					return fmt.Errorf("reconcile %s ID %s: %w", entity, eventKey, err)
+				}
+			}
 			if _, err := tx.Exec(ctx, query, string(event.PayloadJson)); err != nil {
-				return fmt.Errorf("apply %s ID %d: %w", entity, event.EntityId, err)
+				return fmt.Errorf("apply %s ID %s: %w", entity, eventKey, err)
 			}
 		}
 	}
@@ -478,8 +551,17 @@ func (s *SyncService) saveDeltaPageContext(ctx context.Context, storeID int32, e
 		metadata["status"] = "synced"
 		metadata["last_success_at"] = time.Now().UTC()
 	} else {
-		metadata["last_entity_id"] = events[len(events)-1].EntityId
-		metadata["cursor_id"] = events[len(events)-1].EntityId
+		lastEvent := events[len(events)-1]
+		lastKey := syncpb.ResolveEntityKey(lastEvent.EntityKey, lastEvent.EntityId)
+		metadata["last_entity_key"] = lastKey
+		metadata["cursor_key"] = lastKey
+		if numID, ok := syncpb.ParseNumericEntityID(lastKey); ok {
+			metadata["last_entity_id"] = numID
+			metadata["cursor_id"] = numID
+		} else {
+			metadata["last_entity_id"] = lastKey
+			metadata["cursor_id"] = lastKey
+		}
 	}
 	data, _ := json.Marshal(metadata)
 	_, err = tx.Exec(ctx, `INSERT INTO sync_watermarks(entity_type,store_id,last_sync_at,metadata)
@@ -539,7 +621,7 @@ func deltaUpsertSQL(ctx context.Context, tx pgx.Tx, entity string) (string, erro
 		return fmt.Sprintf(`INSERT INTO %s (%s) SELECT %s FROM json_populate_record(NULL::%s,$1::json)
 		ON CONFLICT(id) DO UPDATE SET %s
 		WHERE NOT EXISTS (SELECT 1 FROM sync_queue q WHERE q.entity_type='customers'
-		AND q.entity_id=%s.id AND q.status IN ('pending','failed','quarantined'))`,
+		AND q.entity_id=%s.id::text AND q.status IN ('pending','failed','quarantined'))`,
 			table, cols, cols, table, strings.Join(updates, ","), table), nil
 	}
 	return fmt.Sprintf(`INSERT INTO %s (%s) SELECT %s FROM json_populate_record(NULL::%s,$1::json)

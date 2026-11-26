@@ -2,6 +2,9 @@ package etl
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"log"
 	"sort"
@@ -17,6 +20,7 @@ import (
 	"github.com/NasTecSol/nembus-sap-agent/internal/transport"
 	"github.com/NasTecSol/nembus-sap/contracts"
 	"github.com/NasTecSol/nembus-sap/mappings"
+	"github.com/NasTecSol/nembus-sap/schema"
 )
 
 // defaultDomainOrder is the canonical ordering of all migration domains.
@@ -77,16 +81,63 @@ type Engine struct {
 	activeRunCancel context.CancelFunc
 	activeRunMu     sync.Mutex
 	currentRunID    string
+
+	lastDownstreamHashMu sync.Mutex
+	lastDownstreamHash   map[contracts.DomainType]string
 }
 
 func NewEngine(cfg *config.AgentConfig, mssql *db.MSSQLClient, sqlite *db.SQLiteStore, cloudClient *transport.CloudClient) *Engine {
 	return &Engine{
-		cfg:         cfg,
-		mssql:       mssql,
-		sqlite:      sqlite,
-		cloudClient: cloudClient,
-		listeners:   make(map[chan ProgressEvent]struct{}),
+		cfg:                cfg,
+		mssql:              mssql,
+		sqlite:             sqlite,
+		cloudClient:        cloudClient,
+		listeners:          make(map[chan ProgressEvent]struct{}),
+		lastDownstreamHash: make(map[contracts.DomainType]string),
 	}
+}
+
+func computePayloadHash(v any) (string, bool) {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return "", false
+	}
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:]), true
+}
+
+func (e *Engine) isDownstreamPayloadUnchanged(domain contracts.DomainType, hash string) bool {
+	if hash == "" {
+		return false
+	}
+	e.lastDownstreamHashMu.Lock()
+	defer e.lastDownstreamHashMu.Unlock()
+	if e.lastDownstreamHash == nil {
+		return false
+	}
+	return e.lastDownstreamHash[domain] == hash
+}
+
+func (e *Engine) setDownstreamPayloadHash(domain contracts.DomainType, hash string) {
+	if hash == "" {
+		return
+	}
+	e.lastDownstreamHashMu.Lock()
+	defer e.lastDownstreamHashMu.Unlock()
+	if e.lastDownstreamHash == nil {
+		e.lastDownstreamHash = make(map[contracts.DomainType]string)
+	}
+	e.lastDownstreamHash[domain] = hash
+}
+
+func (e *Engine) clearDownstreamPayloadHashes() {
+	e.lastDownstreamHashMu.Lock()
+	defer e.lastDownstreamHashMu.Unlock()
+	e.lastDownstreamHash = make(map[contracts.DomainType]string)
+}
+
+func isBatchFullySucceeded(resp *contracts.MigrationBatchResponse) bool {
+	return resp != nil && resp.Success && resp.RecordsFailed == 0
 }
 
 func (e *Engine) getMSSQLClient() (*db.MSSQLClient, error) {
@@ -116,6 +167,7 @@ func (e *Engine) UpdateCloudConfig(cfg config.CloudConfig) {
 	} else {
 		e.cloudClient = transport.NewCloudClient(cfg)
 	}
+	e.clearDownstreamPayloadHashes()
 }
 
 // UpdateMSSQLConfig resets the cached MSSQL client so subsequent operations connect using the new config.
@@ -295,13 +347,21 @@ func (e *Engine) ExecuteDownstreamSync(ctx context.Context, domains []contracts.
 		Timestamp: time.Now(),
 	})
 
-	syncStartTime := time.Now()
+	// Anchor downstream watermarks to SAP SQL Server's clock (GETDATE()) to prevent
+	// timezone or clock-skew drift from skipping SAP edits.
+	syncStartTime := e.resolveSAPServerNow(ctx)
 	var domainErrors []string
 
 	for _, domain := range domains {
 		since := e.resolveDownstreamSince(ctx, domain, syncStartTime)
+		querySince := since
+		if !querySince.IsZero() {
+			// Apply a 2-minute overlap window so transactions committed across the boundary
+			// are never missed (downstream ingestion is idempotent).
+			querySince = querySince.Add(-2 * time.Minute)
+		}
 
-		processed, err := e.executeDownstreamDomainStep(ctx, domain, since)
+		processed, err := e.executeDownstreamDomainStep(ctx, domain, querySince)
 		if err != nil {
 			domainErrors = append(domainErrors, fmt.Sprintf("%s: %v", domain, err))
 			if e.sqlite != nil {
@@ -372,6 +432,19 @@ func (e *Engine) ExecuteDownstreamSync(ctx context.Context, domains []contracts.
 	return stats, nil
 }
 
+func (e *Engine) resolveSAPServerNow(ctx context.Context) time.Time {
+	mssqlClient, err := e.getMSSQLClient()
+	if err == nil && mssqlClient != nil && mssqlClient.DB != nil {
+		qCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+		var serverNow time.Time
+		if scanErr := mssqlClient.DB.QueryRowContext(qCtx, schema.QueryServerNow).Scan(&serverNow); scanErr == nil && !serverNow.IsZero() {
+			return serverNow
+		}
+	}
+	return time.Now()
+}
+
 // resolveDownstreamSince returns the SAP delta cutoff for a downstream domain.
 // A completed full migration newer than the stored downstream watermark advances
 // the first-run baseline to that migration's end time; subsequent runs resume
@@ -419,6 +492,10 @@ func (e *Engine) executeDownstreamDomainStep(ctx context.Context, domain contrac
 		if len(uoms) == 0 {
 			return 0, nil
 		}
+		payloadHash, _ := computePayloadHash(uoms)
+		if e.isDownstreamPayloadUnchanged(domain, payloadHash) {
+			return 0, nil
+		}
 		payload := &contracts.MigrationBatchPayload{
 			BatchID:        uuid.New().String(),
 			RunID:          runID,
@@ -432,6 +509,9 @@ func (e *Engine) executeDownstreamDomainStep(ctx context.Context, domain contrac
 		if err != nil {
 			return 0, err
 		}
+		if isBatchFullySucceeded(resp) {
+			e.setDownstreamPayloadHash(domain, payloadHash)
+		}
 		return int64(resp.RecordsStaged), nil
 
 	case contracts.DomainUOMGroups:
@@ -443,7 +523,12 @@ func (e *Engine) executeDownstreamDomainStep(ctx context.Context, domain contrac
 		if len(groups) == 0 {
 			return 0, nil
 		}
+		payloadHash, _ := computePayloadHash(groups)
+		if e.isDownstreamPayloadUnchanged(domain, payloadHash) {
+			return 0, nil
+		}
 		var totalStaged int64
+		allSucceeded := true
 		for i := 0; i < len(groups); i += batchSize {
 			end := i + batchSize
 			if end > len(groups) {
@@ -464,7 +549,13 @@ func (e *Engine) executeDownstreamDomainStep(ctx context.Context, domain contrac
 			if err != nil {
 				return totalStaged, err
 			}
+			if !isBatchFullySucceeded(resp) {
+				allSucceeded = false
+			}
 			totalStaged += int64(resp.RecordsStaged)
+		}
+		if allSucceeded {
+			e.setDownstreamPayloadHash(domain, payloadHash)
 		}
 		return totalStaged, nil
 
@@ -475,6 +566,10 @@ func (e *Engine) executeDownstreamDomainStep(ctx context.Context, domain contrac
 			return 0, err
 		}
 		if len(cats) == 0 {
+			return 0, nil
+		}
+		payloadHash, _ := computePayloadHash(cats)
+		if e.isDownstreamPayloadUnchanged(domain, payloadHash) {
 			return 0, nil
 		}
 		payload := &contracts.MigrationBatchPayload{
@@ -490,6 +585,9 @@ func (e *Engine) executeDownstreamDomainStep(ctx context.Context, domain contrac
 		if err != nil {
 			return 0, err
 		}
+		if isBatchFullySucceeded(resp) {
+			e.setDownstreamPayloadHash(domain, payloadHash)
+		}
 		return int64(resp.RecordsStaged), nil
 
 	case contracts.DomainBrands:
@@ -499,6 +597,10 @@ func (e *Engine) executeDownstreamDomainStep(ctx context.Context, domain contrac
 			return 0, err
 		}
 		if len(brands) == 0 {
+			return 0, nil
+		}
+		payloadHash, _ := computePayloadHash(brands)
+		if e.isDownstreamPayloadUnchanged(domain, payloadHash) {
 			return 0, nil
 		}
 		payload := &contracts.MigrationBatchPayload{
@@ -513,6 +615,9 @@ func (e *Engine) executeDownstreamDomainStep(ctx context.Context, domain contrac
 		resp, err := cloudClient.SendBatchWithRetry(ctx, payload)
 		if err != nil {
 			return 0, err
+		}
+		if isBatchFullySucceeded(resp) {
+			e.setDownstreamPayloadHash(domain, payloadHash)
 		}
 		return int64(resp.RecordsStaged), nil
 

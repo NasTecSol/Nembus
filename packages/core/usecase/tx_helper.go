@@ -44,8 +44,8 @@ func runInSavepoint(ctx context.Context, tx pgx.Tx, name string, fn func() error
 
 // enqueuePOSCheckoutOutboxTx enqueues the synthesized carts and sales_orders_v2 (POS_CHECKOUT)
 // outbox items inside the same local POS transaction and correlation group as the checkout.
-func enqueuePOSCheckoutOutboxTx(ctx context.Context, tx pgx.Tx, corrID string, entityID int64, orderID uuid.UUID, cartID *uuid.UUID) {
-	if tx == nil || corrID == "" {
+func enqueuePOSCheckoutOutboxTx(ctx context.Context, tx pgx.Tx, corrID string, entityID string, orderID uuid.UUID, cartID *uuid.UUID) {
+	if tx == nil || corrID == "" || entityID == "" {
 		return
 	}
 	_ = runInSavepoint(ctx, tx, "sp_enqueue_pos_checkout_outbox", func() error {

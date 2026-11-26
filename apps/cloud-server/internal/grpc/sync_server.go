@@ -36,9 +36,10 @@ CREATE TABLE IF NOT EXISTS sync_inbox (
 	store_id    INTEGER NOT NULL,
 	batch_id    VARCHAR(100),
 	entity_type VARCHAR(50) NOT NULL,
-	entity_id   BIGINT NOT NULL,
+	entity_id   TEXT NOT NULL,
 	applied_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+ALTER TABLE IF EXISTS sync_inbox ALTER COLUMN entity_id TYPE TEXT USING entity_id::text;
 CREATE INDEX IF NOT EXISTS idx_sync_inbox_applied_at ON sync_inbox (applied_at);
 CREATE INDEX IF NOT EXISTS idx_sync_inbox_batch_id ON sync_inbox (batch_id) WHERE batch_id IS NOT NULL;
 `
@@ -116,7 +117,11 @@ func (s *SyncServer) StreamPush(stream syncpb.SyncService_StreamPushServer) erro
 	ctx := stream.Context()
 	var currentBatchID string
 	var currentBatch []*syncpb.SyncEvent
-	var authChecked bool
+	var (
+		authChecked    bool
+		authTerminalID int32
+		authStoreID    int32
+	)
 
 	for {
 		event, err := stream.Recv()
@@ -129,15 +134,17 @@ func (s *SyncServer) StreamPush(stream syncpb.SyncService_StreamPushServer) erro
 		}
 
 		if !authChecked && event.TenantSlug != "" {
-			if err := s.verifyStreamAuth(ctx, event.TenantSlug, event.DeviceId, event.StoreId); err != nil {
-				return err
+			var authErr error
+			authTerminalID, authStoreID, authErr = s.verifyStreamAuthIdentity(ctx, event.TenantSlug, event.DeviceId, event.StoreId)
+			if authErr != nil {
+				return authErr
 			}
 			authChecked = true
 		}
 
 		// Legacy single-event mode when batch_id is empty or batch_size <= 0
 		if strings.TrimSpace(event.BatchId) == "" || event.BatchSize <= 0 {
-			ack := s.handleSinglePushEvent(ctx, event)
+			ack := s.handleSinglePushEventWithAuth(ctx, event, authTerminalID, authStoreID)
 			if err := stream.Send(ack); err != nil {
 				log.Printf("[gRPC SyncServer] Error sending SyncAck: %v", err)
 				return err
@@ -151,6 +158,7 @@ func (s *SyncServer) StreamPush(stream syncpb.SyncService_StreamPushServer) erro
 			ack := &syncpb.SyncAck{
 				Id:           event.Id,
 				BatchId:      currentBatchID,
+				EntityKey:    syncpb.ResolveEntityKey(event.EntityKey, event.EntityId),
 				Success:      false,
 				ErrorMessage: fmt.Sprintf("incomplete batch %s: received %d events before new batch %s", currentBatchID, len(currentBatch), event.BatchId),
 				ProcessedAt:  timestamppb.Now(),
@@ -173,7 +181,7 @@ func (s *SyncServer) StreamPush(stream syncpb.SyncService_StreamPushServer) erro
 			currentBatchID = ""
 			currentBatch = nil
 
-			ack := s.processPushBatch(ctx, batchToApply)
+			ack := s.processPushBatchWithAuth(ctx, batchToApply, authTerminalID, authStoreID)
 			if err := stream.Send(ack); err != nil {
 				log.Printf("[gRPC SyncServer] Error sending batch SyncAck: %v", err)
 				return err
@@ -183,6 +191,10 @@ func (s *SyncServer) StreamPush(stream syncpb.SyncService_StreamPushServer) erro
 }
 
 func (s *SyncServer) handleSinglePushEvent(ctx context.Context, event *syncpb.SyncEvent) *syncpb.SyncAck {
+	return s.handleSinglePushEventWithAuth(ctx, event, 0, 0)
+}
+
+func (s *SyncServer) handleSinglePushEventWithAuth(ctx context.Context, event *syncpb.SyncEvent, authTerminalID, authStoreID int32) *syncpb.SyncAck {
 	started := time.Now()
 	ctx = telemetry.WithTenantSlug(ctx, event.TenantSlug)
 	syncStatus := "ok"
@@ -190,7 +202,24 @@ func (s *SyncServer) handleSinglePushEvent(ctx context.Context, event *syncpb.Sy
 		telemetry.RecordSyncBatch(ctx, "push", event.TenantSlug, event.EntityType, syncStatus, 1, float64(time.Since(started).Microseconds())/1000.0)
 	}()
 
+	entityKey := syncpb.ResolveEntityKey(event.EntityKey, event.EntityId)
 	calculatedSha := computePayloadSHA256(event.PayloadJson)
+
+	if authStoreID > 0 && event.StoreId > 0 && event.StoreId != authStoreID {
+		syncStatus = "error"
+		return &syncpb.SyncAck{
+			Id:           event.Id,
+			OutboxUuid:   event.OutboxUuid,
+			EntityType:   event.EntityType,
+			EntityId:     event.EntityId,
+			EntityKey:    entityKey,
+			Success:      false,
+			ErrorMessage: fmt.Sprintf("store_id mismatch: event store %d does not match authenticated terminal store %d", event.StoreId, authStoreID),
+			Sha256:       calculatedSha,
+			ProcessedAt:  timestamppb.Now(),
+		}
+	}
+
 	if event.Sha256 != "" && event.Sha256 != calculatedSha {
 		syncStatus = "error"
 		log.Printf("[gRPC SyncServer] SHA-256 mismatch for item %d (entity: %s): expected %s, got %s",
@@ -200,6 +229,7 @@ func (s *SyncServer) handleSinglePushEvent(ctx context.Context, event *syncpb.Sy
 			OutboxUuid:   event.OutboxUuid,
 			EntityType:   event.EntityType,
 			EntityId:     event.EntityId,
+			EntityKey:    entityKey,
 			Success:      false,
 			ErrorMessage: "SHA-256 checksum mismatch",
 			Sha256:       calculatedSha,
@@ -207,7 +237,7 @@ func (s *SyncServer) handleSinglePushEvent(ctx context.Context, event *syncpb.Sy
 		}
 	}
 
-	if err := s.ingestSyncEvent(ctx, event); err != nil {
+	if err := s.ingestSyncEventWithAuth(ctx, event, authTerminalID, authStoreID); err != nil {
 		syncStatus = "error"
 		log.Printf("[gRPC SyncServer] Failed to ingest item %d (%s): %v", event.Id, event.EntityType, err)
 		return &syncpb.SyncAck{
@@ -215,6 +245,7 @@ func (s *SyncServer) handleSinglePushEvent(ctx context.Context, event *syncpb.Sy
 			OutboxUuid:   event.OutboxUuid,
 			EntityType:   event.EntityType,
 			EntityId:     event.EntityId,
+			EntityKey:    entityKey,
 			Success:      false,
 			ErrorMessage: err.Error(),
 			SqlState:     extractPgSQLState(err),
@@ -228,6 +259,7 @@ func (s *SyncServer) handleSinglePushEvent(ctx context.Context, event *syncpb.Sy
 		OutboxUuid:  event.OutboxUuid,
 		EntityType:  event.EntityType,
 		EntityId:    event.EntityId,
+		EntityKey:   entityKey,
 		Success:     true,
 		Sha256:      calculatedSha,
 		ProcessedAt: timestamppb.Now(),
@@ -237,6 +269,10 @@ func (s *SyncServer) handleSinglePushEvent(ctx context.Context, event *syncpb.Sy
 // processPushBatch validates and applies an entire correlation batch inside one atomic PostgreSQL transaction
 // with idempotent sync_inbox deduplication keyed by outbox_uuid.
 func (s *SyncServer) processPushBatch(ctx context.Context, events []*syncpb.SyncEvent) *syncpb.SyncAck {
+	return s.processPushBatchWithAuth(ctx, events, 0, 0)
+}
+
+func (s *SyncServer) processPushBatchWithAuth(ctx context.Context, events []*syncpb.SyncEvent, authTerminalID, authStoreID int32) *syncpb.SyncAck {
 	if len(events) == 0 {
 		return &syncpb.SyncAck{
 			Success:      false,
@@ -247,6 +283,8 @@ func (s *SyncServer) processPushBatch(ctx context.Context, events []*syncpb.Sync
 	started := time.Now()
 	first := events[0]
 	last := events[len(events)-1]
+	firstKey := syncpb.ResolveEntityKey(first.EntityKey, first.EntityId)
+	lastKey := syncpb.ResolveEntityKey(last.EntityKey, last.EntityId)
 	batchID := first.BatchId
 	lastSha := computePayloadSHA256(last.PayloadJson)
 
@@ -256,9 +294,10 @@ func (s *SyncServer) processPushBatch(ctx context.Context, events []*syncpb.Sync
 		telemetry.RecordSyncBatch(ctx, "push", first.TenantSlug, first.EntityType, batchStatus, int64(len(events)), float64(time.Since(started).Microseconds())/1000.0)
 	}()
 
-	// 1. Validate batch sequencing and SHA-256 checksums upfront before opening DB transaction
+	// 1. Validate batch sequencing, store authorization, and SHA-256 checksums upfront before opening DB transaction
 	for idx, ev := range events {
 		expectedSeq := int32(idx + 1)
+		evKey := syncpb.ResolveEntityKey(ev.EntityKey, ev.EntityId)
 		if ev.SeqInBatch != 0 && ev.SeqInBatch != expectedSeq {
 			return &syncpb.SyncAck{
 				Id:           ev.Id,
@@ -266,9 +305,24 @@ func (s *SyncServer) processPushBatch(ctx context.Context, events []*syncpb.Sync
 				OutboxUuid:   ev.OutboxUuid,
 				EntityType:   ev.EntityType,
 				EntityId:     ev.EntityId,
+				EntityKey:    evKey,
 				Success:      false,
 				FailedSeq:    expectedSeq,
 				ErrorMessage: fmt.Sprintf("invalid seq_in_batch: expected %d, got %d", expectedSeq, ev.SeqInBatch),
+				ProcessedAt:  timestamppb.Now(),
+			}
+		}
+		if authStoreID > 0 && ev.StoreId > 0 && ev.StoreId != authStoreID {
+			return &syncpb.SyncAck{
+				Id:           ev.Id,
+				BatchId:      batchID,
+				OutboxUuid:   ev.OutboxUuid,
+				EntityType:   ev.EntityType,
+				EntityId:     ev.EntityId,
+				EntityKey:    evKey,
+				Success:      false,
+				FailedSeq:    expectedSeq,
+				ErrorMessage: fmt.Sprintf("store_id mismatch: event store %d does not match authenticated terminal store %d", ev.StoreId, authStoreID),
 				ProcessedAt:  timestamppb.Now(),
 			}
 		}
@@ -280,6 +334,7 @@ func (s *SyncServer) processPushBatch(ctx context.Context, events []*syncpb.Sync
 				OutboxUuid:   ev.OutboxUuid,
 				EntityType:   ev.EntityType,
 				EntityId:     ev.EntityId,
+				EntityKey:    evKey,
 				Success:      false,
 				FailedSeq:    expectedSeq,
 				ErrorMessage: "SHA-256 checksum mismatch",
@@ -296,6 +351,7 @@ func (s *SyncServer) processPushBatch(ctx context.Context, events []*syncpb.Sync
 			OutboxUuid:   first.OutboxUuid,
 			EntityType:   first.EntityType,
 			EntityId:     first.EntityId,
+			EntityKey:    firstKey,
 			Success:      false,
 			FailedSeq:    1,
 			ErrorMessage: "tenant_slug is required",
@@ -311,6 +367,7 @@ func (s *SyncServer) processPushBatch(ctx context.Context, events []*syncpb.Sync
 			OutboxUuid:   first.OutboxUuid,
 			EntityType:   first.EntityType,
 			EntityId:     first.EntityId,
+			EntityKey:    firstKey,
 			Success:      false,
 			FailedSeq:    1,
 			ErrorMessage: fmt.Sprintf("failed to get tenant pool: %v", err),
@@ -330,6 +387,7 @@ func (s *SyncServer) processPushBatch(ctx context.Context, events []*syncpb.Sync
 			OutboxUuid:   first.OutboxUuid,
 			EntityType:   first.EntityType,
 			EntityId:     first.EntityId,
+			EntityKey:    firstKey,
 			Success:      false,
 			FailedSeq:    1,
 			SqlState:     extractPgSQLState(err),
@@ -350,6 +408,11 @@ func (s *SyncServer) processPushBatch(ctx context.Context, events []*syncpb.Sync
 		if ev.SeqInBatch > 0 {
 			seqInBatch = ev.SeqInBatch
 		}
+		evKey := syncpb.ResolveEntityKey(ev.EntityKey, ev.EntityId)
+		effectiveStoreID := ev.StoreId
+		if authStoreID > 0 {
+			effectiveStoreID = authStoreID
+		}
 
 		// Idempotent sync_inbox check keyed by outbox_uuid
 		outboxUUID := strings.TrimSpace(ev.OutboxUuid)
@@ -361,6 +424,7 @@ func (s *SyncServer) processPushBatch(ctx context.Context, events []*syncpb.Sync
 					OutboxUuid:   outboxUUID,
 					EntityType:   ev.EntityType,
 					EntityId:     ev.EntityId,
+					EntityKey:    evKey,
 					Success:      false,
 					FailedSeq:    seqInBatch,
 					ErrorMessage: fmt.Sprintf("invalid outbox_uuid %q: %v", outboxUUID, parseErr),
@@ -369,7 +433,7 @@ func (s *SyncServer) processPushBatch(ctx context.Context, events []*syncpb.Sync
 			}
 			deviceID := ev.DeviceId
 			if deviceID == "" {
-				deviceID = fmt.Sprintf("store-%d", ev.StoreId)
+				deviceID = fmt.Sprintf("store-%d", effectiveStoreID)
 			}
 			var insertedUUID string
 			inboxErr := tx.QueryRow(ctx, `
@@ -377,7 +441,7 @@ func (s *SyncServer) processPushBatch(ctx context.Context, events []*syncpb.Sync
 				VALUES ($1::uuid, $2, $3, $4, $5, $6)
 				ON CONFLICT (outbox_uuid) DO NOTHING
 				RETURNING outbox_uuid::text
-			`, outboxUUID, deviceID, ev.StoreId, batchID, ev.EntityType, ev.EntityId).Scan(&insertedUUID)
+			`, outboxUUID, deviceID, effectiveStoreID, batchID, ev.EntityType, evKey).Scan(&insertedUUID)
 			if errors.Is(inboxErr, pgx.ErrNoRows) {
 				// Duplicate outbox_uuid already applied in sync_inbox — skip idempotently!
 				continue
@@ -389,6 +453,7 @@ func (s *SyncServer) processPushBatch(ctx context.Context, events []*syncpb.Sync
 					OutboxUuid:   outboxUUID,
 					EntityType:   ev.EntityType,
 					EntityId:     ev.EntityId,
+					EntityKey:    evKey,
 					Success:      false,
 					FailedSeq:    seqInBatch,
 					SqlState:     extractPgSQLState(inboxErr),
@@ -405,6 +470,7 @@ func (s *SyncServer) processPushBatch(ctx context.Context, events []*syncpb.Sync
 				OutboxUuid:   ev.OutboxUuid,
 				EntityType:   ev.EntityType,
 				EntityId:     ev.EntityId,
+				EntityKey:    evKey,
 				Success:      false,
 				FailedSeq:    seqInBatch,
 				ErrorMessage: fmt.Sprintf("unsupported sync entity type: %s", ev.EntityType),
@@ -412,15 +478,16 @@ func (s *SyncServer) processPushBatch(ctx context.Context, events []*syncpb.Sync
 			}
 		}
 
-		if err := s.upsertEntityJSONWithStoreDB(ctx, tx, pool, ev.EntityType, ev.Action, ev.PayloadJson, false, ev.StoreId); err != nil {
-			log.Printf("[gRPC SyncServer] Batch %s failed at seq %d (%s ID %d): %v",
-				batchID, seqInBatch, ev.EntityType, ev.EntityId, err)
+		if err := s.upsertEntityJSONWithAuthDB(ctx, tx, pool, ev.EntityType, ev.Action, ev.PayloadJson, false, effectiveStoreID, authTerminalID); err != nil {
+			log.Printf("[gRPC SyncServer] Batch %s failed at seq %d (%s key %s): %v",
+				batchID, seqInBatch, ev.EntityType, evKey, err)
 			return &syncpb.SyncAck{
 				Id:           ev.Id,
 				BatchId:      batchID,
 				OutboxUuid:   ev.OutboxUuid,
 				EntityType:   ev.EntityType,
 				EntityId:     ev.EntityId,
+				EntityKey:    evKey,
 				Success:      false,
 				FailedSeq:    seqInBatch,
 				SqlState:     extractPgSQLState(err),
@@ -441,6 +508,7 @@ func (s *SyncServer) processPushBatch(ctx context.Context, events []*syncpb.Sync
 			OutboxUuid:   last.OutboxUuid,
 			EntityType:   last.EntityType,
 			EntityId:     last.EntityId,
+			EntityKey:    lastKey,
 			Success:      false,
 			FailedSeq:    int32(len(events)),
 			SqlState:     extractPgSQLState(err),
@@ -466,6 +534,7 @@ func (s *SyncServer) processPushBatch(ctx context.Context, events []*syncpb.Sync
 		OutboxUuid:  last.OutboxUuid,
 		EntityType:  last.EntityType,
 		EntityId:    last.EntityId,
+		EntityKey:   lastKey,
 		Success:     true,
 		Sha256:      lastSha,
 		ProcessedAt: timestamppb.Now(),
@@ -487,9 +556,21 @@ func isSupportedPushEntity(entityType string) bool {
 
 // ingestSyncEvent processes and persists a single incoming entity payload (legacy or non-batched).
 func (s *SyncServer) ingestSyncEvent(ctx context.Context, event *syncpb.SyncEvent) error {
+	return s.ingestSyncEventWithAuth(ctx, event, 0, 0)
+}
+
+func (s *SyncServer) ingestSyncEventWithAuth(ctx context.Context, event *syncpb.SyncEvent, authTerminalID, authStoreID int32) error {
 	if event.TenantSlug == "" {
 		return fmt.Errorf("tenant_slug is required")
 	}
+	if authStoreID > 0 && event.StoreId > 0 && event.StoreId != authStoreID {
+		return fmt.Errorf("store_id mismatch: event store %d does not match authenticated terminal store %d", event.StoreId, authStoreID)
+	}
+	effectiveStoreID := event.StoreId
+	if authStoreID > 0 {
+		effectiveStoreID = authStoreID
+	}
+	entityKey := syncpb.ResolveEntityKey(event.EntityKey, event.EntityId)
 
 	pool, err := s.getTenantPool(ctx, event.TenantSlug)
 	if err != nil {
@@ -512,7 +593,7 @@ func (s *SyncServer) ingestSyncEvent(ctx context.Context, event *syncpb.SyncEven
 
 			deviceID := event.DeviceId
 			if deviceID == "" {
-				deviceID = fmt.Sprintf("store-%d", event.StoreId)
+				deviceID = fmt.Sprintf("store-%d", effectiveStoreID)
 			}
 			var insertedUUID string
 			inboxErr := tx.QueryRow(ctx, `
@@ -520,14 +601,14 @@ func (s *SyncServer) ingestSyncEvent(ctx context.Context, event *syncpb.SyncEven
 				VALUES ($1::uuid, $2, $3, NULLIF($4, ''), $5, $6)
 				ON CONFLICT (outbox_uuid) DO NOTHING
 				RETURNING outbox_uuid::text
-			`, outboxUUID, deviceID, event.StoreId, event.BatchId, event.EntityType, event.EntityId).Scan(&insertedUUID)
+			`, outboxUUID, deviceID, effectiveStoreID, event.BatchId, event.EntityType, entityKey).Scan(&insertedUUID)
 			if errors.Is(inboxErr, pgx.ErrNoRows) {
 				return nil
 			}
 			if inboxErr != nil {
 				return inboxErr
 			}
-			if err := s.upsertEntityJSONWithStoreDB(ctx, tx, pool, event.EntityType, event.Action, event.PayloadJson, false, event.StoreId); err != nil {
+			if err := s.upsertEntityJSONWithAuthDB(ctx, tx, pool, event.EntityType, event.Action, event.PayloadJson, false, effectiveStoreID, authTerminalID); err != nil {
 				return err
 			}
 			if err := tx.Commit(ctx); err != nil {
@@ -548,12 +629,12 @@ func (s *SyncServer) ingestSyncEvent(ctx context.Context, event *syncpb.SyncEven
 	if pool != nil {
 		legacyDB = pool
 	}
-	if err := s.upsertEntityJSONWithStoreDB(ctx, legacyDB, pool, event.EntityType, event.Action, event.PayloadJson, true, event.StoreId); err != nil {
-		log.Printf("[gRPC SyncServer] Ingestion error for %s (action=%s, ID %d): %v", event.EntityType, event.Action, event.EntityId, err)
+	if err := s.upsertEntityJSONWithAuthDB(ctx, legacyDB, pool, event.EntityType, event.Action, event.PayloadJson, true, effectiveStoreID, authTerminalID); err != nil {
+		log.Printf("[gRPC SyncServer] Ingestion error for %s (action=%s, key %s): %v", event.EntityType, event.Action, entityKey, err)
 		return err
 	}
-	log.Printf("[gRPC SyncServer] Successfully ingested %s entity ID %d (action=%s, Correlation: %s) for store %d",
-		event.EntityType, event.EntityId, event.Action, event.CorrelationId, event.StoreId)
+	log.Printf("[gRPC SyncServer] Successfully ingested %s entity key %s (action=%s, Correlation: %s) for store %d",
+		event.EntityType, entityKey, event.Action, event.CorrelationId, effectiveStoreID)
 
 	s.recordPushWatermark(ctx, pool, event)
 	return nil
@@ -637,6 +718,10 @@ func (s *SyncServer) upsertEntityJSONWithDB(ctx context.Context, db repository.D
 }
 
 func (s *SyncServer) upsertEntityJSONWithStoreDB(ctx context.Context, db repository.DBTX, pool *pgxpool.Pool, entityType, action string, payload []byte, runPostCommitHooks bool, authorizedStoreID int32) error {
+	return s.upsertEntityJSONWithAuthDB(ctx, db, pool, entityType, action, payload, runPostCommitHooks, authorizedStoreID, 0)
+}
+
+func (s *SyncServer) upsertEntityJSONWithAuthDB(ctx context.Context, db repository.DBTX, pool *pgxpool.Pool, entityType, action string, payload []byte, runPostCommitHooks bool, authorizedStoreID, authenticatedTerminalID int32) error {
 	if entityType == "sales_orders_v2" && action == "POS_CHECKOUT" {
 		if tx, ok := db.(pgx.Tx); ok {
 			return s.applyPOSCheckoutInTx(ctx, tx, payload)
@@ -663,6 +748,9 @@ func (s *SyncServer) upsertEntityJSONWithStoreDB(ctx context.Context, db reposit
 	if !validTables[entityType] {
 		return fmt.Errorf("unsupported entity type for upsert: %s", entityType)
 	}
+	if err := validateEntityOwnership(ctx, db, entityType, payload, authorizedStoreID, authenticatedTerminalID); err != nil {
+		return err
+	}
 	updateClause, err := getTableUpdateClauseDB(ctx, db, entityType)
 	if err != nil {
 		return err
@@ -686,30 +774,35 @@ func (s *SyncServer) upsertEntityJSONWithStoreDB(ctx context.Context, db reposit
 			if authorizedStoreID > 0 && (recipeMovement.FromStoreID == nil || *recipeMovement.FromStoreID != authorizedStoreID) {
 				return fmt.Errorf("unauthorized from_store_id for terminal store %d", authorizedStoreID)
 			}
-			if recipeMovement.ID > 0 {
-				var existingID int32
-				chkErr := db.QueryRow(ctx, `SELECT id FROM stock_movements WHERE id = $1`, recipeMovement.ID).Scan(&existingID)
+			if _, parseErr := uuid.Parse(recipeMovement.ID); parseErr == nil {
+				var existingID string
+				chkErr := db.QueryRow(ctx, `SELECT id::text FROM stock_movements WHERE id = $1::uuid`, recipeMovement.ID).Scan(&existingID)
 				if errors.Is(chkErr, pgx.ErrNoRows) {
 					applyRecipeStock = true
 				} else if chkErr != nil {
-					return fmt.Errorf("check existing stock_movement %d: %w", recipeMovement.ID, chkErr)
+					return fmt.Errorf("check existing stock_movement %s: %w", recipeMovement.ID, chkErr)
 				}
 			}
 		}
 	}
+	conflictWhere := entityConflictOwnershipWhere(entityType)
 	query := fmt.Sprintf(`
 		INSERT INTO %s
 		SELECT * FROM json_populate_record(NULL::%s, $1::json)
-		ON CONFLICT (id) DO UPDATE SET %s;
-	`, entityType, entityType, updateClause)
-	if _, err := db.Exec(ctx, query, string(payload)); err != nil {
+		ON CONFLICT (id) DO UPDATE SET %s%s;
+	`, entityType, entityType, updateClause, conflictWhere)
+	tag, err := db.Exec(ctx, query, string(payload))
+	if err != nil {
 		// Return the original constraint and SQLSTATE. A DO NOTHING fallback
 		// can hide rejected updates, or replace the cause with SQLSTATE 25P02.
 		return fmt.Errorf("failed to upsert %s (action=%s): %w", entityType, action, err)
 	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("ownership conflict on %s: row belongs to another terminal or store", entityType)
+	}
 	if applyRecipeStock {
 		if err := applyRecipeStockMovementSync(ctx, db, recipeMovement); err != nil {
-			return fmt.Errorf("apply cloud stock update for %s %d: %w", recipeMovement.MovementType, recipeMovement.ID, err)
+			return fmt.Errorf("apply cloud stock update for %s %s: %w", recipeMovement.MovementType, recipeMovement.ID, err)
 		}
 	}
 	if runPostCommitHooks && pool != nil {
@@ -723,43 +816,177 @@ func (s *SyncServer) upsertEntityJSONWithStoreDB(ctx context.Context, db reposit
 	return nil
 }
 
-// A customer ID is referenced by carts, orders, and transactions. A cloned POS
-// can generate the same serial ID as a cloud write made after cloning, so never
-// overwrite a different cloud customer merely because the numeric ID matches.
+func entityConflictOwnershipWhere(entityType string) string {
+	switch entityType {
+	case "cashier_sessions":
+		return " WHERE cashier_sessions.pos_terminal_id = EXCLUDED.pos_terminal_id"
+	case "pos_transactions":
+		return " WHERE pos_transactions.store_id = EXCLUDED.store_id AND (pos_transactions.pos_terminal_id IS NULL OR pos_transactions.pos_terminal_id = EXCLUDED.pos_terminal_id)"
+	case "pos_transaction_lines":
+		return " WHERE pos_transaction_lines.transaction_id = EXCLUDED.transaction_id"
+	case "pos_payments":
+		return " WHERE pos_payments.transaction_id = EXCLUDED.transaction_id"
+	case "sales_returns":
+		return " WHERE sales_returns.store_id = EXCLUDED.store_id"
+	case "sales_return_lines":
+		return " WHERE sales_return_lines.return_id = EXCLUDED.return_id"
+	case "restaurant_orders":
+		return " WHERE restaurant_orders.store_id = EXCLUDED.store_id AND (restaurant_orders.pos_terminal_id IS NULL OR restaurant_orders.pos_terminal_id = EXCLUDED.pos_terminal_id)"
+	case "restaurant_order_items":
+		return " WHERE restaurant_order_items.order_id = EXCLUDED.order_id"
+	case "kiosk_sessions":
+		return " WHERE kiosk_sessions.store_id = EXCLUDED.store_id AND kiosk_sessions.pos_terminal_id = EXCLUDED.pos_terminal_id"
+	case "stock_counts":
+		return " WHERE stock_counts.store_id = EXCLUDED.store_id"
+	case "stock_count_lines":
+		return " WHERE stock_count_lines.stock_count_id = EXCLUDED.stock_count_id"
+	case "waste_logs":
+		return " WHERE waste_logs.store_id = EXCLUDED.store_id"
+	default:
+		return ""
+	}
+}
+
+func validateEntityOwnership(ctx context.Context, db repository.DBTX, entityType string, payload []byte, authorizedStoreID, authenticatedTerminalID int32) error {
+	if authorizedStoreID <= 0 && authenticatedTerminalID <= 0 {
+		return nil
+	}
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(payload, &raw); err != nil {
+		return nil
+	}
+	payloadStoreID := int32(jsonInt64(raw["store_id"]))
+	payloadTerminalID := int32(jsonInt64(raw["pos_terminal_id"]))
+	transactionID := jsonEntityIDString(raw["transaction_id"])
+	returnID := jsonEntityIDString(raw["return_id"])
+	orderID := jsonEntityIDString(raw["order_id"])
+	stockCountID := jsonEntityIDString(raw["stock_count_id"])
+
+	switch entityType {
+	case "cashier_sessions", "pos_transactions", "restaurant_orders", "kiosk_sessions":
+		if authenticatedTerminalID > 0 && payloadTerminalID > 0 && payloadTerminalID != authenticatedTerminalID {
+			return fmt.Errorf("ownership violation on %s: payload pos_terminal_id %d does not match authenticated terminal %d",
+				entityType, payloadTerminalID, authenticatedTerminalID)
+		}
+	}
+
+	switch entityType {
+	case "pos_transactions", "restaurant_orders", "kiosk_sessions", "sales_returns", "stock_counts", "waste_logs":
+		if authorizedStoreID > 0 && payloadStoreID > 0 && payloadStoreID != authorizedStoreID {
+			return fmt.Errorf("ownership violation on %s: payload store_id %d does not match authorized store %d",
+				entityType, payloadStoreID, authorizedStoreID)
+		}
+	}
+
+	if db == nil {
+		return nil
+	}
+
+	if entityType == "cashier_sessions" && authorizedStoreID > 0 && payloadTerminalID > 0 {
+		var hasTerminalsTable bool
+		if err := db.QueryRow(ctx, `SELECT to_regclass('pos_terminals') IS NOT NULL`).Scan(&hasTerminalsTable); err == nil && hasTerminalsTable {
+			var termStoreID int32
+			if err := db.QueryRow(ctx, `SELECT store_id FROM pos_terminals WHERE id = $1`, payloadTerminalID).Scan(&termStoreID); err == nil && termStoreID > 0 && termStoreID != authorizedStoreID {
+				return fmt.Errorf("ownership violation on cashier_sessions: terminal %d belongs to store %d, not authorized store %d",
+					payloadTerminalID, termStoreID, authorizedStoreID)
+			}
+		}
+	}
+
+	switch entityType {
+	case "pos_transaction_lines", "pos_payments":
+		if transactionID != "" {
+			var parentStoreID, parentTerminalID int32
+			err := db.QueryRow(ctx, `SELECT COALESCE(store_id, 0), COALESCE(pos_terminal_id, 0) FROM pos_transactions WHERE id::text = $1`, transactionID).
+				Scan(&parentStoreID, &parentTerminalID)
+			if err == nil {
+				if authorizedStoreID > 0 && parentStoreID > 0 && parentStoreID != authorizedStoreID {
+					return fmt.Errorf("ownership violation on %s: parent transaction %s belongs to store %d, not authorized store %d",
+						entityType, transactionID, parentStoreID, authorizedStoreID)
+				}
+				if authenticatedTerminalID > 0 && parentTerminalID > 0 && parentTerminalID != authenticatedTerminalID {
+					return fmt.Errorf("ownership violation on %s: parent transaction %s belongs to terminal %d, not authenticated terminal %d",
+						entityType, transactionID, parentTerminalID, authenticatedTerminalID)
+				}
+			}
+		}
+	case "sales_return_lines":
+		if returnID != "" {
+			var parentStoreID int32
+			err := db.QueryRow(ctx, `SELECT COALESCE(store_id, 0) FROM sales_returns WHERE id::text = $1`, returnID).
+				Scan(&parentStoreID)
+			if err == nil && authorizedStoreID > 0 && parentStoreID > 0 && parentStoreID != authorizedStoreID {
+				return fmt.Errorf("ownership violation on sales_return_lines: parent return %s belongs to store %d, not authorized store %d",
+					returnID, parentStoreID, authorizedStoreID)
+			}
+		}
+	case "restaurant_order_items":
+		if orderID != "" {
+			var parentStoreID, parentTerminalID int32
+			err := db.QueryRow(ctx, `SELECT COALESCE(store_id, 0), COALESCE(pos_terminal_id, 0) FROM restaurant_orders WHERE id::text = $1`, orderID).
+				Scan(&parentStoreID, &parentTerminalID)
+			if err == nil {
+				if authorizedStoreID > 0 && parentStoreID > 0 && parentStoreID != authorizedStoreID {
+					return fmt.Errorf("ownership violation on restaurant_order_items: parent order %s belongs to store %d, not authorized store %d",
+						orderID, parentStoreID, authorizedStoreID)
+				}
+				if authenticatedTerminalID > 0 && parentTerminalID > 0 && parentTerminalID != authenticatedTerminalID {
+					return fmt.Errorf("ownership violation on restaurant_order_items: parent order %s belongs to terminal %d, not authenticated terminal %d",
+						orderID, parentTerminalID, authenticatedTerminalID)
+				}
+			}
+		}
+	case "stock_count_lines":
+		if stockCountID != "" {
+			var parentStoreID int32
+			err := db.QueryRow(ctx, `SELECT COALESCE(store_id, 0) FROM stock_counts WHERE id::text = $1`, stockCountID).
+				Scan(&parentStoreID)
+			if err == nil && authorizedStoreID > 0 && parentStoreID > 0 && parentStoreID != authorizedStoreID {
+				return fmt.Errorf("ownership violation on stock_count_lines: parent stock_count %s belongs to store %d, not authorized store %d",
+					stockCountID, parentStoreID, authorizedStoreID)
+			}
+		}
+	}
+	return nil
+}
+
+// A customer ID is referenced by carts, orders, and transactions. Never
+// overwrite a different cloud customer merely because the ID matches.
 func upsertCreatedCustomer(ctx context.Context, pool *pgxpool.Pool, payload []byte) error {
 	return upsertCreatedCustomerDB(ctx, pool, payload)
 }
 
 func upsertCreatedCustomerDB(ctx context.Context, db repository.DBTX, payload []byte) error {
 	var incoming struct {
-		ID             int32  `json:"id"`
+		ID             string `json:"id"`
 		OrganizationID int32  `json:"organization_id"`
 		CustomerCode   string `json:"customer_code"`
 	}
 	if err := json.Unmarshal(payload, &incoming); err != nil {
 		return fmt.Errorf("invalid customer sync payload: %w", err)
 	}
-	if incoming.ID <= 0 || incoming.OrganizationID <= 0 || incoming.CustomerCode == "" {
+	incoming.ID = strings.TrimSpace(incoming.ID)
+	if _, err := uuid.Parse(incoming.ID); err != nil || incoming.OrganizationID <= 0 || incoming.CustomerCode == "" {
 		return fmt.Errorf("customer sync requires id, organization_id, and customer_code")
 	}
-	var insertedID int32
+	var insertedID string
 	err := db.QueryRow(ctx, `INSERT INTO customers
 		SELECT * FROM json_populate_record(NULL::customers, $1::json)
-		ON CONFLICT (id) DO NOTHING RETURNING id`, string(payload)).Scan(&insertedID)
+		ON CONFLICT (id) DO NOTHING RETURNING id::text`, string(payload)).Scan(&insertedID)
 	if err == nil {
 		return nil
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
-		return fmt.Errorf("failed to insert customer %d: %w", incoming.ID, err)
+		return fmt.Errorf("failed to insert customer %s: %w", incoming.ID, err)
 	}
 	var organizationID int32
 	var customerCode string
-	if err := db.QueryRow(ctx, `SELECT organization_id, customer_code FROM customers WHERE id=$1`, incoming.ID).
+	if err := db.QueryRow(ctx, `SELECT organization_id, customer_code FROM customers WHERE id = $1::uuid`, incoming.ID).
 		Scan(&organizationID, &customerCode); err != nil {
-		return fmt.Errorf("read existing customer %d: %w", incoming.ID, err)
+		return fmt.Errorf("read existing customer %s: %w", incoming.ID, err)
 	}
 	if organizationID != incoming.OrganizationID || customerCode != incoming.CustomerCode {
-		return fmt.Errorf("customer ID %d already belongs to another cloud customer; resolve the ID collision before syncing dependent sales", incoming.ID)
+		return fmt.Errorf("customer ID %s already belongs to another cloud customer; resolve the ID collision before syncing dependent sales", incoming.ID)
 	}
 	return nil
 }
@@ -899,14 +1126,15 @@ func (s *SyncServer) StreamPull(req *syncpb.PullRequest, stream syncpb.SyncServi
 	if limit > syncpb.PullPageLimit {
 		limit = syncpb.PullPageLimit
 	}
-	if md, ok := metadata.FromIncomingContext(ctx); ok && len(md.Get(syncpb.PullCursorKey)) > 0 {
-		values := md.Get(syncpb.PullCursorKey)
-		afterID, err := strconv.ParseInt(values[0], 10, 64)
-		if err != nil || afterID < 0 || len(req.EntityTypes) != 1 {
-			return status.Error(codes.InvalidArgument, "pull cursor requires a nonnegative ID and exactly one entity")
+	afterKey, hasCursorMeta := resolvePullAfterKey(ctx, req)
+	if afterKey != "" || hasCursorMeta {
+		if len(req.EntityTypes) != 1 || !isValidPullCursor(req.EntityTypes[0], afterKey) {
+			return status.Error(codes.InvalidArgument, "pull cursor requires a valid entity key and exactly one entity")
 		}
-		if err := stream.SendHeader(metadata.Pairs(syncpb.PullCursorVersionKey, "1")); err != nil {
-			return err
+		if hasCursorMeta {
+			if err := stream.SendHeader(metadata.Pairs(syncpb.PullCursorVersionKey, "1")); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -942,6 +1170,37 @@ func (s *SyncServer) StreamPull(req *syncpb.PullRequest, stream syncpb.SyncServi
 	return nil
 }
 
+func resolvePullAfterKey(ctx context.Context, req *syncpb.PullRequest) (string, bool) {
+	afterKey := strings.TrimSpace(req.GetAfterKey())
+	var hasCursorMeta bool
+	if md, ok := metadata.FromIncomingContext(ctx); ok {
+		if vals := md.Get(syncpb.PullCursorAfterKey); len(vals) > 0 {
+			hasCursorMeta = true
+			if afterKey == "" {
+				afterKey = strings.TrimSpace(vals[0])
+			}
+		} else if vals := md.Get(syncpb.PullCursorKey); len(vals) > 0 {
+			hasCursorMeta = true
+			if afterKey == "" {
+				afterKey = strings.TrimSpace(vals[0])
+			}
+		}
+	}
+	return afterKey, hasCursorMeta
+}
+
+func isValidPullCursor(entityType, afterKey string) bool {
+	if afterKey == "" {
+		return false
+	}
+	if syncpb.IsUUIDEntity(entityType) {
+		_, err := uuid.Parse(afterKey)
+		return err == nil
+	}
+	afterID, err := strconv.ParseInt(afterKey, 10, 64)
+	return err == nil && afterID >= 0
+}
+
 func (s *SyncServer) streamEntityDeltas(
 	ctx context.Context,
 	pool *pgxpool.Pool,
@@ -954,17 +1213,29 @@ func (s *SyncServer) streamEntityDeltas(
 	// Query modified entities updated after watermark using PostgreSQL row_to_json
 	// Include the entire timestamp boundary so the next request's strict >
 	// predicate cannot skip rows sharing the last timestamp in this page.
-	query := fmt.Sprintf(`SELECT id, row_to_json(t)::text, updated_at FROM %s t WHERE updated_at > $1 ORDER BY updated_at ASC FETCH FIRST ($2) ROWS WITH TIES`, pgx.Identifier{entityType}.Sanitize())
+	ident := pgx.Identifier{entityType}.Sanitize()
+	query := fmt.Sprintf(`SELECT id::text, row_to_json(t)::text, updated_at FROM %s t WHERE updated_at > $1 ORDER BY updated_at ASC FETCH FIRST ($2) ROWS WITH TIES`, ident)
 	args := []any{since, limit}
-	if md, ok := metadata.FromIncomingContext(ctx); ok && len(md.Get(syncpb.PullCursorKey)) > 0 {
-		afterID, err := strconv.ParseInt(md.Get(syncpb.PullCursorKey)[0], 10, 64)
-		if err != nil || afterID < 0 {
-			return status.Error(codes.InvalidArgument, "invalid pull cursor")
+	afterKey, hasCursorMeta := resolvePullAfterKey(ctx, req)
+	if afterKey != "" || hasCursorMeta {
+		if syncpb.IsUUIDEntity(entityType) {
+			if _, err := uuid.Parse(afterKey); err != nil {
+				return status.Error(codes.InvalidArgument, "invalid UUID pull cursor")
+			}
+			query = fmt.Sprintf(`SELECT id::text, row_to_json(t)::text, updated_at FROM %s t
+				WHERE updated_at > $1 OR (updated_at = $1 AND id > $3::uuid)
+				ORDER BY updated_at, id LIMIT $2`, ident)
+			args = append(args, afterKey)
+		} else {
+			afterID, err := strconv.ParseInt(afterKey, 10, 64)
+			if err != nil || afterID < 0 {
+				return status.Error(codes.InvalidArgument, "invalid pull cursor")
+			}
+			query = fmt.Sprintf(`SELECT id::text, row_to_json(t)::text, updated_at FROM %s t
+				WHERE updated_at > $1 OR (updated_at = $1 AND id > $3::bigint)
+				ORDER BY updated_at, id LIMIT $2`, ident)
+			args = append(args, afterID)
 		}
-		query = fmt.Sprintf(`SELECT id, row_to_json(t)::text, updated_at FROM %s t
-			WHERE updated_at > $1 OR (updated_at = $1 AND id > $3)
-			ORDER BY updated_at, id LIMIT $2`, pgx.Identifier{entityType}.Sanitize())
-		args = append(args, afterID)
 	}
 
 	rows, err := pool.Query(ctx, query, args...)
@@ -974,11 +1245,11 @@ func (s *SyncServer) streamEntityDeltas(
 	defer rows.Close()
 
 	for rows.Next() {
-		var id int64
+		var idStr string
 		var jsonStr string
 		var updatedAt time.Time
 
-		if err := rows.Scan(&id, &jsonStr, &updatedAt); err != nil {
+		if err := rows.Scan(&idStr, &jsonStr, &updatedAt); err != nil {
 			return fmt.Errorf("scan %s: %w", entityType, err)
 		}
 
@@ -986,9 +1257,8 @@ func (s *SyncServer) streamEntityDeltas(
 		shaHex := computePayloadSHA256(payloadBytes)
 
 		event := &syncpb.SyncEvent{
-			Id:          id,
 			EntityType:  entityType,
-			EntityId:    id,
+			EntityKey:   idStr,
 			Action:      "UPDATE",
 			PayloadJson: payloadBytes,
 			StoreId:     req.StoreId,
@@ -996,6 +1266,10 @@ func (s *SyncServer) streamEntityDeltas(
 			EventTime:   timestamppb.New(updatedAt),
 			Sha256:      shaHex,
 			IsLastChunk: true,
+		}
+		if numID, ok := syncpb.ParseNumericEntityID(idStr); ok {
+			event.Id = numID
+			event.EntityId = numID
 		}
 
 		if err := stream.Send(event); err != nil {
@@ -1007,7 +1281,7 @@ func (s *SyncServer) streamEntityDeltas(
 }
 
 type stockMovementSyncPayload struct {
-	ID               int32   `json:"id"`
+	ID               string  `json:"id"`
 	MovementType     string  `json:"movement_type"`
 	ProductID        int32   `json:"product_id"`
 	ProductVariantID *int32  `json:"product_variant_id"`

@@ -23,10 +23,10 @@ CREATE TABLE inventory_stock (
 );
 
 CREATE TABLE stock_movements (
-    id SERIAL PRIMARY KEY,
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     movement_type VARCHAR(50) NOT NULL,
     reference_type VARCHAR(50),
-    reference_id INTEGER,
+    reference_id TEXT,
     product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
     product_variant_id INTEGER REFERENCES product_variants(id) ON DELETE CASCADE,
     from_store_id INTEGER REFERENCES stores(id) ON DELETE SET NULL,
@@ -48,7 +48,7 @@ CREATE TABLE stock_movements (
 );
 
 CREATE TABLE stock_counts (
-    id SERIAL PRIMARY KEY,
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     count_number VARCHAR(50) UNIQUE NOT NULL,
     store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
     storage_location_id INTEGER REFERENCES storage_locations(id) ON DELETE SET NULL,
@@ -65,8 +65,8 @@ CREATE TABLE stock_counts (
 );
 
 CREATE TABLE stock_count_lines (
-    id SERIAL PRIMARY KEY,
-    stock_count_id INTEGER NOT NULL REFERENCES stock_counts(id) ON DELETE CASCADE,
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    stock_count_id UUID NOT NULL REFERENCES stock_counts(id) ON DELETE CASCADE,
     product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
     product_variant_id INTEGER REFERENCES product_variants(id) ON DELETE SET NULL,
     storage_location_id INTEGER REFERENCES storage_locations(id) ON DELETE SET NULL,

@@ -1130,6 +1130,7 @@ ORDER BY is_overdue DESC, days_overdue DESC NULLS LAST, po.expected_delivery_dat
 -- FIX #21 (P1): Customer aging report
 -- =====================================================
 
+DROP VIEW IF EXISTS vw_customer_aging_report CASCADE;
 CREATE OR REPLACE VIEW vw_customer_aging_report AS
 SELECT
     c.id                    AS customer_id,
@@ -1202,6 +1203,7 @@ ORDER BY po.po_date;
 -- FIX #24 (P2): Profit margin analysis view
 -- =====================================================
 
+DROP VIEW IF EXISTS vw_profit_margin_analysis CASCADE;
 CREATE OR REPLACE VIEW vw_profit_margin_analysis AS
 SELECT
     ptl.product_id,
@@ -1797,7 +1799,7 @@ LEFT JOIN product_prices pp     ON p.id = pp.product_id
     AND pp.is_active            = true
 WHERE r.is_active = true;
 
-DROP VIEW IF EXISTS vw_active_restaurant_orders;
+DROP VIEW IF EXISTS vw_active_restaurant_orders CASCADE;
 CREATE OR REPLACE VIEW vw_active_restaurant_orders AS
 SELECT
     ro.id                       AS order_id,
@@ -1827,6 +1829,7 @@ LEFT JOIN users u               ON c.user_id = u.id
 LEFT JOIN customers cust        ON ro.customer_id = cust.id
 WHERE ro.status <> 'paid' AND ro.status <> 'voided';
 
+DROP VIEW IF EXISTS vw_waste_daily_summary CASCADE;
 CREATE OR REPLACE VIEW vw_waste_daily_summary AS
 SELECT
     wl.store_id,
@@ -1928,6 +1931,8 @@ $$ LANGUAGE plpgsql;
 -- FIX #2 (P0): Atomic inter-store / warehouse stock transfer function
 -- =====================================================
 
+DROP FUNCTION IF EXISTS fn_process_stock_transfer(INTEGER, INTEGER, INTEGER, INTEGER, DECIMAL, INTEGER, INTEGER, VARCHAR, INTEGER, TEXT);
+
 CREATE OR REPLACE FUNCTION fn_process_stock_transfer(
     p_from_store_id     INTEGER,
     p_to_store_id       INTEGER,
@@ -1943,16 +1948,16 @@ CREATE OR REPLACE FUNCTION fn_process_stock_transfer(
 RETURNS TABLE (
     success          BOOLEAN,
     message          TEXT,
-    movement_id      INTEGER
+    movement_id      UUID
 ) AS $$
 DECLARE
     v_available  DECIMAL(15,3);
-    v_movement_id INTEGER;
+    v_movement_id UUID;
     v_ref_num    VARCHAR(50);
 BEGIN
     -- Validate same store check
     IF p_from_store_id = p_to_store_id THEN
-        RETURN QUERY SELECT false, 'Source and destination stores must differ.', NULL::INTEGER;
+        RETURN QUERY SELECT false, 'Source and destination stores must differ.', NULL::UUID;
         RETURN;
     END IF;
 
@@ -1967,7 +1972,7 @@ BEGIN
     IF v_available IS NULL OR v_available < p_quantity THEN
         RETURN QUERY SELECT false,
             format('Insufficient stock. Available: %s, Requested: %s', COALESCE(v_available, 0), p_quantity),
-            NULL::INTEGER;
+            NULL::UUID;
         RETURN;
     END IF;
 
@@ -2426,7 +2431,7 @@ BEGIN
             from_store_id, to_store_id, from_location_id, to_location_id,
             quantity, uom_id, batch_number, posted_by, status, metadata
         ) VALUES (
-            'transfer_out', 'transfer_request', p_transfer_request_id, v_item.product_id, v_item.product_variant_id,
+            'transfer_out', 'transfer_request', p_transfer_request_id::text, v_item.product_id, v_item.product_variant_id,
             v_req.from_store_id, v_req.to_store_id, v_item.from_location_id, v_item.to_location_id,
             v_base_qty, v_item.uom_id, v_item.batch_number, p_shipped_by, 'shipped',
             jsonb_build_object('transfer_number', v_req.transfer_number)
@@ -2621,7 +2626,7 @@ BEGIN
             from_store_id, to_store_id, from_location_id, to_location_id,
             quantity, uom_id, batch_number, posted_by, status, metadata
         ) VALUES (
-            'transfer_in', 'transfer_request', p_transfer_request_id, v_item.product_id, v_item.product_variant_id,
+            'transfer_in', 'transfer_request', p_transfer_request_id::text, v_item.product_id, v_item.product_variant_id,
             v_req.from_store_id, v_req.to_store_id, v_item.from_location_id, v_item.to_location_id,
             v_base_qty, v_item.uom_id, v_item.batch_number, p_received_by, 'completed',
             jsonb_build_object('transfer_number', v_req.transfer_number)
@@ -2731,7 +2736,7 @@ BEGIN
             to_store_id, to_location_id, quantity, uom_id, batch_number,
             posted_by, status, cost_per_unit, total_value, metadata
         ) VALUES (
-            'purchase_receipt', 'goods_receipt_note', p_grn_id, v_item.product_id, v_item.product_variant_id,
+            'purchase_receipt', 'goods_receipt_note', p_grn_id::text, v_item.product_id, v_item.product_variant_id,
             v_grn.store_id, v_item.storage_location_id, v_item.quantity_received, v_item.uom_id, COALESCE(v_item.batch_number, ''),
             v_grn.received_by, 'completed', COALESCE(v_item.unit_cost, 0), (COALESCE(v_item.unit_cost, 0) * v_item.quantity_received),
             jsonb_build_object('grn_number', v_grn.grn_number, 'delivery_note_number', COALESCE(v_grn.delivery_note_number, ''))
@@ -2822,7 +2827,9 @@ $$ LANGUAGE plpgsql;
 -- FIX #3 (P0): Auto stock adjustment after physical count
 -- =====================================================
 
-CREATE OR REPLACE FUNCTION fn_reconcile_stock_count(p_count_id INTEGER)
+DROP FUNCTION IF EXISTS fn_reconcile_stock_count(INTEGER);
+
+CREATE OR REPLACE FUNCTION fn_reconcile_stock_count(p_count_id UUID)
 RETURNS TABLE (
     success       BOOLEAN,
     message       TEXT,
@@ -2862,7 +2869,7 @@ BEGIN
         INSERT INTO stock_movements (movement_type, reference_type, reference_id, product_id,
             product_variant_id, to_store_id, quantity, batch_number, serial_number,
             posted_by, status, metadata)
-        VALUES ('count_adjustment', 'stock_count', p_count_id, v_line.product_id,
+        VALUES ('count_adjustment', 'stock_count', p_count_id::text, v_line.product_id,
                 v_line.product_variant_id, v_count.store_id,
                 v_line.counted_quantity - v_line.system_quantity,
                 v_line.batch_number, v_line.serial_number,
@@ -2891,6 +2898,8 @@ DECLARE
     v_fulfilled_qty DECIMAL(15,3);
     v_conv_factor DECIMAL(15,6);
     v_base_fulfilled_qty DECIMAL(15,3);
+    v_reserved_qty DECIMAL(15,3);
+    v_release_allocated_qty DECIMAL(15,3);
     v_reservation RECORD;
 BEGIN
     -- Process when fulfillment_status becomes 'fulfilled'
@@ -2944,14 +2953,39 @@ BEGIN
         -- Convert quantity to base units (e.g. 2 Cartons * 10 = 20 Base Pieces)
         v_base_fulfilled_qty := v_fulfilled_qty * v_conv_factor;
 
+        -- Only release quantity_allocated that was actually reserved/allocated for THIS sales order
+        -- (either via stock_reservations or via fn_trigger_allocate_inventory_on_order_line).
+        -- Direct backoffice orders without prior allocation must not decrement quantity_allocated.
+        SELECT COALESCE(SUM(quantity_reserved), 0) INTO v_reserved_qty
+        FROM stock_reservations
+        WHERE reference_type = 'sales_order'
+          AND reference_id = NEW.id::TEXT
+          AND product_id = v_order_line.product_id
+          AND (product_variant_id = v_order_line.product_variant_id
+               OR (product_variant_id IS NULL AND v_order_line.product_variant_id IS NULL))
+          AND store_id = NEW.store_id
+          AND status = 'active';
+        v_reserved_qty := COALESCE(v_reserved_qty, 0) + COALESCE((
+            SELECT SUM(quantity)
+            FROM stock_movements
+            WHERE movement_type = 'allocation'
+              AND reference_type = 'sales_order'
+              AND metadata->>'sales_order_id' = NEW.id::TEXT
+              AND product_id = v_order_line.product_id
+              AND (product_variant_id = v_order_line.product_variant_id
+                   OR (product_variant_id IS NULL AND v_order_line.product_variant_id IS NULL))
+              AND from_store_id = NEW.store_id
+        ), 0);
+        v_release_allocated_qty := LEAST(v_base_fulfilled_qty, v_reserved_qty);
+
         -- 1. FULFILLMENT DEDUCTION: Deduct base units from inventory_stock
         UPDATE inventory_stock
         SET 
             quantity_on_hand = GREATEST(0, quantity_on_hand - v_base_fulfilled_qty),
-            quantity_allocated = GREATEST(0, quantity_allocated - v_base_fulfilled_qty),
+            quantity_allocated = GREATEST(0, quantity_allocated - v_release_allocated_qty),
             quantity_available = GREATEST(0, 
                 (quantity_on_hand - v_base_fulfilled_qty) - 
-                GREATEST(0, quantity_allocated - v_base_fulfilled_qty)
+                GREATEST(0, quantity_allocated - v_release_allocated_qty)
             ),
             updated_at = CURRENT_TIMESTAMP
         WHERE product_id = v_order_line.product_id
@@ -3102,7 +3136,7 @@ BEGIN
         from_store_id, quantity, uom_id, status, metadata
     )
     VALUES (
-        'sale', 'pos_transaction', NEW.transaction_id, NEW.product_id, NEW.product_variant_id,
+        'sale', 'pos_transaction', NEW.transaction_id::text, NEW.product_id, NEW.product_variant_id,
         v_store_id, NEW.quantity, NEW.uom_id, 'completed',
         jsonb_build_object('pos_line_id', NEW.id, 'batch_number', COALESCE(NEW.batch_number, ''))
     );
@@ -3201,11 +3235,13 @@ CREATE TRIGGER trg_allocate_inventory_on_order_line_insert
 -- FIX #26 (P1): Loyalty points earning calculation
 -- =====================================================
 
-CREATE OR REPLACE FUNCTION fn_calculate_loyalty_earned(p_transaction_id INTEGER)
+DROP FUNCTION IF EXISTS fn_calculate_loyalty_earned(INTEGER);
+
+CREATE OR REPLACE FUNCTION fn_calculate_loyalty_earned(p_transaction_id UUID)
 RETURNS TABLE (
     points_earned  DECIMAL(15,2),
     rule_applied   VARCHAR(255),
-    customer_id    INTEGER
+    customer_id    UUID
 ) AS $$
 DECLARE
     v_txn        RECORD;
@@ -3218,7 +3254,7 @@ BEGIN
     WHERE pt.id = p_transaction_id;
 
     IF NOT FOUND OR v_txn.cust_id IS NULL THEN
-        RETURN QUERY SELECT 0::DECIMAL(15,2), 'No customer on transaction'::VARCHAR(255), NULL::INTEGER;
+        RETURN QUERY SELECT 0::DECIMAL(15,2), 'No customer on transaction'::VARCHAR(255), NULL::UUID;
         RETURN;
     END IF;
 
@@ -3425,19 +3461,21 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP FUNCTION IF EXISTS fn_get_kds_orders(INTEGER, VARCHAR[]);
+
 CREATE OR REPLACE FUNCTION fn_get_kds_orders(
     p_store_id      INTEGER,
     p_statuses      VARCHAR[] DEFAULT ARRAY['pending','confirmed','preparing']
 )
 RETURNS TABLE (
-    order_id            INTEGER,
+    order_id            UUID,
     order_number        VARCHAR,
     table_number        VARCHAR,
     waiter_name         VARCHAR,
     order_status        VARCHAR,
     ordered_at          TIMESTAMP,
     minutes_elapsed     NUMERIC,
-    item_id             INTEGER,
+    item_id             UUID,
     item_name           VARCHAR,
     item_short_name     VARCHAR,
     item_qty            NUMERIC,
@@ -4290,7 +4328,7 @@ BEGIN
             movement_type, reference_type, reference_id, product_id, product_variant_id,
             to_store_id, quantity, uom_id, batch_number, serial_number, metadata
         ) VALUES (
-            'return', 'sales_return', NEW.return_id, NEW.product_id, NEW.product_variant_id,
+            'return', 'sales_return', NEW.return_id::text, NEW.product_id, NEW.product_variant_id,
             v_store_id, NEW.quantity, v_uom_id, NEW.batch_number, NEW.serial_number,
             jsonb_build_object('return_line_id', NEW.id, 'condition', COALESCE(NEW.condition, 'good'))
         );
@@ -4317,7 +4355,9 @@ $$ LANGUAGE plpgsql;
 DROP TRIGGER IF EXISTS trg_process_sales_return ON sales_return_lines;
 
 -- Helper function to calculate remaining returnable quantity for a pos_transaction_line
-CREATE OR REPLACE FUNCTION fn_get_returnable_quantity(p_original_line_id INT)
+DROP FUNCTION IF EXISTS fn_get_returnable_quantity(INTEGER);
+
+CREATE OR REPLACE FUNCTION fn_get_returnable_quantity(p_original_line_id UUID)
 RETURNS NUMERIC AS $$
 DECLARE
     v_orig_qty NUMERIC(15,3);
@@ -4352,6 +4392,7 @@ $$ LANGUAGE plpgsql;
 -- ---------------------------------------------------------------------
 -- 1. Real-Time Operational P&L & COGS View
 -- ---------------------------------------------------------------------
+DROP VIEW IF EXISTS vw_realtime_pnl CASCADE;
 CREATE OR REPLACE VIEW vw_realtime_pnl AS
 WITH daily_pos_sales AS (
     SELECT
@@ -4440,6 +4481,7 @@ LEFT JOIN daily_invoices di ON di.store_id = ap.store_id AND di.period_date = ap
 -- ---------------------------------------------------------------------
 -- 2. Cashier Shift Drawer & Tender Reconciliation View
 -- ---------------------------------------------------------------------
+DROP VIEW IF EXISTS vw_cashier_shift_reconciliation CASCADE;
 CREATE OR REPLACE VIEW vw_cashier_shift_reconciliation AS
 WITH payments_summary AS (
     SELECT
@@ -4506,6 +4548,7 @@ LEFT JOIN refunds_summary rs ON rs.cashier_session_id = cs.id;
 -- ---------------------------------------------------------------------
 -- 3. Stock Movement Running Ledger & Inventory Valuation View
 -- ---------------------------------------------------------------------
+DROP VIEW IF EXISTS vw_stock_movement_ledger CASCADE;
 CREATE OR REPLACE VIEW vw_stock_movement_ledger AS
 SELECT
     sm.id AS movement_id,
@@ -4636,6 +4679,7 @@ ORDER BY total_outstanding DESC;
 -- ---------------------------------------------------------------------
 -- 6. Tax / VAT Reconciliation Summary View
 -- ---------------------------------------------------------------------
+DROP VIEW IF EXISTS vw_tax_vat_summary CASCADE;
 CREATE OR REPLACE VIEW vw_tax_vat_summary AS
 WITH output_vat AS (
     SELECT
@@ -4700,7 +4744,7 @@ ORDER BY ap.period_month DESC, s.name;
 CREATE OR REPLACE FUNCTION "public"."trg_record_change_log"() RETURNS trigger LANGUAGE plpgsql AS $$
 DECLARE
     v_entity_type VARCHAR(50);
-    v_entity_id   BIGINT;
+    v_entity_id   TEXT;
     v_payload     JSONB;
     v_seq         BIGINT;
 BEGIN
@@ -4716,10 +4760,10 @@ BEGIN
 
     v_entity_type := TG_ARGV[0];
     IF TG_OP = 'DELETE' THEN
-        v_entity_id := OLD.id;
+        v_entity_id := OLD.id::text;
         v_payload := to_jsonb(OLD);
     ELSE
-        v_entity_id := NEW.id;
+        v_entity_id := NEW.id::text;
         v_payload := to_jsonb(NEW);
     END IF;
 

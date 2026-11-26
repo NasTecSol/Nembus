@@ -18,6 +18,7 @@ import (
 
 	"github.com/NasTecSol/nembus-core/repository"
 	"github.com/beevik/etree"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -242,7 +243,7 @@ func TestZatcaCheckoutRejectsBadAmountsBeforeWritingSale(t *testing.T) {
 	_ = price.Scan("100.00")
 	_ = tax.Scan("15.00")
 	_ = total.Scan("115.00")
-	response := pos.CreateTransaction(context.Background(), &PosCreateTransactionInput{StoreID: 1, CashierID: 1, CashierSessionID: 1, PosTerminalID: 1, Subtotal: price, TaxAmount: tax, TotalAmount: total,
+	response := pos.CreateTransaction(context.Background(), &PosCreateTransactionInput{StoreID: 1, CashierID: 1, CashierSessionID: uuid.MustParse("00000000-0000-4000-8000-000000000001"), PosTerminalID: 1, Subtotal: price, TaxAmount: tax, TotalAmount: total,
 		Lines: []PosCreateTransactionLineInput{{ProductID: 1, Quantity: quantity, UnitPrice: price, Subtotal: price, TaxAmount: tax, LineTotal: total}}})
 	if response.StatusCode != 400 || db.createdTransactions != 0 {
 		t.Fatalf("invalid sale must fail before inserts: %+v, writes=%d", response, db.createdTransactions)

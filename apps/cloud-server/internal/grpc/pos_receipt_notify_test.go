@@ -3,26 +3,28 @@ package grpc
 import "testing"
 
 func TestPosReceiptDecision(t *testing.T) {
+	const txUUID = "00000000-0000-0000-0000-000000000009"
+	const custUUID = "00000000-0000-0000-0000-000000000004"
 	id, number, _, _, customer, phone, ok := posReceiptDecision([]byte(`{
-		"id": 9,
+		"id": "` + txUUID + `",
 		"transaction_number": "POS-9",
 		"status": "completed",
 		"store_id": 3,
-		"customer_id": 4,
+		"customer_id": "` + custUUID + `",
 		"metadata": {"customer_phone": "+923216061056"},
 		"voided_at": null
 	}`))
-	if !ok || id != 9 || number != "POS-9" || customer == nil || *customer != 4 || phone != "+923216061056" {
-		t.Fatalf("completed sale: id=%d number=%s ok=%v customer=%v phone=%s", id, number, ok, customer, phone)
+	if !ok || id != txUUID || number != "POS-9" || customer == nil || *customer != custUUID || phone != "+923216061056" {
+		t.Fatalf("completed sale: id=%s number=%s ok=%v customer=%v phone=%s", id, number, ok, customer, phone)
 	}
 
-	if _, _, _, _, _, _, ok := posReceiptDecision([]byte(`{"id":9,"transaction_number":"POS-9","status":"completed","voided_at":"2026-11-03T00:00:00Z"}`)); ok {
+	if _, _, _, _, _, _, ok := posReceiptDecision([]byte(`{"id":"` + txUUID + `","transaction_number":"POS-9","status":"completed","voided_at":"2026-11-03T00:00:00Z"}`)); ok {
 		t.Fatal("voided sale was enqueued")
 	}
-	if _, _, _, _, _, _, ok := posReceiptDecision([]byte(`{"id":9,"transaction_number":"POS-9","status":"voided"}`)); ok {
+	if _, _, _, _, _, _, ok := posReceiptDecision([]byte(`{"id":"` + txUUID + `","transaction_number":"POS-9","status":"voided"}`)); ok {
 		t.Fatal("void status was enqueued")
 	}
-	if _, _, _, _, _, _, ok := posReceiptDecision([]byte(`{"id":9,"status":"completed"}`)); ok {
+	if _, _, _, _, _, _, ok := posReceiptDecision([]byte(`{"id":"` + txUUID + `","status":"completed"}`)); ok {
 		t.Fatal("sale without a receipt number was enqueued")
 	}
 }

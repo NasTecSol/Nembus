@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -59,7 +60,7 @@ DELETE FROM kiosk_sessions
 WHERE id = $1
 `
 
-func (q *Queries) DeleteKioskSession(ctx context.Context, id int32) error {
+func (q *Queries) DeleteKioskSession(ctx context.Context, id uuid.UUID) error {
 	_, err := q.db.Exec(ctx, deleteKioskSession, id)
 	return err
 }
@@ -71,7 +72,7 @@ WHERE id = $1 LIMIT 1
 `
 
 // kiosk_sessions.sql
-func (q *Queries) GetKioskSession(ctx context.Context, id int32) (KioskSession, error) {
+func (q *Queries) GetKioskSession(ctx context.Context, id uuid.UUID) (KioskSession, error) {
 	row := q.db.QueryRow(ctx, getKioskSession, id)
 	var i KioskSession
 	err := row.Scan(
@@ -157,7 +158,7 @@ RETURNING id, pos_terminal_id, store_id, session_token, status, opened_at, close
 `
 
 type UpdateKioskSessionParams struct {
-	ID       int32            `json:"id"`
+	ID       uuid.UUID        `json:"id"`
 	Status   pgtype.Text      `json:"status"`
 	ClosedAt pgtype.Timestamp `json:"closed_at"`
 	Metadata json.RawMessage  `json:"metadata"`

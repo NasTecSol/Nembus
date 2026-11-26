@@ -40,6 +40,7 @@ message SyncEvent {
   string batch_id = 15;                     // Correlation batch identifier (empty = legacy single-event apply)
   int32 batch_size = 16;                    // Total events in this correlation batch
   int32 seq_in_batch = 17;                  // 1-based position within the batch (1..batch_size)
+  string entity_key = 18;                   // Canonical string PK (UUID string or decimal int)
 }
 
 // SyncAck acknowledges receipt and processing of a SyncEvent or atomic correlation batch
@@ -55,6 +56,7 @@ message SyncAck {
   string outbox_uuid = 9;                     // Outbox UUID acknowledged (or failed item's UUID)
   int32 failed_seq = 10;                      // 1-based seq_in_batch of offending event on batch failure
   string sql_state = 11;                      // 5-char PostgreSQL SQLSTATE if failed due to DB error
+  string entity_key = 12;                     // Canonical string PK acknowledged (UUID string or decimal int)
 }
 
 // PullRequest initiates incremental delta-fetch from Cloud (legacy)
@@ -64,6 +66,7 @@ message PullRequest {
   google.protobuf.Timestamp since = 3; // Sync watermark timestamp (records updated_at > since)
   repeated string entity_types = 4;    // Filter requested entities (empty = all)
   int32 limit = 5;                     // Maximum records to fetch
+  string after_key = 6;                // Optional tie-breaker cursor PK (UUID string or decimal int)
 }
 
 // StreamChangesRequest initiates gap-safe change_log pull from Cloud
@@ -86,6 +89,7 @@ message ChangeEvent {
   google.protobuf.Timestamp changed_at = 7;  // Timestamp when the change was recorded
   bool is_snapshot_mode = 8;                 // True when catching up across compacted change_log history
   int64 snapshot_max_seq = 9;                // Target sequence cursor to advance to once snapshot catchup finishes
+  string entity_key = 10;                    // Canonical string PK (UUID string or decimal int)
 }
 
 // SessionClientMsg is sent by POS over the persistent StreamSession RPC

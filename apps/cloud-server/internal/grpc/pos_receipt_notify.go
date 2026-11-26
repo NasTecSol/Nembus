@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"strconv"
 	"strings"
 
 	"github.com/NasTecSol/nembus-core/repository"
@@ -15,22 +16,21 @@ import (
 // posReceiptDecision reports whether a synced pos_transactions payload should
 // enqueue a customer receipt. Lines and the ZATCA QR are loaded when the
 // notification is sent.
-func posReceiptDecision(payload []byte) (id int64, number string, storeID int32, orgID int32, customerID *int32, metaPhone string, enqueue bool) {
+func posReceiptDecision(payload []byte) (id string, number string, storeID int32, orgID int32, customerID *string, metaPhone string, enqueue bool) {
 	if len(payload) == 0 {
-		return 0, "", 0, 0, nil, "", false
+		return "", "", 0, 0, nil, "", false
 	}
 	var raw map[string]json.RawMessage
 	if err := json.Unmarshal(payload, &raw); err != nil {
-		return 0, "", 0, 0, nil, "", false
+		return "", "", 0, 0, nil, "", false
 	}
-	id = jsonInt64(raw["id"])
+	id = jsonEntityIDString(raw["id"])
 	number = jsonString(raw["transaction_number"])
 	storeID = int32(jsonInt64(raw["store_id"]))
 	orgID = int32(jsonInt64(raw["organization_id"]))
 	metaPhone = metadataStringField(raw["metadata"], "customer_phone")
-	if n := jsonInt64(raw["customer_id"]); n > 0 {
-		v := int32(n)
-		customerID = &v
+	if cid := jsonEntityIDString(raw["customer_id"]); cid != "" {
+		customerID = &cid
 	}
 	status := strings.ToLower(strings.TrimSpace(jsonString(raw["status"])))
 	if status != "" && status != "completed" {
@@ -39,10 +39,20 @@ func posReceiptDecision(payload []byte) (id int64, number string, storeID int32,
 	if jsonPresent(raw["voided_at"]) || jsonPresent(raw["voided_by"]) {
 		return id, number, storeID, orgID, customerID, metaPhone, false
 	}
-	if id == 0 || number == "" {
+	if id == "" || number == "" {
 		return id, number, storeID, orgID, customerID, metaPhone, false
 	}
 	return id, number, storeID, orgID, customerID, metaPhone, true
+}
+
+func jsonEntityIDString(raw json.RawMessage) string {
+	if s := jsonString(raw); s != "" {
+		return s
+	}
+	if n := jsonInt64(raw); n > 0 {
+		return strconv.FormatInt(n, 10)
+	}
+	return ""
 }
 
 func jsonString(raw json.RawMessage) string {
@@ -109,10 +119,10 @@ type syncedReceiptContact struct {
 	cartEmail     string
 	customerPhone string
 	customerEmail string
-	customerID    pgtype.Int4
+	customerID    pgtype.Text
 }
 
-func loadSyncedReceiptContact(ctx context.Context, pool *pgxpool.Pool, txID int64) (syncedReceiptContact, error) {
+func loadSyncedReceiptContact(ctx context.Context, pool *pgxpool.Pool, txID string) (syncedReceiptContact, error) {
 	var contact syncedReceiptContact
 	err := pool.QueryRow(ctx, `
 		SELECT
@@ -124,12 +134,12 @@ func loadSyncedReceiptContact(ctx context.Context, pool *pgxpool.Pool, txID int6
 			COALESCE(cart.guest_email, ''),
 			COALESCE(cu.phone, ''),
 			COALESCE(cu.email, ''),
-			pt.customer_id
+			pt.customer_id::text
 		FROM pos_transactions pt
 		LEFT JOIN sales_orders_v2 so ON so.id = pt.sales_order_id
 		LEFT JOIN carts cart ON cart.id = pt.source_cart_id
 		LEFT JOIN customers cu ON cu.id = pt.customer_id
-		WHERE pt.id = $1
+		WHERE pt.id::text = $1
 	`, txID).Scan(
 		&contact.metaPhone, &contact.metaEmail,
 		&contact.orderPhone, &contact.orderEmail,
@@ -143,11 +153,11 @@ func loadSyncedReceiptContact(ctx context.Context, pool *pgxpool.Pool, txID int6
 // posReceiptContactEligible mirrors POS CreateTransaction: enqueue when the
 // sale has a customer id or a reachable phone/email on the transaction, order,
 // cart guest fields, or linked customer record.
-func posReceiptContactEligible(ctx context.Context, pool *pgxpool.Pool, txID int64, payloadCustomerID *int32, payloadMetaPhone string) (bool, string, string) {
-	if pool == nil || txID == 0 {
+func posReceiptContactEligible(ctx context.Context, pool *pgxpool.Pool, txID string, payloadCustomerID *string, payloadMetaPhone string) (bool, string, string) {
+	if pool == nil || strings.TrimSpace(txID) == "" {
 		return false, "", "transaction id missing"
 	}
-	if payloadCustomerID != nil {
+	if payloadCustomerID != nil && strings.TrimSpace(*payloadCustomerID) != "" {
 		contact, err := loadSyncedReceiptContact(ctx, pool, txID)
 		if err != nil {
 			return true, resolveReceiptPhone(payloadMetaPhone, "", "", ""), ""
@@ -159,7 +169,7 @@ func posReceiptContactEligible(ctx context.Context, pool *pgxpool.Pool, txID int
 	if err != nil {
 		return false, "", "transaction not found"
 	}
-	if contact.customerID.Valid {
+	if contact.customerID.Valid && strings.TrimSpace(contact.customerID.String) != "" {
 		phone := resolveReceiptPhone(payloadMetaPhone, contact.orderPhone, contact.cartPhone, contact.customerPhone)
 		return true, phone, ""
 	}
@@ -188,18 +198,18 @@ func EnqueuePosReceiptNotification(ctx context.Context, pool *pgxpool.Pool, payl
 	return enqueuePosReceiptForTransaction(ctx, pool, id, number, storeID, orgID, customerID, metaPhone)
 }
 
-func enqueuePosReceiptForTransaction(ctx context.Context, pool *pgxpool.Pool, id int64, number string, storeID, orgID int32, customerID *int32, payloadMetaPhone string) error {
+func enqueuePosReceiptForTransaction(ctx context.Context, pool *pgxpool.Pool, id string, number string, storeID, orgID int32, customerID *string, payloadMetaPhone string) error {
 	if orgID == 0 && storeID > 0 {
 		if err := pool.QueryRow(ctx, `SELECT organization_id FROM stores WHERE id = $1`, storeID).Scan(&orgID); err != nil {
 			return fmt.Errorf("receipt organization for store %d: %w", storeID, err)
 		}
 	}
 	if orgID == 0 {
-		return fmt.Errorf("receipt organization missing for transaction %d", id)
+		return fmt.Errorf("receipt organization missing for transaction %s", id)
 	}
 	eligible, phone, reason := posReceiptContactEligible(ctx, pool, id, customerID, payloadMetaPhone)
 	if !eligible {
-		log.Printf("[gRPC SyncServer] skip pos.receipt for transaction %d (%s): %s", id, number, reason)
+		log.Printf("[gRPC SyncServer] skip pos.receipt for transaction %s (%s): %s", id, number, reason)
 		return nil
 	}
 	body := map[string]any{
@@ -221,8 +231,8 @@ func enqueuePosReceiptForTransaction(ctx context.Context, pool *pgxpool.Pool, id
 		OrganizationID: orgID,
 		EventTypeID:    "pos.receipt",
 		EntityType:     "pos_transaction",
-		EntityID:       fmt.Sprintf("%d", id),
-		IdempotencyKey: fmt.Sprintf("pos.receipt:%d:%s", id, number),
+		EntityID:       id,
+		IdempotencyKey: fmt.Sprintf("pos.receipt:%s:%s", id, number),
 		Payload:        encoded,
 	})
 	return err
@@ -238,26 +248,27 @@ func EnqueuePosReceiptAfterLineSync(ctx context.Context, pool *pgxpool.Pool, lin
 	if err := json.Unmarshal(linePayload, &raw); err != nil {
 		return
 	}
-	txID := jsonInt64(raw["transaction_id"])
-	if txID == 0 {
+	txID := jsonEntityIDString(raw["transaction_id"])
+	if txID == "" {
 		return
 	}
 	var number string
 	var storeID, orgID int32
-	var customerID pgtype.Int4
+	var customerID pgtype.Text
 	err := pool.QueryRow(ctx, `
 		SELECT transaction_number, store_id, COALESCE(
 			(SELECT organization_id FROM stores s WHERE s.id = pt.store_id), 0
-		), customer_id
+		), customer_id::text
 		FROM pos_transactions pt
-		WHERE pt.id = $1
+		WHERE pt.id::text = $1
 	`, txID).Scan(&number, &storeID, &orgID, &customerID)
 	if err != nil || strings.TrimSpace(number) == "" {
 		return
 	}
-	var custPtr *int32
-	if customerID.Valid {
-		custPtr = &customerID.Int32
+	var custPtr *string
+	if customerID.Valid && strings.TrimSpace(customerID.String) != "" {
+		val := strings.TrimSpace(customerID.String)
+		custPtr = &val
 	}
 	if err := enqueuePosReceiptForTransaction(ctx, pool, txID, number, storeID, orgID, custPtr, ""); err != nil {
 		log.Printf("[gRPC SyncServer] pos receipt notification enqueue (lines): %v", err)

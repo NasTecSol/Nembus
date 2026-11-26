@@ -39,8 +39,8 @@ func TestEnqueuePosReceiptIdempotent(t *testing.T) {
 	if _, err := pool.Exec(ctx, `
 		CREATE TABLE stores (id integer PRIMARY KEY, organization_id integer NOT NULL, name text);
 		INSERT INTO stores (id, organization_id, name) VALUES (3, 7, 'Main');
-		CREATE TABLE customers (id integer PRIMARY KEY, phone text, email text);
-		INSERT INTO customers (id, phone, email) VALUES (4, '966500000001', '');
+		CREATE TABLE customers (id uuid PRIMARY KEY, phone text, email text);
+		INSERT INTO customers (id, phone, email) VALUES ('00000000-0000-0000-0000-000000000004', '966500000001', '');
 		CREATE TABLE carts (id uuid PRIMARY KEY, guest_phone varchar(50), guest_email varchar(255));
 		INSERT INTO carts VALUES ('00000000-0000-0000-0000-000000000001', '+923216061056', '');
 		CREATE TABLE sales_orders_v2 (
@@ -51,9 +51,9 @@ func TestEnqueuePosReceiptIdempotent(t *testing.T) {
 		);
 		INSERT INTO sales_orders_v2 VALUES ('00000000-0000-0000-0000-000000000002', '', '', '00000000-0000-0000-0000-000000000001');
 		CREATE TABLE pos_transactions (
-			id bigint PRIMARY KEY,
+			id uuid PRIMARY KEY,
 			store_id integer NOT NULL REFERENCES stores(id),
-			customer_id integer REFERENCES customers(id),
+			customer_id uuid REFERENCES customers(id),
 			sales_order_id uuid REFERENCES sales_orders_v2(id),
 			source_cart_id uuid REFERENCES carts(id),
 			transaction_number text NOT NULL,
@@ -61,9 +61,9 @@ func TestEnqueuePosReceiptIdempotent(t *testing.T) {
 			metadata jsonb DEFAULT '{}'::jsonb
 		);
 		INSERT INTO pos_transactions (id, store_id, sales_order_id, source_cart_id, transaction_number, status)
-		VALUES (11, 3, '00000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000000001', 'POS-11', 'completed');
+		VALUES ('00000000-0000-0000-0000-000000000011', 3, '00000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000000001', 'POS-11', 'completed');
 		INSERT INTO pos_transactions (id, store_id, customer_id, transaction_number, status)
-		VALUES (9, 3, 4, 'POS-9', 'completed');
+		VALUES ('00000000-0000-0000-0000-000000000009', 3, '00000000-0000-0000-0000-000000000004', 'POS-9', 'completed');
 		CREATE TABLE notification_events (
 			id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
 			organization_id integer NOT NULL,
@@ -80,25 +80,25 @@ func TestEnqueuePosReceiptIdempotent(t *testing.T) {
 	`); err != nil {
 		t.Fatal(err)
 	}
-	payload := []byte(`{"id":9,"transaction_number":"POS-9","status":"completed","store_id":3,"customer_id":4,"voided_at":null}`)
+	payload := []byte(`{"id":"00000000-0000-0000-0000-000000000009","transaction_number":"POS-9","status":"completed","store_id":3,"customer_id":"00000000-0000-0000-0000-000000000004","voided_at":null}`)
 	if err := EnqueuePosReceiptNotification(ctx, pool, payload); err != nil {
 		t.Fatal(err)
 	}
 	if err := EnqueuePosReceiptNotification(ctx, pool, payload); err != nil {
 		t.Fatal(err)
 	}
-	voided := []byte(`{"id":10,"transaction_number":"POS-10","status":"voided","store_id":3}`)
+	voided := []byte(`{"id":"00000000-0000-0000-0000-000000000010","transaction_number":"POS-10","status":"voided","store_id":3}`)
 	if err := EnqueuePosReceiptNotification(ctx, pool, voided); err != nil {
 		t.Fatal(err)
 	}
-	noContact := []byte(`{"id":12,"transaction_number":"POS-12","status":"completed","store_id":3}`)
-	if _, err := pool.Exec(ctx, `INSERT INTO pos_transactions (id, store_id, transaction_number, status) VALUES (12, 3, 'POS-12', 'completed')`); err != nil {
+	noContact := []byte(`{"id":"00000000-0000-0000-0000-000000000012","transaction_number":"POS-12","status":"completed","store_id":3}`)
+	if _, err := pool.Exec(ctx, `INSERT INTO pos_transactions (id, store_id, transaction_number, status) VALUES ('00000000-0000-0000-0000-000000000012', 3, 'POS-12', 'completed')`); err != nil {
 		t.Fatal(err)
 	}
 	if err := EnqueuePosReceiptNotification(ctx, pool, noContact); err != nil {
 		t.Fatal(err)
 	}
-	guestPayload := []byte(`{"id":11,"transaction_number":"POS-11","status":"completed","store_id":3,"sales_order_id":"00000000-0000-0000-0000-000000000002","source_cart_id":"00000000-0000-0000-0000-000000000001"}`)
+	guestPayload := []byte(`{"id":"00000000-0000-0000-0000-000000000011","transaction_number":"POS-11","status":"completed","store_id":3,"sales_order_id":"00000000-0000-0000-0000-000000000002","source_cart_id":"00000000-0000-0000-0000-000000000001"}`)
 	if err := EnqueuePosReceiptNotification(ctx, pool, guestPayload); err != nil {
 		t.Fatal(err)
 	}
@@ -112,15 +112,15 @@ func TestEnqueuePosReceiptIdempotent(t *testing.T) {
 	if err := pool.QueryRow(ctx, `
 		SELECT idempotency_key, status, organization_id, payload->>'customer_phone'
 		FROM notification_events
-		WHERE idempotency_key = 'pos.receipt:9:POS-9'
+		WHERE idempotency_key = 'pos.receipt:00000000-0000-0000-0000-000000000009:POS-9'
 	`).Scan(&key, &status, &org, &payloadPhone); err != nil {
 		t.Fatal(err)
 	}
-	if key != "pos.receipt:9:POS-9" || status != "pending" || org != 7 || payloadPhone != "966500000001" {
+	if key != "pos.receipt:00000000-0000-0000-0000-000000000009:POS-9" || status != "pending" || org != 7 || payloadPhone != "966500000001" {
 		t.Fatalf("event key=%s status=%s org=%d phone=%s", key, status, org, payloadPhone)
 	}
 	if err := pool.QueryRow(ctx, `
-		SELECT payload->>'customer_phone' FROM notification_events WHERE idempotency_key = 'pos.receipt:11:POS-11'
+		SELECT payload->>'customer_phone' FROM notification_events WHERE idempotency_key = 'pos.receipt:00000000-0000-0000-0000-000000000011:POS-11'
 	`).Scan(&payloadPhone); err != nil || payloadPhone != "+923216061056" {
 		t.Fatalf("guest cart phone: %s err=%v", payloadPhone, err)
 	}

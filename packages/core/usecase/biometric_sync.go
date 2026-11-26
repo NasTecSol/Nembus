@@ -8,11 +8,12 @@ import (
 
 	"github.com/NasTecSol/nembus-core/biometrics"
 	"github.com/NasTecSol/nembus-core/repository"
+	"github.com/google/uuid"
 )
 
 // syncedBiometricRow mirrors JSON payloads from sync_queue / StreamPull.
 type syncedBiometricRow struct {
-	ID               int32     `json:"id"`
+	ID               uuid.UUID `json:"id"`
 	OrganizationID   int32     `json:"organization_id"`
 	UserID           int32     `json:"user_id"`
 	FingerIndex      int16     `json:"finger_index"`

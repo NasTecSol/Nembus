@@ -2,7 +2,6 @@ package handler
 
 import (
 	"errors"
-	"strconv"
 
 	"github.com/NasTecSol/nembus-core/middleware"
 	"github.com/NasTecSol/nembus-core/repository"
@@ -44,11 +43,11 @@ func (h *ZatcaHandler) GetSalesOrderDocumentStatus(c *gin.Context) {
 		EntityType: usecase.ZatcaSalesOrderEntity, EntityID: id.String(),
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
-		var transactionID int32
+		var transactionID uuid.UUID
 		transactionID, err = repo.GetLegacyZatcaOrderTransaction(ctx, id)
 		if err == nil {
 			entry, err = repo.GetChainEntryByEntity(ctx, repository.GetChainEntryByEntityParams{
-				EntityType: "pos_transaction", EntityID: strconv.Itoa(int(transactionID)),
+				EntityType: "pos_transaction", EntityID: transactionID.String(),
 			})
 		}
 	}

@@ -9,6 +9,7 @@ import (
 	"github.com/NasTecSol/nembus-core/biometrics"
 	"github.com/NasTecSol/nembus-core/repository"
 	"github.com/NasTecSol/nembus-core/utils"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -35,7 +36,7 @@ type EnrollFingerInput struct {
 }
 
 type EnrolledFingerSummary struct {
-	ID               int32     `json:"id"`
+	ID               uuid.UUID `json:"id"`
 	OrganizationID   int32     `json:"organization_id"`
 	UserID           int32     `json:"user_id"`
 	FingerIndex      int16     `json:"finger_index"`

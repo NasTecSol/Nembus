@@ -8,9 +8,8 @@
   ],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 1,
+  "version": 2,
   "refresh": "30s",
-  "editable": true,
   "time": {
     "from": "now-1h",
     "to": "now"
@@ -30,6 +29,7 @@
         "label": "Loki",
         "type": "datasource",
         "query": "loki",
+        "regex": "/-logs$/",
         "refresh": 1,
         "hide": 0
       },
@@ -49,7 +49,7 @@
           "type": "prometheus",
           "uid": "${ds_prometheus}"
         },
-        "query": "label_values(target_info, deployment_environment)",
+        "query": "label_values(target_info{service_namespace=\"nembus\"}, deployment_environment)",
         "includeAll": true,
         "allValue": ".*",
         "multi": true,
@@ -83,26 +83,17 @@
     {
       "id": 1,
       "type": "stat",
-      "title": "Active Nembus Services",
+      "title": "Online Service Instances (5m)",
+      "description": "Unique Nembus service instances reporting telemetry in the last 5 minutes.",
       "gridPos": {
-        "h": 4,
-        "w": 6,
         "x": 0,
-        "y": 0
+        "y": 0,
+        "w": 5,
+        "h": 4
       },
       "datasource": {
         "type": "prometheus",
         "uid": "${ds_prometheus}"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "count(count by (service_name) (last_over_time(target_info{deployment_environment=~\"$environment\"}[3m])))"
-        }
-      ],
-      "options": {
-        "colorMode": "value",
-        "graphMode": "none"
       },
       "fieldConfig": {
         "defaults": {
@@ -120,60 +111,98 @@
               }
             ]
           }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "count(count by (service_name, service_instance_id) (last_over_time(target_info{service_namespace=\"nembus\", deployment_environment=~\"$environment\"}[5m]))) or vector(0)",
+          "instant": true
         }
-      }
+      ]
     },
     {
       "id": 2,
       "type": "stat",
-      "title": "Ecosystem Request Rate",
+      "title": "Real API RPS (excl. /health)",
+      "description": "Combined API request rate across all Nembus apps, excluding health checks and static UI polling.",
       "gridPos": {
-        "h": 4,
-        "w": 6,
-        "x": 6,
-        "y": 0
+        "x": 5,
+        "y": 0,
+        "w": 5,
+        "h": 4
       },
       "datasource": {
         "type": "prometheus",
         "uid": "${ds_prometheus}"
       },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "sum(rate(http_server_requests_total{deployment_environment=~\"$environment\", nembus_tenant_slug=~\"$tenant_slug\"}[5m]))"
-        }
-      ],
       "fieldConfig": {
         "defaults": {
           "unit": "reqps",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
           "decimals": 2
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(http_server_requests_total{deployment_environment=~\"$environment\", nembus_tenant_slug=~\"$tenant_slug\", http_route!~\"/health|/swagger.*|/metrics|/|/app[.]js|/style[.]css|/favicon[.]ico|/api/v1/sync/status|/api/v1/migration/status|/api/v1/logs|/api/v1/onboarding/status|/api/v1/updates/check|/api/notifications/unread-count\"}[$__rate_interval])) or vector(0)",
+          "instant": true
         }
-      }
+      ]
     },
     {
       "id": 3,
       "type": "stat",
-      "title": "HTTP 5xx Error Rate",
+      "title": "HTTP 5xx Error %",
+      "description": "",
       "gridPos": {
-        "h": 4,
-        "w": 6,
-        "x": 12,
-        "y": 0
+        "x": 10,
+        "y": 0,
+        "w": 5,
+        "h": 4
       },
       "datasource": {
         "type": "prometheus",
         "uid": "${ds_prometheus}"
       },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "(sum(rate(http_server_requests_total{deployment_environment=~\"$environment\", nembus_tenant_slug=~\"$tenant_slug\", status_class=\"500\"}[5m])) or vector(0)) / clamp_min((sum(rate(http_server_requests_total{deployment_environment=~\"$environment\", nembus_tenant_slug=~\"$tenant_slug\"}[5m])) or vector(0)), 0.001) * 100"
-        }
-      ],
       "fieldConfig": {
         "defaults": {
-          "unit": "percent",
-          "decimals": 2,
+          "unit": "percentunit",
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -183,37 +212,111 @@
               },
               {
                 "color": "yellow",
-                "value": 1
+                "value": 0.01
               },
               {
                 "color": "red",
-                "value": 5
+                "value": 0.05
               }
             ]
-          }
+          },
+          "decimals": 2
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(sum(rate(http_server_requests_total{deployment_environment=~\"$environment\", nembus_tenant_slug=~\"$tenant_slug\", http_route!~\"/health|/swagger.*|/metrics|/|/app[.]js|/style[.]css|/favicon[.]ico|/api/v1/sync/status|/api/v1/migration/status|/api/v1/logs|/api/v1/onboarding/status|/api/v1/updates/check|/api/notifications/unread-count\", status_class=\"500\"}[$__rate_interval])) / clamp_min(sum(rate(http_server_requests_total{deployment_environment=~\"$environment\", nembus_tenant_slug=~\"$tenant_slug\", http_route!~\"/health|/swagger.*|/metrics|/|/app[.]js|/style[.]css|/favicon[.]ico|/api/v1/sync/status|/api/v1/migration/status|/api/v1/logs|/api/v1/onboarding/status|/api/v1/updates/check|/api/notifications/unread-count\"}[$__rate_interval])), 0.0001)) or vector(0)",
+          "instant": true
         }
-      }
+      ]
     },
     {
       "id": 4,
       "type": "stat",
-      "title": "Active POS Outbox Pending",
+      "title": "HTTP 4xx Errors (1h)",
+      "description": "",
       "gridPos": {
-        "h": 4,
-        "w": 6,
-        "x": 18,
-        "y": 0
+        "x": 15,
+        "y": 0,
+        "w": 4,
+        "h": 4
       },
       "datasource": {
         "type": "prometheus",
         "uid": "${ds_prometheus}"
       },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 10
+              },
+              {
+                "color": "red",
+                "value": 50
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto"
+      },
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(nembus_pos_outbox_pending_rows{deployment_environment=~\"$environment\", nembus_tenant_slug=~\"$tenant_slug\"})"
+          "expr": "round(sum(increase(http_server_requests_total{deployment_environment=~\"$environment\", nembus_tenant_slug=~\"$tenant_slug\", http_route!~\"/health|/swagger.*|/metrics|/|/app[.]js|/style[.]css|/favicon[.]ico|/api/v1/sync/status|/api/v1/migration/status|/api/v1/logs|/api/v1/onboarding/status|/api/v1/updates/check|/api/notifications/unread-count\", status_class=\"400\"}[1h])) or vector(0))",
+          "instant": true
         }
-      ],
+      ]
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "POS Outbox Pending Rows",
+      "description": "",
+      "gridPos": {
+        "x": 19,
+        "y": 0,
+        "w": 5,
+        "h": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${ds_prometheus}"
+      },
       "fieldConfig": {
         "defaults": {
           "unit": "short",
@@ -234,158 +337,342 @@
               }
             ]
           }
-        }
-      }
-    },
-    {
-      "id": 5,
-      "type": "timeseries",
-      "title": "Request Rate by Service",
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 4
+        },
+        "overrides": []
       },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${ds_prometheus}"
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto"
       },
       "targets": [
         {
           "refId": "A",
-          "legendFormat": "{{service_name}}",
-          "expr": "sum by (service_name) (rate(http_server_requests_total{deployment_environment=~\"$environment\", nembus_tenant_slug=~\"$tenant_slug\"}[5m]))"
+          "expr": "sum(nembus_pos_outbox_pending_rows{deployment_environment=~\"$environment\", nembus_tenant_slug=~\"$tenant_slug\"}) or vector(0)",
+          "instant": true
         }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "reqps"
-        }
-      }
+      ]
     },
     {
       "id": 6,
-      "type": "timeseries",
-      "title": "P95 HTTP Latency by Service",
+      "type": "table",
+      "title": "Connected Nembus Fleet (Last 10m)",
+      "description": "Every Nembus service instance active within the last 10 minutes.",
       "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 4
+        "x": 0,
+        "y": 4,
+        "w": 24,
+        "h": 6
       },
       "datasource": {
         "type": "prometheus",
         "uid": "${ds_prometheus}"
       },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "sortBy": [
+          {
+            "displayName": "Value",
+            "desc": true
+          }
+        ]
+      },
+      "transformations": [
+        {
+          "id": "labelsToFields",
+          "options": {
+            "mode": "columns"
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "Value": true
+            },
+            "renameByName": {
+              "service_name": "Service",
+              "service_instance_id": "Instance / Host",
+              "service_version": "Version",
+              "deployment_environment": "Environment"
+            }
+          }
+        }
+      ],
       "targets": [
         {
           "refId": "A",
-          "legendFormat": "{{service_name}}",
-          "expr": "histogram_quantile(0.95, sum by (le, service_name) (rate(http_server_request_duration_ms_bucket{deployment_environment=~\"$environment\", nembus_tenant_slug=~\"$tenant_slug\"}[5m])))"
+          "expr": "count by (service_name, service_instance_id, service_version, deployment_environment) (last_over_time(target_info{service_namespace=\"nembus\", deployment_environment=~\"$environment\"}[10m]))",
+          "instant": true,
+          "format": "table"
         }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "ms"
-        }
-      }
+      ]
     },
     {
       "id": 7,
       "type": "timeseries",
-      "title": "Cross-App Sync & ETL Throughput",
+      "title": "Real HTTP Request Rate by Service (excl. /health & UI polling)",
+      "description": "",
       "gridPos": {
-        "h": 8,
-        "w": 12,
         "x": 0,
-        "y": 12
+        "y": 10,
+        "w": 12,
+        "h": 8
       },
       "datasource": {
         "type": "prometheus",
         "uid": "${ds_prometheus}"
       },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 15,
+            "showPoints": "auto",
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
       "targets": [
         {
           "refId": "A",
-          "legendFormat": "gRPC {{service_name}} {{direction}} ({{status}})",
-          "expr": "sum by (service_name, direction, status) (rate(nembus_sync_events_total{deployment_environment=~\"$environment\", nembus_tenant_slug=~\"$tenant_slug\"}[5m]))"
-        },
-        {
-          "refId": "B",
-          "legendFormat": "SAP ETL rows ({{status}})",
-          "expr": "sum by (status) (rate(nembus_sap_etl_rows_total{deployment_environment=~\"$environment\", nembus_tenant_slug=~\"$tenant_slug\"}[5m]))"
+          "expr": "sum by (service_name) (rate(http_server_requests_total{deployment_environment=~\"$environment\", nembus_tenant_slug=~\"$tenant_slug\", http_route!~\"/health|/swagger.*|/metrics|/|/app[.]js|/style[.]css|/favicon[.]ico|/api/v1/sync/status|/api/v1/migration/status|/api/v1/logs|/api/v1/onboarding/status|/api/v1/updates/check|/api/notifications/unread-count\"}[$__rate_interval]))",
+          "legendFormat": "{{service_name}}"
         }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "ops"
-        }
-      }
+      ]
     },
     {
       "id": 8,
       "type": "timeseries",
-      "title": "Tempo Service Graph Request Rate (Edge -> Cloud)",
+      "title": "P95 HTTP Latency by Service (ms)",
+      "description": "95th percentile HTTP latency per service (excluding health checks & static assets).",
       "gridPos": {
-        "h": 8,
-        "w": 12,
         "x": 12,
-        "y": 12
+        "y": 10,
+        "w": 12,
+        "h": 8
       },
       "datasource": {
         "type": "prometheus",
         "uid": "${ds_prometheus}"
       },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 15,
+            "showPoints": "auto",
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
       "targets": [
         {
           "refId": "A",
-          "legendFormat": "{{client}} -> {{server}}",
-          "expr": "sum by (client, server) (rate(traces_service_graph_request_total[5m]))"
+          "expr": "histogram_quantile(0.95, sum by (le, service_name) (rate(http_server_request_duration_ms_milliseconds_bucket{deployment_environment=~\"$environment\", nembus_tenant_slug=~\"$tenant_slug\", http_route!~\"/health|/swagger.*|/metrics|/|/app[.]js|/style[.]css|/favicon[.]ico|/api/v1/sync/status|/api/v1/migration/status|/api/v1/logs|/api/v1/onboarding/status|/api/v1/updates/check|/api/notifications/unread-count\"}[$__rate_interval]) or rate(http_server_request_duration_ms_bucket{deployment_environment=~\"$environment\", nembus_tenant_slug=~\"$tenant_slug\", http_route!~\"/health|/swagger.*|/metrics|/|/app[.]js|/style[.]css|/favicon[.]ico|/api/v1/sync/status|/api/v1/migration/status|/api/v1/logs|/api/v1/onboarding/status|/api/v1/updates/check|/api/notifications/unread-count\"}[$__rate_interval])))",
+          "legendFormat": "{{service_name}} P95"
         }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "reqps"
-        }
-      }
+      ]
     },
     {
       "id": 9,
+      "type": "timeseries",
+      "title": "HTTP Errors by Service & Status Class (Count)",
+      "description": "",
+      "gridPos": {
+        "x": 0,
+        "y": 18,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${ds_prometheus}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "bars",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 70,
+            "showPoints": "auto",
+            "spanNulls": true,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (service_name, status_class) (increase(http_server_requests_total{deployment_environment=~\"$environment\", nembus_tenant_slug=~\"$tenant_slug\", http_route!~\"/health|/swagger.*|/metrics|/|/app[.]js|/style[.]css|/favicon[.]ico|/api/v1/sync/status|/api/v1/migration/status|/api/v1/logs|/api/v1/onboarding/status|/api/v1/updates/check|/api/notifications/unread-count\", status_class=~\"400|500\"}[$__rate_interval]))",
+          "legendFormat": "{{service_name}} {{status_class}}xx"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Cross-App Sync & SAP ETL Volume (Events / Rows)",
+      "description": "",
+      "gridPos": {
+        "x": 12,
+        "y": 18,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${ds_prometheus}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "bars",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 70,
+            "showPoints": "auto",
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (service_name, direction, status) (increase(nembus_sync_events_total{deployment_environment=~\"$environment\", nembus_tenant_slug=~\"$tenant_slug\"}[$__rate_interval]))",
+          "legendFormat": "gRPC {{service_name}} {{direction}} ({{status}})"
+        },
+        {
+          "refId": "B",
+          "expr": "sum by (direction, status) (increase(nembus_sap_etl_rows_total{deployment_environment=~\"$environment\", nembus_tenant_slug=~\"$tenant_slug\"}[$__rate_interval]))",
+          "legendFormat": "SAP ETL {{direction}} ({{status}})"
+        }
+      ]
+    },
+    {
+      "id": 11,
       "type": "logs",
       "title": "Recent Error & Warning Logs (All Nembus Services)",
+      "description": "Live error and warning logs across Cloud Server, POS Client, SAP Agent, and Biometric Agent.",
       "gridPos": {
-        "h": 9,
-        "w": 12,
         "x": 0,
-        "y": 20
+        "y": 26,
+        "w": 12,
+        "h": 10
       },
       "datasource": {
         "type": "loki",
         "uid": "${ds_loki}"
       },
+      "options": {
+        "showTime": true,
+        "showLabels": true,
+        "showCommonLabels": false,
+        "wrapLogMessage": true,
+        "prettifyLogMessage": false,
+        "enableLogDetails": true,
+        "sortOrder": "Descending",
+        "dedupStrategy": "none"
+      },
       "targets": [
         {
           "refId": "A",
-          "expr": "{service_name=~\"nembus-.*\", deployment_environment=~\"$environment\"} | detected_level=~\"error|warn\""
+          "expr": "{service_name=~\"nembus-.*\", deployment_environment=~\"$environment\"} |~ \"(?i)error|warn|fail|panic|exception|quarantin|❌|⚠️\""
         }
-      ],
-      "options": {
-        "showTime": true,
-        "wrapLogMessage": true,
-        "enableLogDetails": true,
-        "dedupStrategy": "none"
-      }
+      ]
     },
     {
-      "id": 10,
+      "id": 12,
       "type": "table",
-      "title": "Recent Slow or Failed Distributed Traces",
+      "title": "Slow or Failed Distributed Traces (>250ms or Error, excl. /health)",
+      "description": "",
       "gridPos": {
-        "h": 9,
-        "w": 12,
         "x": 12,
-        "y": 20
+        "y": 26,
+        "w": 12,
+        "h": 10
       },
       "datasource": {
         "type": "tempo",
@@ -394,9 +681,9 @@
       "targets": [
         {
           "refId": "A",
-          "queryType": "traceql",
-          "query": "{ status = error || duration > 500ms }",
-          "limit": 20
+          "queryType": "traceqlSearch",
+          "query": "{ resource.service.namespace = \"nembus\" && name != \"GET /health\" && (status = error || duration > 250ms) }",
+          "limit": 25
         }
       ]
     }

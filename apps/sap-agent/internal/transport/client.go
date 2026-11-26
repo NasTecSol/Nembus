@@ -26,9 +26,15 @@ const (
 
 // CloudClient handles all outbound HTTP communication with the Nembus cloud server.
 type CloudClient struct {
-	cfg        config.CloudConfig
-	httpClient *http.Client
-	mu         sync.RWMutex
+	cfg            config.CloudConfig
+	httpClient     *http.Client
+	mu             sync.RWMutex
+	jwtMu          sync.RWMutex
+	cachedJWT      string
+	cachedJWTExp   time.Time
+	cachedJWTKey   string
+	cachedJWTTen   string
+	cachedJWTOrgID int
 }
 
 func NewCloudClient(cfg config.CloudConfig) *CloudClient {
@@ -69,6 +75,11 @@ func (c *CloudClient) UpdateConfig(cfg config.CloudConfig) {
 		timeout = 60 * time.Second
 	}
 	c.httpClient.Timeout = timeout
+	c.jwtMu.Lock()
+	c.cachedJWT = ""
+	c.cachedJWTExp = time.Time{}
+	c.cachedJWTKey = ""
+	c.jwtMu.Unlock()
 }
 
 // isRetryableStatus returns true for HTTP status codes that indicate a

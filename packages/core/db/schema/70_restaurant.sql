@@ -3,11 +3,11 @@
 -- =====================================================
 
 CREATE TABLE pos_transactions (
-    id SERIAL PRIMARY KEY,
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
     cashier_id INTEGER NOT NULL REFERENCES cashiers(id) ON DELETE CASCADE,
-    cashier_session_id INTEGER NOT NULL REFERENCES cashier_sessions(id) ON DELETE CASCADE,
-    customer_id INTEGER REFERENCES customers(id) ON DELETE SET NULL,
+    cashier_session_id UUID NOT NULL REFERENCES cashier_sessions(id) ON DELETE CASCADE,
+    customer_id UUID REFERENCES customers(id) ON DELETE SET NULL,
     pos_terminal_id INTEGER REFERENCES pos_terminals(id) ON DELETE SET NULL,
     transaction_number VARCHAR(50) UNIQUE NOT NULL,
     transaction_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -31,8 +31,8 @@ CREATE TABLE pos_transactions (
 );
 
 CREATE TABLE pos_transaction_lines (
-    id SERIAL PRIMARY KEY,
-    transaction_id INTEGER NOT NULL REFERENCES pos_transactions(id) ON DELETE CASCADE,
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    transaction_id UUID NOT NULL REFERENCES pos_transactions(id) ON DELETE CASCADE,
     product_id INTEGER REFERENCES products(id) ON DELETE CASCADE,
     product_variant_id INTEGER REFERENCES product_variants(id) ON DELETE SET NULL,
     quantity DECIMAL(15,3) NOT NULL,
@@ -52,8 +52,8 @@ CREATE TABLE pos_transaction_lines (
 );
 
 CREATE TABLE pos_payments (
-    id SERIAL PRIMARY KEY,
-    transaction_id INTEGER NOT NULL REFERENCES pos_transactions(id) ON DELETE CASCADE,
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    transaction_id UUID NOT NULL REFERENCES pos_transactions(id) ON DELETE CASCADE,
     payment_method VARCHAR(50) NOT NULL,
     payment_gateway VARCHAR(50),
     amount DECIMAL(15,2) NOT NULL,
@@ -332,7 +332,7 @@ CREATE TABLE restaurant_carts (
     store_id              INTEGER      NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
     table_id              INTEGER      REFERENCES restaurant_tables(id) ON DELETE SET NULL,
     order_type            VARCHAR(30)  NOT NULL DEFAULT 'dine_in',
-    customer_id           INTEGER      REFERENCES customers(id) ON DELETE SET NULL,
+    customer_id           UUID         REFERENCES customers(id) ON DELETE SET NULL,
     guest_identifier      VARCHAR(255),
     guest_name            VARCHAR(255),
     guest_email           VARCHAR(255),
@@ -345,7 +345,7 @@ CREATE TABLE restaurant_carts (
     created_by_user_id    INTEGER      REFERENCES users(id) ON DELETE SET NULL,
     cashier_id            INTEGER      REFERENCES cashiers(id) ON DELETE SET NULL,
     pos_terminal_id       INTEGER      REFERENCES pos_terminals(id) ON DELETE SET NULL,
-    kiosk_session_id      INTEGER,
+    kiosk_session_id      UUID,
     subtotal              DECIMAL(15,2) NOT NULL DEFAULT 0.00,
     discount_amount       DECIMAL(15,2) NOT NULL DEFAULT 0.00,
     tax_amount            DECIMAL(15,2) NOT NULL DEFAULT 0.00,
@@ -353,7 +353,7 @@ CREATE TABLE restaurant_carts (
     coupon_code           VARCHAR(100),
     discount_code         VARCHAR(100),
     delivery_address      JSONB,
-    converted_to_order_id INTEGER,
+    converted_to_order_id UUID,
     converted_at          TIMESTAMP,
     last_activity_at      TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
     expires_at            TIMESTAMP,
@@ -387,15 +387,15 @@ CREATE TABLE restaurant_cart_items (
 );
 
 CREATE TABLE restaurant_orders (
-    id                    SERIAL PRIMARY KEY,
+    id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     organization_id       INTEGER      REFERENCES organizations(id) ON DELETE CASCADE,
     store_id              INTEGER      NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
     table_id              INTEGER      REFERENCES restaurant_tables(id) ON DELETE SET NULL,
     cashier_id            INTEGER      REFERENCES cashiers(id) ON DELETE SET NULL,
-    cashier_session_id    INTEGER      REFERENCES cashier_sessions(id) ON DELETE SET NULL,
-    customer_id           INTEGER      REFERENCES customers(id) ON DELETE SET NULL,
+    cashier_session_id    UUID         REFERENCES cashier_sessions(id) ON DELETE SET NULL,
+    customer_id           UUID         REFERENCES customers(id) ON DELETE SET NULL,
     pos_terminal_id       INTEGER      REFERENCES pos_terminals(id) ON DELETE SET NULL,
-    kiosk_session_id      INTEGER,
+    kiosk_session_id      UUID,
     created_by_user_id    INTEGER      REFERENCES users(id) ON DELETE SET NULL,
     source_cart_id        UUID         REFERENCES restaurant_carts(id) ON DELETE SET NULL,
     order_number          VARCHAR(50)  NOT NULL,
@@ -416,7 +416,7 @@ CREATE TABLE restaurant_orders (
     coupon_code           VARCHAR(100),
     discount_code         VARCHAR(100),
     notes                 TEXT,
-    pos_transaction_id    INTEGER      REFERENCES pos_transactions(id) ON DELETE SET NULL,
+    pos_transaction_id    UUID         REFERENCES pos_transactions(id) ON DELETE SET NULL,
     ordered_at            TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
     confirmed_at          TIMESTAMP,
     served_at             TIMESTAMP,
@@ -428,8 +428,8 @@ CREATE TABLE restaurant_orders (
 );
 
 CREATE TABLE restaurant_order_items (
-    id                        SERIAL PRIMARY KEY,
-    order_id                  INTEGER       NOT NULL REFERENCES restaurant_orders(id) ON DELETE CASCADE,
+    id                        UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    order_id                  UUID          NOT NULL REFERENCES restaurant_orders(id) ON DELETE CASCADE,
     menu_item_id              INTEGER       NOT NULL REFERENCES menu_items(id) ON DELETE CASCADE,
     menu_item_name            VARCHAR(255),
     quantity                  DECIMAL(15,3) NOT NULL DEFAULT 1,
@@ -454,7 +454,7 @@ CREATE TABLE restaurant_order_items (
 
 CREATE TABLE restaurant_order_status_history (
     id                  BIGSERIAL PRIMARY KEY,
-    restaurant_order_id INTEGER      NOT NULL REFERENCES restaurant_orders(id) ON DELETE CASCADE,
+    restaurant_order_id UUID         NOT NULL REFERENCES restaurant_orders(id) ON DELETE CASCADE,
     store_id            INTEGER      NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
     from_status         VARCHAR(30),
     to_status           VARCHAR(30)  NOT NULL,
@@ -466,7 +466,7 @@ CREATE TABLE restaurant_order_status_history (
 );
 
 CREATE TABLE waste_logs (
-    id                  SERIAL PRIMARY KEY,
+    id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     store_id            INTEGER      NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
     product_id          INTEGER      REFERENCES products(id) ON DELETE SET NULL,
     menu_item_id        INTEGER      REFERENCES menu_items(id) ON DELETE SET NULL,
@@ -478,14 +478,14 @@ CREATE TABLE waste_logs (
     total_cost          DECIMAL(15,2) DEFAULT 0,
     reason              TEXT,
     logged_by           INTEGER      REFERENCES users(id) ON DELETE SET NULL,
-    order_id            INTEGER      REFERENCES restaurant_orders(id) ON DELETE SET NULL,
+    order_id            UUID         REFERENCES restaurant_orders(id) ON DELETE SET NULL,
     wasted_at           TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
     metadata            JSONB        DEFAULT '{}',
     created_at          TIMESTAMP    DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE kiosk_sessions (
-    id                  SERIAL PRIMARY KEY,
+    id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     pos_terminal_id     INTEGER      NOT NULL REFERENCES pos_terminals(id) ON DELETE CASCADE,
     store_id            INTEGER      NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
     session_token       VARCHAR(255) NOT NULL UNIQUE,

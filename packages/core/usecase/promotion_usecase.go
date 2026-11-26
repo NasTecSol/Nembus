@@ -315,7 +315,7 @@ func (uc *PromotionUseCase) ApplyCoupon(ctx context.Context, in ApplyCouponInput
 		if !cart.CustomerID.Valid {
 			return utils.NewResponse(utils.CodeBadReq, "coupon is restricted to specific customer loyalty tiers, but no customer is assigned to this cart", nil)
 		}
-		cust, err := uc.repo.GetCustomer(ctx, cart.CustomerID.Int32)
+		cust, err := uc.repo.GetCustomer(ctx, uuid.UUID(cart.CustomerID.Bytes))
 		if err != nil {
 			return utils.NewResponse(utils.CodeBadReq, "failed to fetch customer details for tier validation", nil)
 		}
@@ -772,7 +772,7 @@ func (uc *PromotionUseCase) ValidateCoupon(ctx context.Context, in ApplyCouponIn
 		if !cart.CustomerID.Valid {
 			validationErrors = append(validationErrors, "coupon is restricted to specific customer loyalty tiers, but no customer is assigned to this cart")
 		} else {
-			cust, err := uc.repo.GetCustomer(ctx, cart.CustomerID.Int32)
+			cust, err := uc.repo.GetCustomer(ctx, uuid.UUID(cart.CustomerID.Bytes))
 			if err != nil {
 				validationErrors = append(validationErrors, "failed to fetch customer details for tier validation")
 			} else {

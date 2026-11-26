@@ -8,13 +8,15 @@ package repository
 import (
 	"context"
 	"encoding/json"
+
+	"github.com/google/uuid"
 )
 
 const getPosTransactionLineByID = `-- name: GetPosTransactionLineByID :one
 SELECT id, transaction_id, product_id, product_variant_id, quantity, uom_id, unit_price, discount_amount, tax_amount, subtotal, line_total, cost_price, line_number, serial_number, batch_number, metadata, created_at, updated_at FROM pos_transaction_lines WHERE id = $1
 `
 
-func (q *Queries) GetPosTransactionLineByID(ctx context.Context, id int32) (PosTransactionLine, error) {
+func (q *Queries) GetPosTransactionLineByID(ctx context.Context, id uuid.UUID) (PosTransactionLine, error) {
 	row := q.db.QueryRow(ctx, getPosTransactionLineByID, id)
 	var i PosTransactionLine
 	err := row.Scan(
@@ -48,7 +50,7 @@ WHERE id = $1
 `
 
 type PatchPosTransactionMetadataParams struct {
-	ID      int32           `json:"id"`
+	ID      uuid.UUID       `json:"id"`
 	Column2 json.RawMessage `json:"column_2"`
 }
 
@@ -63,7 +65,7 @@ UPDATE pos_transactions SET metadata = $2, updated_at = CURRENT_TIMESTAMP WHERE 
 `
 
 type UpdatePosTransactionMetadataParams struct {
-	ID       int32           `json:"id"`
+	ID       uuid.UUID       `json:"id"`
 	Metadata json.RawMessage `json:"metadata"`
 }
 

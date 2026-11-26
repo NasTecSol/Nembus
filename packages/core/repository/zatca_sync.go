@@ -258,14 +258,14 @@ func (q *Queries) RestoreZatcaDevice(ctx context.Context, serial string, orgID i
 			}
 		}
 		_, err = tx.db.Exec(ctx, `INSERT INTO sync_queue(entity_type,entity_id,action,payload,status,synced_at)
- SELECT 'zatca_device_configs',d.id,'UPDATE',jsonb_build_object('id',d.id,'device_serial',d.device_serial,'updated_at',d.updated_at),'synced',NOW() FROM zatca_device_configs d WHERE d.id=$1
- AND NOT EXISTS(SELECT 1 FROM sync_queue q WHERE q.entity_type='zatca_device_configs' AND q.entity_id=d.id)`, local.ID)
+ SELECT 'zatca_device_configs',d.id::text,'UPDATE',jsonb_build_object('id',d.id,'device_serial',d.device_serial,'updated_at',d.updated_at),'synced',NOW() FROM zatca_device_configs d WHERE d.id=$1
+ AND NOT EXISTS(SELECT 1 FROM sync_queue q WHERE q.entity_type='zatca_device_configs' AND q.entity_id=d.id::text)`, local.ID)
 		if err != nil {
 			return err
 		}
 		_, err = tx.db.Exec(ctx, `INSERT INTO sync_queue(entity_type,entity_id,action,payload,status,synced_at)
- SELECT 'zatca_document_chain',c.id,'UPDATE',jsonb_build_object('id',c.id,'device_config_id',c.device_config_id,'icv',c.icv,'updated_at',c.updated_at),'synced',NOW() FROM zatca_document_chain c WHERE c.device_config_id=$1
- AND NOT EXISTS(SELECT 1 FROM sync_queue q WHERE q.entity_type='zatca_document_chain' AND q.entity_id=c.id)`, local.ID)
+ SELECT 'zatca_document_chain',c.id::text,'UPDATE',jsonb_build_object('id',c.id,'device_config_id',c.device_config_id,'icv',c.icv,'updated_at',c.updated_at),'synced',NOW() FROM zatca_document_chain c WHERE c.device_config_id=$1
+ AND NOT EXISTS(SELECT 1 FROM sync_queue q WHERE q.entity_type='zatca_document_chain' AND q.entity_id=c.id::text)`, local.ID)
 		return err
 	})
 }

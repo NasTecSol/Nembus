@@ -75,7 +75,7 @@ func main() {
 		log.Fatalf("Failed to resolve cashier: %v", err)
 	}
 
-	var customerID int
+	var customerID string
 	err = pool.QueryRow(ctx, `
 		INSERT INTO customers (organization_id, customer_code, name, is_active)
 		VALUES ($1, 'C00006', 'عميل نقدي', true)
@@ -89,7 +89,7 @@ func main() {
 	var defaultProductID int
 	_ = pool.QueryRow(ctx, `SELECT id FROM products ORDER BY id ASC LIMIT 1`).Scan(&defaultProductID)
 
-	log.Printf("[CONFIG] Target Store: %d | Cashier: %d | Terminal: %d | Customer: %d | Fallback Product: %d\n",
+	log.Printf("[CONFIG] Target Store: %d | Cashier: %d | Terminal: %d | Customer: %s | Fallback Product: %d\n",
 		storeID, cashierID, terminalID, customerID, defaultProductID)
 
 	// 3. Populate Closed Daily Cashier Sessions (Z-Reports)

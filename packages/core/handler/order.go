@@ -240,7 +240,7 @@ func (h *OrderHandler) CreateOrder(c *gin.Context) {
 		OrderNumber:          req.OrderNumber,
 		OrganizationID:       req.OrganizationID,
 		StoreID:              int4Ptr(req.StoreID),
-		CustomerID:           int4Ptr(req.CustomerID),
+		CustomerID:           uuidPtr(req.CustomerID),
 		CustomerName:         textPtr(req.CustomerName),
 		CustomerEmail:        textPtr(req.CustomerEmail),
 		CustomerPhone:        textPtr(req.CustomerPhone),
@@ -338,7 +338,7 @@ func (h *OrderHandler) UpdateOrder(c *gin.Context) {
 
 	arg := repository.UpdateSalesOrderV2Params{
 		ID:                   orderID,
-		CustomerID:           int4Ptr(req.CustomerID),
+		CustomerID:           uuidPtr(req.CustomerID),
 		CustomerName:         textPtr(req.CustomerName),
 		CustomerEmail:        textPtr(req.CustomerEmail),
 		CustomerPhone:        textPtr(req.CustomerPhone),
@@ -1856,7 +1856,13 @@ func (h *OrderHandler) ListUnpostedSalesOrdersForSAP(c *gin.Context) {
 		orgID = parsed
 	}
 	limit, _ := strconv.ParseInt(c.DefaultQuery("limit", "50"), 10, 32)
-	resp := h.useCase.ListUnpostedSalesOrdersForSAP(c.Request.Context(), int32(orgID), int32(limit))
+	approvedOnly := c.Query("approved_only") == "true" || c.Query("approved_only") == "1"
+	var resp *repository.Response
+	if approvedOnly {
+		resp = h.useCase.ListApprovedPendingSalesOrdersForSAP(c.Request.Context(), int32(orgID), int32(limit))
+	} else {
+		resp = h.useCase.ListUnpostedSalesOrdersForSAP(c.Request.Context(), int32(orgID), int32(limit))
+	}
 	c.JSON(resp.StatusCode, resp)
 }
 

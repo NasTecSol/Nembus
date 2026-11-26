@@ -8,6 +8,7 @@ import (
 
 	"github.com/NasTecSol/nembus-core/repository"
 	"github.com/NasTecSol/nembus-core/utils"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -46,11 +47,11 @@ type ZReportIdentity struct {
 }
 
 type ZReportSession struct {
-	ID       int32   `json:"id"`
-	Number   string  `json:"number"`
-	Status   *string `json:"status"`
-	OpenedAt string  `json:"opened_at"`
-	ClosedAt *string `json:"closed_at"`
+	ID       uuid.UUID `json:"id"`
+	Number   string    `json:"number"`
+	Status   *string   `json:"status"`
+	OpenedAt string    `json:"opened_at"`
+	ClosedAt *string   `json:"closed_at"`
 }
 
 type ZReportSales struct {
@@ -129,7 +130,7 @@ func CalculateCashierSessionZReport(ctx context.Context, repo ZReportRepository,
 	if filters.OrganizationID <= 0 || filters.UserID <= 0 {
 		return utils.NewResponse(utils.CodeUnauthorized, "authenticated organization and user are required", nil)
 	}
-	if filters.CashierSessionID <= 0 || filters.StoreID < 0 || filters.PosTerminalID < 0 || filters.CashierID < 0 {
+	if filters.CashierSessionID == uuid.Nil || filters.StoreID < 0 || filters.PosTerminalID < 0 || filters.CashierID < 0 {
 		return utils.NewResponse(utils.CodeBadReq, "invalid session or report filters", nil)
 	}
 	if repo == nil {
