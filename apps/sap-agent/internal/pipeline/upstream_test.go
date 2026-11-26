@@ -32,6 +32,7 @@ type MockSAPClient struct {
 	postCreditMemoFunc      func(ctx context.Context, memo *sap.SAPInvoiceRequest) (*sap.SAPInvoiceResponse, error)
 	stockBySKU              map[string]float64
 	binAllocations          []sap.SAPBinAllocation
+	binAllocErr             error
 	seriesByObj             map[string]int
 	baseLineByItem          map[string]int
 
@@ -39,6 +40,9 @@ type MockSAPClient struct {
 }
 
 func (m *MockSAPClient) ResolveWarehouseBinAllocations(ctx context.Context, itemCode, warehouseCode string, requiredQty float64, isReturn bool) ([]sap.SAPBinAllocation, error) {
+	if m.binAllocErr != nil {
+		return nil, m.binAllocErr
+	}
 	if len(m.binAllocations) == 0 {
 		return nil, nil
 	}
@@ -1492,6 +1496,45 @@ func TestProcessOutbox_ErrorLoggingNotUpToDate(t *testing.T) {
 	joined := strings.Join(logs, "\n")
 	if !strings.Contains(joined, "1 failed") || !strings.Contains(joined, "1 errors") {
 		t.Fatalf("expected failure counts in logs, got:\n%s", joined)
+	}
+}
+
+func TestUpstreamBinAllocationErrorSkipsPostInvoice(t *testing.T) {
+	ctx := context.Background()
+	postCalled := false
+	mockSAP := &MockSAPClient{
+		binAllocErr: errors.New("mssql: login error: Login failed for user 'sa'"),
+		postInvoiceFunc: func(ctx context.Context, invoice *sap.SAPInvoiceRequest) (*sap.SAPInvoiceResponse, error) {
+			postCalled = true
+			return &sap.SAPInvoiceResponse{DocEntry: 1, DocNum: 100}, nil
+		},
+	}
+	mockNembus := newMockNembusClient()
+	txID := testUUID(802)
+	mockNembus.unpostedPOSTransactions = []nembus.POSTransaction{
+		{
+			ID:                txID,
+			StoreID:           1,
+			TransactionNumber: "TXN-BIN-ERR-1",
+			TransactionDate:   time.Now().UTC(),
+			TotalAmount:       25.0,
+			Status:            "completed",
+		},
+	}
+	mockNembus.txLines[txID] = []nembus.POSTransactionLine{
+		{ID: testUUID(2), ProductSKU: "INV00028", Quantity: 1, UnitPrice: 25, LineTotal: 25},
+	}
+
+	sync := pipeline.NewUpstreamSync(&config.Config{BatchSize: 10, NembusDefaultWarehouse: "01"}, mockSAP, mockNembus)
+	stats, err := sync.ProcessOutbox(ctx)
+	if err != nil {
+		t.Fatalf("ProcessOutbox: %v", err)
+	}
+	if postCalled {
+		t.Fatalf("PostInvoice must not be called when MSSQL bin allocation lookup fails")
+	}
+	if stats.Errors != 1 || stats.TransactionsPosted != 0 {
+		t.Fatalf("expected 1 transient error and 0 posted, got %+v", stats)
 	}
 }
 

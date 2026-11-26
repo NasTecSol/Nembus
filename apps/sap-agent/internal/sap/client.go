@@ -6,6 +6,7 @@ import (
 	"crypto/tls"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -256,6 +257,15 @@ func (c *Client) Close() error {
 	return nil
 }
 
+const mssqlQueryTimeout = 10 * time.Second
+
+func withMSSQLTimeout(ctx context.Context) (context.Context, context.CancelFunc) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return context.WithTimeout(ctx, mssqlQueryTimeout)
+}
+
 // ResolveWarehouseBinAllocations resolves SAP bin-location allocations for an item
 // in a bin-enabled warehouse (OWHS.BinActivat = 'Y'). When isReturn is true (Credit Memo),
 // stock is received back into the warehouse default bin (or primary item bin).
@@ -264,14 +274,21 @@ func (c *Client) ResolveWarehouseBinAllocations(ctx context.Context, itemCode, w
 		return nil, nil
 	}
 
+	qCtx, cancel := withMSSQLTimeout(ctx)
+	defer cancel()
+
 	var binActivat string
 	var dftBinAbs int
-	err := c.sqlDB.QueryRowContext(ctx,
+	err := c.sqlDB.QueryRowContext(qCtx,
 		"SELECT ISNULL(BinActivat, 'N'), ISNULL(DftBinAbs, 0) FROM OWHS WITH (NOLOCK) WHERE WhsCode = @p1",
 		warehouseCode,
 	).Scan(&binActivat, &dftBinAbs)
 	if err != nil {
-		return nil, nil
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		log.Printf("⚠️ [SAP-Bin] MSSQL bin lookup failed for item=%s whs=%s: %v", itemCode, warehouseCode, err)
+		return nil, fmt.Errorf("failed to resolve warehouse %s bin settings via MSSQL: %w", warehouseCode, err)
 	}
 	if binActivat != "Y" {
 		return nil, nil
@@ -280,13 +297,13 @@ func (c *Client) ResolveWarehouseBinAllocations(ctx context.Context, itemCode, w
 	if isReturn {
 		targetBin := dftBinAbs
 		if targetBin <= 0 {
-			_ = c.sqlDB.QueryRowContext(ctx,
+			_ = c.sqlDB.QueryRowContext(qCtx,
 				"SELECT TOP 1 BinAbs FROM OIBQ WITH (NOLOCK) WHERE ItemCode = @p1 AND WhsCode = @p2 ORDER BY OnHandQty DESC, BinAbs ASC",
 				itemCode, warehouseCode,
 			).Scan(&targetBin)
 		}
 		if targetBin <= 0 {
-			_ = c.sqlDB.QueryRowContext(ctx,
+			_ = c.sqlDB.QueryRowContext(qCtx,
 				"SELECT TOP 1 AbsEntry FROM OBIN WITH (NOLOCK) WHERE WhsCode = @p1 AND ISNULL(Disabled, 'N') <> 'Y' ORDER BY AbsEntry ASC",
 				warehouseCode,
 			).Scan(&targetBin)
@@ -297,7 +314,7 @@ func (c *Client) ResolveWarehouseBinAllocations(ctx context.Context, itemCode, w
 		return nil, nil
 	}
 
-	rows, err := c.sqlDB.QueryContext(ctx,
+	rows, err := c.sqlDB.QueryContext(qCtx,
 		`SELECT BinAbs, ISNULL(OnHandQty, 0)
 		 FROM OIBQ WITH (NOLOCK)
 		 WHERE ItemCode = @p1 AND WhsCode = @p2 AND ISNULL(OnHandQty, 0) > 0
@@ -379,10 +396,13 @@ func (c *Client) ResolveDocumentSeries(ctx context.Context, objectCode string, d
 		return nil, nil
 	}
 
+	qCtx, cancel := withMSSQLTimeout(ctx)
+	defer cancel()
+
 	var series int
 	// 1. Prefer an unlocked, automatic NNM1 series whose posting period (OFPR) covers docDate
 	if docDate != "" {
-		err := c.sqlDB.QueryRowContext(ctx, `
+		err := c.sqlDB.QueryRowContext(qCtx, `
 			SELECT TOP 1 n.Series
 			FROM NNM1 n WITH (NOLOCK)
 			INNER JOIN OFPR p WITH (NOLOCK) ON p.Indicator = n.Indicator
@@ -402,7 +422,7 @@ func (c *Client) ResolveDocumentSeries(ctx context.Context, objectCode string, d
 	// 2. Fallback: only accept a period-agnostic ('Default' or empty Indicator) unlocked
 	// automatic series — never pick a series bound to a different fiscal period, which
 	// causes SAP error -5002 ("Series period does not match current period").
-	err := c.sqlDB.QueryRowContext(ctx, `
+	err := c.sqlDB.QueryRowContext(qCtx, `
 		SELECT TOP 1 n.Series
 		FROM NNM1 n WITH (NOLOCK)
 		WHERE n.ObjectCode = @p1
@@ -427,8 +447,10 @@ func (c *Client) ResolveInvoiceBaseLine(ctx context.Context, baseDocEntry int, i
 	if c.sqlDB == nil || baseDocEntry <= 0 || itemCode == "" {
 		return nil, nil
 	}
+	qCtx, cancel := withMSSQLTimeout(ctx)
+	defer cancel()
 	var lineNum int
-	err := c.sqlDB.QueryRowContext(ctx,
+	err := c.sqlDB.QueryRowContext(qCtx,
 		"SELECT TOP 1 LineNum FROM INV1 WITH (NOLOCK) WHERE DocEntry = @p1 AND ItemCode = @p2 ORDER BY LineNum ASC",
 		baseDocEntry, itemCode,
 	).Scan(&lineNum)
@@ -445,9 +467,11 @@ func (c *Client) ResolveDefaultTransferAccount(ctx context.Context) (string, err
 	if c.sqlDB == nil {
 		return "", nil
 	}
+	qCtx, cancel := withMSSQLTimeout(ctx)
+	defer cancel()
 	var acct string
 	// 1. Prefer House Bank Account G/L from DSC1 (linked to an active postable OACT account)
-	err := c.sqlDB.QueryRowContext(ctx, `
+	err := c.sqlDB.QueryRowContext(qCtx, `
 		SELECT TOP 1 d.GLAccount
 		FROM DSC1 d WITH (NOLOCK)
 		INNER JOIN OACT a WITH (NOLOCK) ON a.AcctCode = d.GLAccount
@@ -461,7 +485,7 @@ func (c *Client) ResolveDefaultTransferAccount(ctx context.Context) (string, err
 	}
 
 	// 2. Fallback: first active postable Cash/Bank G/L account in OACT (Finanse = 'Y')
-	err = c.sqlDB.QueryRowContext(ctx, `
+	err = c.sqlDB.QueryRowContext(qCtx, `
 		SELECT TOP 1 AcctCode
 		FROM OACT WITH (NOLOCK)
 		WHERE Finanse = 'Y'
@@ -478,8 +502,10 @@ func (c *Client) ResolveDefaultTransferAccount(ctx context.Context) (string, err
 // CheckItemWarehouseStock retrieves the current OnHand stock for an item in a specific warehouse.
 func (c *Client) CheckItemWarehouseStock(ctx context.Context, itemCode, warehouseCode string) (float64, error) {
 	if c.sqlDB != nil {
+		qCtx, cancel := withMSSQLTimeout(ctx)
 		var onHand float64
-		err := c.sqlDB.QueryRowContext(ctx, "SELECT ISNULL(OnHand, 0) FROM OITW WHERE ItemCode = @p1 AND WhsCode = @p2", itemCode, warehouseCode).Scan(&onHand)
+		err := c.sqlDB.QueryRowContext(qCtx, "SELECT ISNULL(OnHand, 0) FROM OITW WITH (NOLOCK) WHERE ItemCode = @p1 AND WhsCode = @p2", itemCode, warehouseCode).Scan(&onHand)
+		cancel()
 		if err == nil {
 			return onHand, nil
 		}

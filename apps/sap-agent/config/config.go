@@ -93,7 +93,7 @@ func LoadConfig() (*Config, error) {
 }
 
 func (c *Config) MSSQLConnectionString() string {
-	return fmt.Sprintf("server=%s;user id=%s;password=%s;port=%d;database=%s;encrypt=disable",
+	return fmt.Sprintf("server=%s;user id=%s;password=%s;port=%d;database=%s;encrypt=disable;trustservercertificate=true;connection timeout=15",
 		c.SAPMSSQLHost, c.SAPMSSQLUser, c.SAPMSSQLPassword, c.SAPMSSQLPort, c.SAPMSSQLDatabase)
 }
 
