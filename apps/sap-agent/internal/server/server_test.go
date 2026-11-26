@@ -2,12 +2,15 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"embed"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"slices"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -341,5 +344,73 @@ func TestBuildPipeConfigCredentialPrecedence(t *testing.T) {
 	got = s.buildPipeConfig()
 	if got.SAPUsername != "env-user" || got.SAPPassword != "env-password" {
 		t.Fatalf("env override: got user=%q pass=%q, want env-user / env-password", got.SAPUsername, got.SAPPassword)
+	}
+}
+
+func TestMSSQLConnectionStringIncludesTimeout(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "agent_config.json")
+	cfg, err := config.LoadConfig(cfgPath)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	cfg.MSSQL.Host = "192.168.1.91"
+	cfg.MSSQL.Port = 1433
+	cfg.MSSQL.Database = "TestAlebtekar"
+	cfg.MSSQL.User = "sa"
+	cfg.MSSQL.Password = "secret"
+	if err := config.SaveConfig(cfg); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+
+	s := &Server{}
+	connStr := s.buildPipeConfig().MSSQLConnectionString()
+	if !strings.Contains(connStr, "connection timeout=15") {
+		t.Fatalf("expected MSSQLConnectionString to include connection timeout=15, got %q", connStr)
+	}
+	if !strings.Contains(connStr, "trustservercertificate=true") {
+		t.Fatalf("expected MSSQLConnectionString to include trustservercertificate=true, got %q", connStr)
+	}
+}
+
+func TestRunPeriodicSchedulerRecoversPanic(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "agent_config.json")
+	cfg, err := config.LoadConfig(cfgPath)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	cfg.OnboardingCompleted = true
+	cfg.MSSQL.Host = "127.0.0.1"
+	cfg.Cloud.BaseURL = "http://127.0.0.1:8080"
+	if err := config.SaveConfig(cfg); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	s := &Server{stopCtx: ctx, stopCancel: cancel}
+
+	var runs atomic.Int32
+	called := make(chan int32, 2)
+	go s.runPeriodicScheduler(
+		1,
+		func(*config.AgentConfig) int { return 1 },
+		func() bool { return true },
+		func(_ int) {
+			n := runs.Add(1)
+			called <- n
+			if n == 1 {
+				panic("simulated scheduler panic")
+			}
+			cancel()
+		},
+	)
+
+	// Wait for the scheduler to survive the first panicking run and execute a second run.
+	for i := 0; i < 2; i++ {
+		select {
+		case <-called:
+		case <-time.After(4 * time.Second):
+			t.Fatalf("timed out waiting for scheduler run %d after panic recovery", i+1)
+		}
 	}
 }
