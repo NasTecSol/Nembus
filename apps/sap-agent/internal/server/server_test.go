@@ -109,14 +109,14 @@ func TestBuildPipeConfigSAPCompanyDB(t *testing.T) {
 
 	s := &Server{}
 
-	// Stale default "Qadsiya" should defer to configured MSSQL.Database
-	cfg.SAPCompanyDB = "Qadsiya"
+	// Empty SAPCompanyDB should defer to configured MSSQL.Database
+	cfg.SAPCompanyDB = ""
 	cfg.MSSQL.Database = "QITAFALAELAHLTD"
 	if err := config.SaveConfig(cfg); err != nil {
 		t.Fatalf("SaveConfig: %v", err)
 	}
 	if got := s.buildPipeConfig().SAPCompanyDB; got != "QITAFALAELAHLTD" {
-		t.Fatalf("stale default fallback: got %q want %q", got, "QITAFALAELAHLTD")
+		t.Fatalf("empty SAPCompanyDB fallback: got %q want %q", got, "QITAFALAELAHLTD")
 	}
 
 	// Explicit non-default SAPCompanyDB should be respected

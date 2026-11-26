@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -24,9 +25,13 @@ import (
 // HTTPClient implements pipeline.NembusClient using the Nembus Cloud REST API
 // and local SQLite outbox state when a direct PostgreSQL connection is not configured.
 type HTTPClient struct {
-	cfg        *legacyconfig.Config
-	sqlite     *db.SQLiteStore
-	httpClient *http.Client
+	cfg            *legacyconfig.Config
+	sqlite         *db.SQLiteStore
+	httpClient     *http.Client
+	tokenMu        sync.RWMutex
+	cachedToken    string
+	cachedTokenExp time.Time
+	cachedUserKey  string
 }
 
 func NewHTTPClient(cfg *legacyconfig.Config, sqlite *db.SQLiteStore) *HTTPClient {
@@ -109,11 +114,53 @@ func (c *HTTPClient) login(ctx context.Context, userLogin, password string) (str
 	return "", fmt.Errorf("login status %d", resp.StatusCode)
 }
 
+func parseJWTExpiry(token string) time.Time {
+	parts := strings.Split(token, ".")
+	if len(parts) != 3 {
+		return time.Now().Add(30 * time.Minute)
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return time.Now().Add(30 * time.Minute)
+	}
+	var claims map[string]any
+	if json.Unmarshal(raw, &claims) != nil {
+		return time.Now().Add(30 * time.Minute)
+	}
+	if exp := parseFlexInt64(claims["exp"]); exp > 0 {
+		return time.Unix(exp, 0)
+	}
+	return time.Now().Add(30 * time.Minute)
+}
+
+func (c *HTTPClient) invalidateToken() {
+	c.tokenMu.Lock()
+	c.cachedToken = ""
+	c.cachedTokenExp = time.Time{}
+	c.cachedUserKey = ""
+	c.tokenMu.Unlock()
+}
+
 func (c *HTTPClient) resolveToken(ctx context.Context, _ bool) (string, error) {
 	agentCfg := agentconfig.Get()
 	if agentCfg != nil {
 		if agentCfg.MigratorUser != "" && agentCfg.MigratorPassword != "" {
+			userKey := c.baseURL() + "|" + c.tenantHeader() + "|" + agentCfg.MigratorUser
+			c.tokenMu.RLock()
+			if c.cachedToken != "" && c.cachedUserKey == userKey && time.Now().Add(2*time.Minute).Before(c.cachedTokenExp) {
+				tok := c.cachedToken
+				c.tokenMu.RUnlock()
+				return tok, nil
+			}
+			c.tokenMu.RUnlock()
+
 			if tok, err := c.login(ctx, agentCfg.MigratorUser, agentCfg.MigratorPassword); err == nil && tok != "" {
+				exp := parseJWTExpiry(tok)
+				c.tokenMu.Lock()
+				c.cachedToken = tok
+				c.cachedTokenExp = exp
+				c.cachedUserKey = userKey
+				c.tokenMu.Unlock()
 				return tok, nil
 			}
 		}
@@ -198,7 +245,14 @@ func (c *HTTPClient) doJSON(ctx context.Context, method, path string, body any, 
 	if err != nil {
 		return nil, 0, err
 	}
-	return c.doJSONRequest(ctx, token, method, path, body)
+	respBytes, status, err := c.doJSONRequest(ctx, token, method, path, body)
+	if err == nil && status == http.StatusUnauthorized {
+		c.invalidateToken()
+		if freshToken, rErr := c.resolveToken(ctx, preferServiceAccount); rErr == nil && freshToken != "" && freshToken != token {
+			return c.doJSONRequest(ctx, freshToken, method, path, body)
+		}
+	}
+	return respBytes, status, err
 }
 
 func parseFlexFloat(v any) float64 {
@@ -574,7 +628,7 @@ func (c *HTTPClient) FetchApprovedPendingPOSTransactions(ctx context.Context, li
 		if st == "posted" {
 			continue
 		}
-		if st == "held" && (approved[tx.TransactionNumber] || approved[fmt.Sprintf("%d", tx.ID)]) {
+		if st == "held" && (approved[tx.TransactionNumber] || approved[tx.ID.String()]) {
 			tx.Metadata = json.RawMessage(`{"sap_sync_state":"approved_pending_upload"}`)
 			list = append(list, tx)
 		}
@@ -1059,11 +1113,45 @@ func (c *HTTPClient) fetchSalesOrdersRaw(ctx context.Context) ([]SalesOrderV2, e
 }
 
 func (c *HTTPClient) FetchApprovedPendingSalesOrdersV2(ctx context.Context, limit int) ([]SalesOrderV2, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	path := fmt.Sprintf("/api/orders/unposted-sap?organization_id=%d&limit=%d&approved_only=true", c.cfg.NembusOrganizationID, limit)
+	bodyBytes, status, err := c.doJSON(ctx, http.MethodGet, path, nil, false)
+	if err != nil {
+		return nil, err
+	}
+	dispatched := c.dispatchStatusByNumber(ctx)
+	if status == http.StatusOK {
+		var env struct {
+			Data []map[string]any `json:"data"`
+		}
+		if err := json.Unmarshal(bodyBytes, &env); err != nil {
+			return nil, err
+		}
+		var list []SalesOrderV2
+		for _, row := range env.Data {
+			order, ok := parseSalesOrderRow(row)
+			if !ok {
+				continue
+			}
+			if dispatched[order.OrderNumber] == "posted" {
+				continue
+			}
+			order.Metadata = json.RawMessage(`{"sap_sync_state":"approved_pending_upload"}`)
+			list = append(list, order)
+		}
+		return list, nil
+	}
+	if status != http.StatusNotFound {
+		return nil, fmt.Errorf("fetch approved pending sales orders failed (status %d)", status)
+	}
+
+	// Legacy cloud fallback if /api/orders/unposted-sap does not exist
 	all, err := c.fetchSalesOrdersRaw(ctx)
 	if err != nil || len(all) == 0 {
 		return nil, err
 	}
-	dispatched := c.dispatchStatusByNumber(ctx)
 	approved := c.approvedEntityNumbers(ctx, "sales_order_v2")
 
 	var list []SalesOrderV2
@@ -1183,19 +1271,7 @@ func (c *HTTPClient) FetchSalesOrderLinesV2(ctx context.Context, orderID uuid.UU
 }
 
 func (c *HTTPClient) MarkSalesOrderPostedToSAP(ctx context.Context, orderID uuid.UUID, sapDocEntry, sapDocNum int) error {
-	if err := c.markEntitySyncedToSAP(ctx, fmt.Sprintf("/api/orders/%s/sap-sync", orderID.String()), sapDocEntry, sapDocNum); err != nil {
-		return err
-	}
-	if c.sqlite != nil {
-		orders, _ := c.fetchSalesOrdersRaw(ctx)
-		for _, o := range orders {
-			if o.ID == orderID {
-				_ = c.sqlite.RecordUpstreamDispatch(ctx, o.OrderNumber, o.OrderDate, o.TotalAmount, &sapDocEntry, &sapDocNum, "posted", "")
-				break
-			}
-		}
-	}
-	return nil
+	return c.markEntitySyncedToSAP(ctx, fmt.Sprintf("/api/orders/%s/sap-sync", orderID.String()), sapDocEntry, sapDocNum)
 }
 
 func (c *HTTPClient) HoldSalesOrderForStockReview(ctx context.Context, orderID uuid.UUID, orderNum string, storeID int32, whCode string, totalAmount float64, shortageItems []ShortageItem, summary string) error {
