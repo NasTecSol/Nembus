@@ -15,10 +15,12 @@ type Config struct {
 	SAPUsername         string
 	SAPPassword         string
 	SAPInsecureSkipSSL  bool
-	SAPBranchID         int
-	SAPInvoiceSeries    int
-	SAPCreditMemoSeries int
-	SAPPaymentSeries    int
+	SAPBranchID            int
+	SAPInvoiceSeries       int
+	SAPCreditMemoSeries    int
+	SAPPaymentSeries       int
+	SAPCashAccount         string
+	SAPBankTransferAccount string
 
 	// SAP Direct MSSQL
 	SAPMSSQLEnabled  bool
@@ -61,6 +63,8 @@ func LoadConfig() (*Config, error) {
 		SAPInvoiceSeries:          getEnvInt("SAP_INVOICE_SERIES", 0),
 		SAPCreditMemoSeries:       getEnvInt("SAP_CREDIT_MEMO_SERIES", 0),
 		SAPPaymentSeries:          getEnvInt("SAP_PAYMENT_SERIES", 0),
+		SAPCashAccount:            getEnv("SAP_CASH_ACCOUNT", ""),
+		SAPBankTransferAccount:    getEnv("SAP_BANK_TRANSFER_ACCOUNT", ""),
 
 		SAPMSSQLEnabled:           getEnvBool("SAP_MSSQL_ENABLED", false),
 		SAPMSSQLHost:              getEnv("SAP_MSSQL_HOST", "127.0.0.1"),

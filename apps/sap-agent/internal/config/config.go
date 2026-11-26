@@ -77,10 +77,12 @@ type AgentConfig struct {
 	MigratorToken    string `json:"migrator_token"`    // JWT or API Key token
 	SAPUserMapping      string `json:"sap_user_mapping"`       // SAP Operator mapped to Migrator
 	SAPPassword         string `json:"sap_password,omitempty"` // SAP Service Layer password (falls back to MSSQL password if empty)
-	SAPBranchID         int    `json:"sap_branch_id,omitempty"`
-	SAPInvoiceSeries    int    `json:"sap_invoice_series,omitempty"`
-	SAPCreditMemoSeries int    `json:"sap_credit_memo_series,omitempty"`
-	SAPPaymentSeries    int    `json:"sap_payment_series,omitempty"`
+	SAPBranchID            int    `json:"sap_branch_id,omitempty"`
+	SAPInvoiceSeries       int    `json:"sap_invoice_series,omitempty"`
+	SAPCreditMemoSeries    int    `json:"sap_credit_memo_series,omitempty"`
+	SAPPaymentSeries       int    `json:"sap_payment_series,omitempty"`
+	SAPCashAccount         string `json:"sap_cash_account,omitempty"`
+	SAPBankTransferAccount string `json:"sap_bank_transfer_account,omitempty"`
 
 	// Pipeline Scheduling & Automation
 	DownstreamIntervalSec     int  `json:"downstream_interval_sec"`     // Default 300s (5m)
