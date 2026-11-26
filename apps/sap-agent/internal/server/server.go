@@ -10,6 +10,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
@@ -303,7 +304,14 @@ func (s *Server) runPeriodicScheduler(defaultIntervalSec int, getInterval func(*
 
 		runStart := time.Now()
 		if cfg.MSSQL.Host != "" && cfg.Cloud.BaseURL != "" {
-			run(intervalSec)
+			func() {
+				defer func() {
+					if r := recover(); r != nil {
+						log.Printf("[SAP-AGENT] Recovered panic in periodic scheduler: %v\n%s", r, string(debug.Stack()))
+					}
+				}()
+				run(intervalSec)
+			}()
 		}
 
 		intervalSec = getInterval(config.Get())
@@ -314,16 +322,23 @@ func (s *Server) runPeriodicScheduler(defaultIntervalSec int, getInterval func(*
 	}
 }
 
+const (
+	downstreamCycleTimeout = 5 * time.Minute
+	upstreamCycleTimeout   = 3 * time.Minute
+)
+
 func (s *Server) startDownstreamScheduler() {
 	s.runPeriodicScheduler(
 		300,
 		func(c *config.AgentConfig) int { return c.DownstreamIntervalSec },
 		s.isDownstreamAutoActive,
 		func(interval int) {
-			ctx := s.stopCtx
-			if ctx == nil {
-				ctx = context.Background()
+			baseCtx := s.stopCtx
+			if baseCtx == nil {
+				baseCtx = context.Background()
 			}
+			ctx, cancel := context.WithTimeout(baseCtx, downstreamCycleTimeout)
+			defer cancel()
 			if stats, err := s.runDownstreamSync(ctx, DownstreamMasterDomains); err != nil {
 				log.Printf("[SAP-AGENT] Scheduled downstream sync notice: %v", err)
 			} else if stats != nil && (stats.UOMs+stats.Products+stats.Barcodes+stats.Prices+stats.Inventory+stats.Categories > 0) {
@@ -340,12 +355,18 @@ func (s *Server) startUpstreamScheduler() {
 		func(c *config.AgentConfig) int { return c.UpstreamIntervalSec },
 		s.isUpstreamAutoActive,
 		func(_ int) {
-			ctx := s.stopCtx
-			if ctx == nil {
-				ctx = context.Background()
+			baseCtx := s.stopCtx
+			if baseCtx == nil {
+				baseCtx = context.Background()
 			}
-			if _, err := s.runUpstreamSync(ctx); err != nil {
+			ctx, cancel := context.WithTimeout(baseCtx, upstreamCycleTimeout)
+			defer cancel()
+			stats, err := s.runUpstreamSync(ctx)
+			if err != nil {
 				log.Printf("[SAP-AGENT] Scheduled upstream sync notice: %v", err)
+			} else if stats != nil && (stats.TransactionsPosted+stats.OrdersPosted+stats.ReturnsPosted+stats.TransactionsHeld+stats.OrdersHeld+stats.Errors > 0) {
+				log.Printf("[SAP-AGENT] Scheduled upstream sync completed: %d txns, %d orders, %d returns posted, %d held, %d errors in %v",
+					stats.TransactionsPosted, stats.OrdersPosted, stats.ReturnsPosted, stats.TransactionsHeld+stats.OrdersHeld, stats.Errors, stats.Duration.Round(time.Millisecond))
 			}
 		},
 	)
@@ -1277,6 +1298,7 @@ func (s *Server) handleRunDownstreamSync(c *gin.Context) {
 
 	stats, err := s.runDownstreamSync(c.Request.Context(), domains)
 	if err != nil {
+		log.Printf("[SAP-AGENT] Manual downstream sync notice: %v", err)
 		c.JSON(http.StatusOK, gin.H{
 			"success": false,
 			"message": fmt.Sprintf("Downstream sync notice: %v", err),
@@ -1290,6 +1312,7 @@ func (s *Server) handleRunDownstreamSync(c *gin.Context) {
 	if len(domains) == 1 {
 		summaryMsg = fmt.Sprintf("Downstream sync for %s completed in %v", domains[0], stats.Duration.Round(time.Millisecond))
 	}
+	log.Printf("[SAP-AGENT] Manual %s", summaryMsg)
 
 	c.JSON(http.StatusOK, gin.H{
 		"success":   true,
@@ -1371,6 +1394,7 @@ func (s *Server) handleRunUpstreamSync(c *gin.Context) {
 	}
 	stats, err := s.runUpstreamSync(c.Request.Context())
 	if err != nil {
+		log.Printf("[SAP-AGENT] Manual upstream sync notice: %v", err)
 		c.JSON(http.StatusOK, gin.H{
 			"success": false,
 			"message": fmt.Sprintf("Upstream sync notice: %v", err),
@@ -1378,9 +1402,12 @@ func (s *Server) handleRunUpstreamSync(c *gin.Context) {
 		})
 		return
 	}
+	summaryMsg := fmt.Sprintf("Upstream sync completed: %d transactions posted, %d orders posted, %d returns posted, %d held, %d errors",
+		stats.TransactionsPosted, stats.OrdersPosted, stats.ReturnsPosted, stats.TransactionsHeld+stats.OrdersHeld, stats.Errors)
+	log.Printf("[SAP-AGENT] Manual %s", summaryMsg)
 	c.JSON(http.StatusOK, gin.H{
 		"success":   true,
-		"message":   fmt.Sprintf("Upstream sync completed: %d transactions posted, %d returns posted, %d errors", stats.TransactionsPosted, stats.ReturnsPosted, stats.Errors),
+		"message":   summaryMsg,
 		"stats":     stats,
 		"timestamp": time.Now().Format(time.RFC3339),
 	})

@@ -260,19 +260,23 @@ func (s *UpstreamSync) Close() error {
 	return nil
 }
 
-func (s *UpstreamSync) attachBinAllocations(ctx context.Context, docLine *sap.SAPDocumentLine, lineNum int, isReturn bool) {
+func (s *UpstreamSync) attachBinAllocations(ctx context.Context, docLine *sap.SAPDocumentLine, lineNum int, isReturn bool) error {
 	if docLine == nil || docLine.ItemCode == "" || docLine.WarehouseCode == "" || docLine.Quantity <= 0 {
-		return
+		return nil
 	}
 	allocs, err := s.sapClient.ResolveWarehouseBinAllocations(ctx, docLine.ItemCode, docLine.WarehouseCode, docLine.Quantity, isReturn)
-	if err != nil || len(allocs) == 0 {
-		return
+	if err != nil {
+		return fmt.Errorf("bin allocation lookup failed for item %s in warehouse %s: %w", docLine.ItemCode, docLine.WarehouseCode, err)
+	}
+	if len(allocs) == 0 {
+		return nil
 	}
 	for i := range allocs {
 		ln := lineNum
 		allocs[i].BaseLineNumber = &ln
 	}
 	docLine.DocumentLinesBinAllocations = allocs
+	return nil
 }
 
 func (s *UpstreamSync) applyDocumentHeaderMeta(ctx context.Context, req *sap.SAPInvoiceRequest, objectCode string) {
@@ -679,7 +683,9 @@ func (s *UpstreamSync) postTransactionToSAP(ctx context.Context, tx *nembus.POST
 			WarehouseCode:   s.cfg.NembusDefaultWarehouse,
 		}
 		applySAPUoM(&docLine, line.SAPUoMEntry, line.SAPUgpEntry, line.UoMConversionFactor, line.IsBaseUoM)
-		s.attachBinAllocations(ctx, &docLine, lineNum, false)
+		if err := s.attachBinAllocations(ctx, &docLine, lineNum, false); err != nil {
+			return err
+		}
 		docLines = append(docLines, docLine)
 	}
 
@@ -939,7 +945,9 @@ func (s *UpstreamSync) postSalesReturnToSAP(ctx context.Context, ret *nembus.Sal
 			}
 		}
 		applySAPUoM(&docLine, line.SAPUoMEntry, line.SAPUgpEntry, line.UoMConversionFactor, line.IsBaseUoM)
-		s.attachBinAllocations(ctx, &docLine, lineNum, true)
+		if err := s.attachBinAllocations(ctx, &docLine, lineNum, true); err != nil {
+			return err
+		}
 		docLines = append(docLines, docLine)
 	}
 
@@ -1018,7 +1026,9 @@ func (s *UpstreamSync) postSalesOrderToSAP(ctx context.Context, order *nembus.Sa
 			WarehouseCode:   s.cfg.NembusDefaultWarehouse,
 		}
 		applySAPUoM(&docLine, line.SAPUoMEntry, line.SAPUgpEntry, line.UoMConversionFactor, line.IsBaseUoM)
-		s.attachBinAllocations(ctx, &docLine, lineNum, false)
+		if err := s.attachBinAllocations(ctx, &docLine, lineNum, false); err != nil {
+			return err
+		}
 		docLines = append(docLines, docLine)
 	}
 	if len(docLines) == 0 {
