@@ -17,7 +17,7 @@ type SAPDocumentLine struct {
 	ItemCode                    string             `json:"ItemCode"`
 	ItemDescription             string             `json:"ItemDescription,omitempty"`
 	Quantity                    float64            `json:"Quantity"`
-	UnitPrice                   float64            `json:"UnitPrice"`
+	UnitPrice                   float64            `json:"UnitPrice,omitempty"`
 	PriceAfterVAT               float64            `json:"PriceAfterVAT,omitempty"`
 	DiscountPercent             float64            `json:"DiscountPercent,omitempty"`
 	TaxCode                     string             `json:"TaxCode,omitempty"`
