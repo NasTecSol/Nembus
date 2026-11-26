@@ -582,44 +582,67 @@ func (b *SAPBarcode) ToCanonical(isPrimary bool) CanonicalBarcode {
 // Domain 4: Inventory Balances (OITW)
 // ----------------------------------------------------
 
+type SAPBinBalance struct {
+	BinAbs    int64   `json:"bin_abs"`
+	BinCode   string  `json:"bin_code"`
+	OnHandQty float64 `json:"on_hand_qty"`
+}
+
 type SAPInventoryStock struct {
-	ItemCode   string  `json:"item_code"`
-	WhsCode    string  `json:"whs_code"`
-	OnHand     float64 `json:"on_hand"`
-	IsCommited float64 `json:"is_commited"`
-	OnOrder    float64 `json:"on_order"`
-	MinStock   float64 `json:"min_stock"`
-	MaxStock   float64 `json:"max_stock"`
+	ItemCode    string  `json:"item_code"`
+	WhsCode     string  `json:"whs_code"`
+	OnHand      float64 `json:"on_hand"`
+	IsCommited  float64 `json:"is_commited"`
+	OnOrder     float64 `json:"on_order"`
+	MinStock    float64 `json:"min_stock"`
+	MaxStock    float64 `json:"max_stock"`
+	BinAbsEntry int64   `json:"bin_abs_entry,omitempty"`
+	BinCode     string  `json:"bin_code,omitempty"`
 }
 
 type CanonicalInventoryStock struct {
-	ProductSKU        string                 `json:"product_sku"`
-	StoreCode         string                 `json:"store_code"`
-	QuantityOnHand    float64                `json:"quantity_on_hand"`
-	QuantityAllocated float64                `json:"quantity_allocated"`
-	QuantityAvailable float64                `json:"quantity_available"`
-	QuantityOnOrder   float64                `json:"quantity_on_order"`
-	ReorderLevel      float64                `json:"reorder_level"`
-	MaxStockLevel     float64                `json:"max_stock_level"`
-	Metadata          map[string]interface{} `json:"metadata"`
+	ProductSKU          string                 `json:"product_sku"`
+	StoreCode           string                 `json:"store_code"`
+	StorageLocationCode string                 `json:"storage_location_code,omitempty"`
+	BinAbsEntry         *int64                 `json:"bin_abs_entry,omitempty"`
+	QuantityOnHand      float64                `json:"quantity_on_hand"`
+	QuantityAllocated   float64                `json:"quantity_allocated"`
+	QuantityAvailable   float64                `json:"quantity_available"`
+	QuantityOnOrder     float64                `json:"quantity_on_order"`
+	ReorderLevel        float64                `json:"reorder_level"`
+	MaxStockLevel       float64                `json:"max_stock_level"`
+	Metadata            map[string]interface{} `json:"metadata"`
 }
 
 func (inv *SAPInventoryStock) ToCanonical() CanonicalInventoryStock {
 	available := math.Max(0, inv.OnHand-inv.IsCommited)
+	binCode := strings.TrimSpace(inv.BinCode)
+	meta := map[string]interface{}{
+		"sap_item_code": inv.ItemCode,
+		"sap_whs_code":  inv.WhsCode,
+	}
+	var binAbsPtr *int64
+	if inv.BinAbsEntry > 0 {
+		v := inv.BinAbsEntry
+		binAbsPtr = &v
+		meta["sap_bin_abs"] = inv.BinAbsEntry
+	}
+	if binCode != "" {
+		meta["sap_bin_code"] = binCode
+	}
 
 	return CanonicalInventoryStock{
-		ProductSKU:        strings.TrimSpace(inv.ItemCode),
-		StoreCode:         strings.TrimSpace(inv.WhsCode),
-		QuantityOnHand:    inv.OnHand,
-		QuantityAllocated: inv.IsCommited,
-		QuantityAvailable: available,
-		QuantityOnOrder:   inv.OnOrder,
-		ReorderLevel:      inv.MinStock,
-		MaxStockLevel:     inv.MaxStock,
-		Metadata: map[string]interface{}{
-			"sap_item_code": inv.ItemCode,
-			"sap_whs_code":  inv.WhsCode,
-		},
+		ProductSKU:          strings.TrimSpace(inv.ItemCode),
+		StoreCode:           strings.TrimSpace(inv.WhsCode),
+		StorageLocationCode: binCode,
+		BinAbsEntry:         binAbsPtr,
+		QuantityOnHand:      inv.OnHand,
+		QuantityAllocated:   inv.IsCommited,
+		QuantityAvailable:   available,
+		QuantityOnOrder:     inv.OnOrder,
+		ReorderLevel:        inv.MinStock,
+		MaxStockLevel:       inv.MaxStock,
+		Metadata:            meta,
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/exec"
@@ -19,6 +20,7 @@ import (
 	"github.com/NasTecSol/nembus-sap-agent/internal/etl"
 	"github.com/NasTecSol/nembus-sap-agent/internal/server"
 	"github.com/NasTecSol/nembus-sap-agent/internal/transport"
+	"github.com/NasTecSol/nembus-sap-agent/internal/tray"
 	"github.com/NasTecSol/nembus-sap-agent/internal/updater"
 	"github.com/NasTecSol/nembus-sap-agent/ui"
 )
@@ -49,10 +51,10 @@ func (p *program) Start(s service.Service) error {
 
 func (p *program) run() {
 	addr := fmt.Sprintf("http://127.0.0.1:%d", p.port)
-	log.Printf("[SAP-AGENT] Starting Nembus SAP B1 Migration Agent on %s", addr)
+	log.Printf("[SAP-AGENT] Starting Nembus SAP B1 Migration Agent %s on %s (config: %s)", p.cfg.Version, addr, config.ConfigPath())
 
-	// If interactive (not running as headless Windows Service), auto-open browser after a short delay
-	if service.Interactive() {
+	// Only auto-open browser on first-run setup; once onboarded, run silently in System Tray.
+	if service.Interactive() && !p.cfg.OnboardingCompleted {
 		go func() {
 			time.Sleep(800 * time.Millisecond)
 			openBrowser(addr)
@@ -138,11 +140,29 @@ func main() {
 
 	svcFlag := flag.String("service", "", "Control the Windows service ('install', 'uninstall', 'start', 'stop', 'status')")
 	portFlag := flag.Int("port", 17890, "HTTP server port (default 17890)")
-	configFlag := flag.String("config", "agent_config.json", "Path to agent configuration file")
+	configFlag := flag.String("config", "", "Path to agent configuration file (defaults to persistent OS AppData path)")
+	headlessFlag := flag.Bool("headless", false, "Run without Windows System Tray GUI")
 	flag.Parse()
 
+	isService := !service.Interactive()
+
+	// Set up persistent rotating file logging so tray/service runs always keep debug logs.
+	logPath := config.DefaultLogPath(isService)
+	_ = os.MkdirAll(filepath.Dir(logPath), 0755)
+	if logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644); err == nil {
+		log.SetOutput(io.MultiWriter(os.Stderr, logFile))
+	}
+
+	// Resolve persistent config path & seamlessly migrate legacy working-directory files once.
+	cfgPath := *configFlag
+	if cfgPath == "" {
+		cfgPath = config.DefaultConfigPath(isService)
+		config.MigrateLegacyFileIfNeeded("agent_config.json", cfgPath)
+		config.MigrateLegacyFileIfNeeded("agent.db", config.DefaultSQLitePath(isService))
+	}
+
 	// 1. Load Agent Configuration
-	cfg, err := config.LoadConfig(*configFlag)
+	cfg, err := config.LoadConfig(cfgPath)
 	if err != nil {
 		log.Printf("[SAP-AGENT] Warning: failed to load config file: %v. Using defaults.", err)
 		cfg = config.DefaultConfig()
@@ -156,7 +176,7 @@ func main() {
 	if CloudURL != "" && (cfg.Cloud.BaseURL == "" || (!cfg.OnboardingCompleted && cfg.Cloud.BaseURL == config.DefaultConfig().Cloud.BaseURL)) {
 		cfg.Cloud.BaseURL = CloudURL
 	}
-	if AppUpdateKey != "" && cfg.Cloud.AppUpdateClientKey == "" {
+	if AppUpdateKey != "" && (cfg.Cloud.AppUpdateClientKey == "" || cfg.Cloud.AppUpdateClientKey == "nembus-pos-update-client-key-default") {
 		cfg.Cloud.AppUpdateClientKey = AppUpdateKey
 	}
 
@@ -236,6 +256,51 @@ func main() {
 			log.Fatalf("[SAP-AGENT] Failed to execute service action '%s': %v", *svcFlag, err)
 		}
 		fmt.Printf("[SAP-AGENT] Service action '%s' succeeded.\n", *svcFlag)
+		return
+	}
+
+	// Interactive desktop mode: run HTTP server in background and host Windows System Tray.
+	if service.Interactive() && !*headlessFlag {
+		go prg.run()
+		addr := fmt.Sprintf("http://127.0.0.1:%d", cfg.Port)
+		tray.Run(tray.Config{
+			BaseURL:   addr,
+			Version:   cfg.Version,
+			GetStatus: srv.TrayStatus,
+			OnCheckUpdate: func() (string, string, bool) {
+				currCfg := config.Get()
+				currVer := currCfg.Version
+				if currVer == "" {
+					currVer = Version
+				}
+				info, err := updater.CheckForUpdate(currVer, currCfg.Cloud.BaseURL, currCfg.Cloud.AppUpdateClientKey)
+				if err != nil {
+					log.Printf("[SAP-UPDATER] Manual tray update check failed: %v", err)
+					return "Status: Update check failed", addr + "/#check-update", false
+				}
+				if info != nil && info.HasUpdate {
+					log.Printf("[SAP-UPDATER] Tray check found update %s (mandatory=%v)", info.LatestVersion, info.IsMandatory)
+					if info.IsMandatory && (engine == nil || !engine.IsRunning()) {
+						go func() {
+							_ = updater.ApplyUpdateWithHook(
+								info.DownloadURL,
+								info.ChecksumSHA256,
+								currCfg.Cloud.AppUpdateClientKey,
+								false,
+								"NembusSAPMigrationAgent",
+								func() { _ = prg.Stop(nil) },
+							)
+						}()
+						return fmt.Sprintf("Status: Updating to %s...", info.LatestVersion), "", true
+					}
+					return fmt.Sprintf("Status: Update %s available!", info.LatestVersion), addr + "/#check-update", true
+				}
+				return fmt.Sprintf("Status: Up to date (%s)", currVer), "", false
+			},
+			OnExit: func() {
+				_ = prg.Stop(nil)
+			},
+		})
 		return
 	}
 

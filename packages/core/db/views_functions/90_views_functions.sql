@@ -2898,6 +2898,8 @@ DECLARE
     v_fulfilled_qty DECIMAL(15,3);
     v_conv_factor DECIMAL(15,6);
     v_base_fulfilled_qty DECIMAL(15,3);
+    v_reserved_qty DECIMAL(15,3);
+    v_release_allocated_qty DECIMAL(15,3);
     v_reservation RECORD;
 BEGIN
     -- Process when fulfillment_status becomes 'fulfilled'
@@ -2951,14 +2953,39 @@ BEGIN
         -- Convert quantity to base units (e.g. 2 Cartons * 10 = 20 Base Pieces)
         v_base_fulfilled_qty := v_fulfilled_qty * v_conv_factor;
 
+        -- Only release quantity_allocated that was actually reserved/allocated for THIS sales order
+        -- (either via stock_reservations or via fn_trigger_allocate_inventory_on_order_line).
+        -- Direct backoffice orders without prior allocation must not decrement quantity_allocated.
+        SELECT COALESCE(SUM(quantity_reserved), 0) INTO v_reserved_qty
+        FROM stock_reservations
+        WHERE reference_type = 'sales_order'
+          AND reference_id = NEW.id::TEXT
+          AND product_id = v_order_line.product_id
+          AND (product_variant_id = v_order_line.product_variant_id
+               OR (product_variant_id IS NULL AND v_order_line.product_variant_id IS NULL))
+          AND store_id = NEW.store_id
+          AND status = 'active';
+        v_reserved_qty := COALESCE(v_reserved_qty, 0) + COALESCE((
+            SELECT SUM(quantity)
+            FROM stock_movements
+            WHERE movement_type = 'allocation'
+              AND reference_type = 'sales_order'
+              AND metadata->>'sales_order_id' = NEW.id::TEXT
+              AND product_id = v_order_line.product_id
+              AND (product_variant_id = v_order_line.product_variant_id
+                   OR (product_variant_id IS NULL AND v_order_line.product_variant_id IS NULL))
+              AND from_store_id = NEW.store_id
+        ), 0);
+        v_release_allocated_qty := LEAST(v_base_fulfilled_qty, v_reserved_qty);
+
         -- 1. FULFILLMENT DEDUCTION: Deduct base units from inventory_stock
         UPDATE inventory_stock
         SET 
             quantity_on_hand = GREATEST(0, quantity_on_hand - v_base_fulfilled_qty),
-            quantity_allocated = GREATEST(0, quantity_allocated - v_base_fulfilled_qty),
+            quantity_allocated = GREATEST(0, quantity_allocated - v_release_allocated_qty),
             quantity_available = GREATEST(0, 
                 (quantity_on_hand - v_base_fulfilled_qty) - 
-                GREATEST(0, quantity_allocated - v_base_fulfilled_qty)
+                GREATEST(0, quantity_allocated - v_release_allocated_qty)
             ),
             updated_at = CURRENT_TIMESTAMP
         WHERE product_id = v_order_line.product_id

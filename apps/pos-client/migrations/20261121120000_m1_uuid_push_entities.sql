@@ -1,4 +1,5 @@
 -- +goose Up
+-- Versioned UUID upgrade for existing databases. Keep in sync with the core and POS migration copies.
 -- @nembus:m1_uuid_push_entities_begin
 -- M1 UUID push entities upgrade for existing databases.
 -- =====================================================================
@@ -25,6 +26,20 @@ END;
 $$;
 -- +goose StatementEnd
 
+-- Some restored tenant schemas already have UUID columns while others still
+-- hold legacy integer IDs. Preserve UUID values while the migration converts
+-- the remaining integer columns.
+-- +goose StatementBegin
+CREATE OR REPLACE FUNCTION pg_temp.det_uuid(tbl text, existing_id uuid)
+RETURNS uuid
+LANGUAGE sql
+IMMUTABLE
+STRICT
+AS $$
+    SELECT existing_id;
+$$;
+-- +goose StatementEnd
+
 -- +goose StatementBegin
 CREATE OR REPLACE FUNCTION pg_temp.det_uuid(tbl text, legacy_id text)
 RETURNS uuid
@@ -38,20 +53,6 @@ BEGIN
     END IF;
     RETURN legacy_id::uuid;
 END;
-$$;
--- +goose StatementEnd
-
--- Some restored tenant schemas already have UUID columns while others still
--- hold legacy integer IDs. Preserve UUID values while the migration converts
--- the remaining integer columns.
--- +goose StatementBegin
-CREATE OR REPLACE FUNCTION pg_temp.det_uuid(tbl text, existing_id uuid)
-RETURNS uuid
-LANGUAGE sql
-IMMUTABLE
-STRICT
-AS $$
-    SELECT existing_id;
 $$;
 -- +goose StatementEnd
 

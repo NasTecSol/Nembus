@@ -16,6 +16,9 @@ const (
 	TableITM1 = "ITM1" // Item Price Lists
 	TableOPLN = "OPLN" // Price Lists
 	TableOITW = "OITW" // Item Warehouse Info / Inventory Stock
+	TableOIBQ = "OIBQ" // Bin Location Accumulators
+	TableNNM1 = "NNM1" // Document Numbering Series
+	TableOFPR = "OFPR" // Posting Periods
 	TableOCRD = "OCRD" // Business Partners (Customers / Suppliers)
 	TableCRD1 = "CRD1" // BP Addresses
 	TableORDR = "ORDR" // Sales Orders Header
@@ -420,7 +423,37 @@ WHERE (
 ORDER BY b.BcdEntry;
 `
 
+const QueryServerNow = `SELECT GETDATE();`
+
 const QueryInventoryStock = `
+SELECT 
+    w.ItemCode,
+    w.WhsCode,
+    ISNULL(w.OnHand, 0.0) AS OnHand,
+    ISNULL(w.IsCommited, 0.0) AS IsCommited,
+    ISNULL(w.OnOrder, 0.0) AS OnOrder,
+    ISNULL(w.MinStock, 0.0) AS MinStock,
+    ISNULL(w.MaxStock, 0.0) AS MaxStock,
+    ISNULL(pb.BinAbs, CASE WHEN wh.BinActivat = 'Y' THEN ISNULL(wh.DftBinAbs, 0) ELSE 0 END) AS BinAbs,
+    ISNULL(pb.BinCode, CASE WHEN wh.BinActivat = 'Y' THEN ISNULL(db.BinCode, '') ELSE '' END) AS BinCode
+FROM OITW w WITH (NOLOCK)
+LEFT JOIN OWHS wh WITH (NOLOCK) ON wh.WhsCode = w.WhsCode
+LEFT JOIN OBIN db WITH (NOLOCK) ON wh.BinActivat = 'Y' AND db.AbsEntry = wh.DftBinAbs
+OUTER APPLY (
+    SELECT TOP 1 q.BinAbs, b.BinCode
+    FROM OIBQ q WITH (NOLOCK)
+    INNER JOIN OBIN b WITH (NOLOCK) ON b.AbsEntry = q.BinAbs
+    WHERE wh.BinActivat = 'Y'
+      AND q.ItemCode = w.ItemCode
+      AND q.WhsCode = w.WhsCode
+      AND ISNULL(q.OnHandQty, 0) > 0
+    ORDER BY CASE WHEN q.BinAbs = wh.DftBinAbs THEN 0 ELSE 1 END, q.OnHandQty DESC, q.BinAbs ASC
+) pb
+WHERE w.OnHand <> 0 OR w.IsCommited <> 0 OR w.OnOrder <> 0
+ORDER BY w.ItemCode, w.WhsCode;
+`
+
+const QueryInventoryStockFallback = `
 SELECT 
     ItemCode,
     WhsCode,
@@ -428,15 +461,31 @@ SELECT
     ISNULL(IsCommited, 0.0) AS IsCommited,
     ISNULL(OnOrder, 0.0) AS OnOrder,
     ISNULL(MinStock, 0.0) AS MinStock,
-    ISNULL(MaxStock, 0.0) AS MaxStock
-FROM OITW
+    ISNULL(MaxStock, 0.0) AS MaxStock,
+    0 AS BinAbs,
+    '' AS BinCode
+FROM OITW WITH (NOLOCK)
 WHERE OnHand <> 0 OR IsCommited <> 0 OR OnOrder <> 0
 ORDER BY ItemCode, WhsCode;
 `
 
+const QueryInventoryBinBalances = `
+SELECT
+    q.ItemCode,
+    q.WhsCode,
+    q.BinAbs,
+    ISNULL(b.BinCode, '') AS BinCode,
+    ISNULL(q.OnHandQty, 0.0) AS OnHandQty
+FROM OIBQ q WITH (NOLOCK)
+INNER JOIN OBIN b WITH (NOLOCK) ON b.AbsEntry = q.BinAbs
+WHERE ISNULL(q.OnHandQty, 0) <> 0
+ORDER BY q.ItemCode, q.WhsCode, q.OnHandQty DESC, q.BinAbs ASC;
+`
+
 // QueryInventoryStockDelta selects OITW rows whose stock balances or warehouse
 // min/max levels changed since @SinceDate/@SinceTime using indexed OITM and OINM
-// DocDate lookups joined back to OITW via UNION (including rows where OnHand = 0).
+// lookups joined back to OITW via UNION (including rows where OnHand = 0 and
+// backdated OINM postings created on or after @SinceDate).
 const QueryInventoryStockDelta = `
 ;WITH changed_keys AS (
     SELECT w.ItemCode, w.WhsCode
@@ -462,16 +511,15 @@ const QueryInventoryStockDelta = `
     UNION
     SELECT DISTINCT l.ItemCode, l.Warehouse AS WhsCode
     FROM OINM l WITH (NOLOCK)
-    WHERE l.DocDate >= @SinceDate
-      AND (
+    WHERE (
           l.CreateDate >= CAST(@SinceDateTime AS DATETIME)
-          OR l.CreateDate IS NULL
           OR (l.CreateDate = @SinceDate AND (
               CASE WHEN l.DocTime IS NULL THEN 235959
                    WHEN l.DocTime < 10000 THEN l.DocTime * 100
                    ELSE l.DocTime
               END
           ) >= ((@SinceTime / 100) * 100))
+          OR (l.CreateDate IS NULL AND l.DocDate >= @SinceDate)
       )
 )
 SELECT
@@ -481,10 +529,24 @@ SELECT
     ISNULL(w.IsCommited, 0.0) AS IsCommited,
     ISNULL(w.OnOrder, 0.0) AS OnOrder,
     ISNULL(w.MinStock, 0.0) AS MinStock,
-    ISNULL(w.MaxStock, 0.0) AS MaxStock
+    ISNULL(w.MaxStock, 0.0) AS MaxStock,
+    ISNULL(pb.BinAbs, CASE WHEN wh.BinActivat = 'Y' THEN ISNULL(wh.DftBinAbs, 0) ELSE 0 END) AS BinAbs,
+    ISNULL(pb.BinCode, CASE WHEN wh.BinActivat = 'Y' THEN ISNULL(db.BinCode, '') ELSE '' END) AS BinCode
 FROM changed_keys ck
 INNER JOIN OITW w WITH (NOLOCK)
     ON w.ItemCode = ck.ItemCode AND w.WhsCode = ck.WhsCode
+LEFT JOIN OWHS wh WITH (NOLOCK) ON wh.WhsCode = w.WhsCode
+LEFT JOIN OBIN db WITH (NOLOCK) ON wh.BinActivat = 'Y' AND db.AbsEntry = wh.DftBinAbs
+OUTER APPLY (
+    SELECT TOP 1 q.BinAbs, b.BinCode
+    FROM OIBQ q WITH (NOLOCK)
+    INNER JOIN OBIN b WITH (NOLOCK) ON b.AbsEntry = q.BinAbs
+    WHERE wh.BinActivat = 'Y'
+      AND q.ItemCode = w.ItemCode
+      AND q.WhsCode = w.WhsCode
+      AND ISNULL(q.OnHandQty, 0) > 0
+    ORDER BY CASE WHEN q.BinAbs = wh.DftBinAbs THEN 0 ELSE 1 END, q.OnHandQty DESC, q.BinAbs ASC
+) pb
 ORDER BY w.ItemCode, w.WhsCode;
 `
 
@@ -498,7 +560,7 @@ const QueryInventoryStockDeltaFallback = `
     UNION
     SELECT DISTINCT l.ItemCode, l.Warehouse AS WhsCode
     FROM OINM l WITH (NOLOCK)
-    WHERE l.DocDate >= @SinceDate
+    WHERE l.CreateDate >= @SinceDate OR l.DocDate >= @SinceDate
 )
 SELECT
     w.ItemCode,
@@ -507,7 +569,9 @@ SELECT
     ISNULL(w.IsCommited, 0.0) AS IsCommited,
     ISNULL(w.OnOrder, 0.0) AS OnOrder,
     ISNULL(w.MinStock, 0.0) AS MinStock,
-    ISNULL(w.MaxStock, 0.0) AS MaxStock
+    ISNULL(w.MaxStock, 0.0) AS MaxStock,
+    0 AS BinAbs,
+    '' AS BinCode
 FROM changed_keys ck
 INNER JOIN OITW w WITH (NOLOCK)
     ON w.ItemCode = ck.ItemCode AND w.WhsCode = ck.WhsCode

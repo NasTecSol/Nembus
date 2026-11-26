@@ -518,6 +518,24 @@ func (uc *OrderUseCase) ListUnpostedSalesOrdersForSAP(ctx context.Context, orgID
 	return utils.NewResponse(utils.CodeOK, "unposted sales orders listed", orders)
 }
 
+// ListApprovedPendingSalesOrdersForSAP returns non-POS sales orders approved for SAP upload.
+func (uc *OrderUseCase) ListApprovedPendingSalesOrdersForSAP(ctx context.Context, orgID int32, limit int32) *repository.Response {
+	if resp := uc.repoOrErr(); resp != nil {
+		return resp
+	}
+	if limit <= 0 {
+		limit = 50
+	}
+	orders, err := uc.repo.ListApprovedPendingSalesOrdersV2ForSAP(ctx, repository.ListApprovedPendingSalesOrdersV2ForSAPParams{
+		OrganizationID: orgID,
+		Limit:          limit,
+	})
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, "failed to list approved pending sales orders", err.Error())
+	}
+	return utils.NewResponse(utils.CodeOK, "approved pending sales orders listed", orders)
+}
+
 // MarkSalesOrderSAPSynced records SAP DocEntry/DocNum metadata on a sales order.
 func (uc *OrderUseCase) MarkSalesOrderSAPSynced(ctx context.Context, orderID uuid.UUID, sapDocEntry, sapDocNum int) *repository.Response {
 	if resp := uc.repoOrErr(); resp != nil {

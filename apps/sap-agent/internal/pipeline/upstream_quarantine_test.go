@@ -4,9 +4,11 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/NasTecSol/nembus-sap-agent/internal/db"
 	"github.com/NasTecSol/nembus-sap-agent/internal/sap"
 )
 
@@ -103,5 +105,37 @@ func TestUpstreamTransientErrorsDoNotConsumePermanentQuota(t *testing.T) {
 	t5 := t4.Add(5 * time.Minute)
 	if q := u.recordRetryFailure("tx:3", t5, permErr); !q {
 		t.Fatalf("third permanent error should quarantine")
+	}
+}
+
+func TestUpstreamQuarantinePersistsAcrossRestarts(t *testing.T) {
+	store, err := db.NewSQLiteStore(filepath.Join(t.TempDir(), "agent.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer store.Close()
+
+	u1 := &UpstreamSync{sqlite: store, failedRetries: make(map[string]retryEntry)}
+	now := time.Date(2026, 11, 26, 1, 0, 0, 0, time.UTC)
+	permErr := &sap.APIError{StatusCode: http.StatusBadRequest, Code: -5002, Message: "No numbering series"}
+
+	u1.recordRetryFailure("ret:167", now, permErr)
+	u1.recordRetryFailure("ret:167", now.Add(time.Minute), permErr)
+	if q := u1.recordRetryFailure("ret:167", now.Add(6*time.Minute), permErr); !q {
+		t.Fatalf("expected quarantine on 3rd permanent failure")
+	}
+
+	// Simulate process restart with a fresh empty in-memory map
+	u2 := &UpstreamSync{sqlite: store, failedRetries: make(map[string]retryEntry)}
+	skip, _, quarantined := u2.shouldBackoff("ret:167", now.Add(time.Hour))
+	if !skip || !quarantined {
+		t.Fatalf("expected persisted quarantine after restart, got skip=%v quarantined=%v", skip, quarantined)
+	}
+
+	// Clearing retry key removes it from both memory and SQLite
+	u2.ClearRetryKey("ret:167")
+	skip, _, quarantined = u2.shouldBackoff("ret:167", now.Add(time.Hour))
+	if skip || quarantined {
+		t.Fatalf("expected cleared retry key not to back off")
 	}
 }

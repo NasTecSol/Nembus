@@ -936,25 +936,58 @@ func (uc *SAPMigrationUseCase) IngestBatch(ctx context.Context, orgID int, paylo
 				}
 			}
 
-			_ = execWithSavepoint(ctx, tx, `
-				DELETE FROM product_prices 
-				WHERE product_id = (SELECT id FROM products WHERE organization_id = $1 AND sku = $2)
-				  AND price_list_id = (SELECT id FROM price_lists WHERE code = $3)
-				  AND (uom_id IS NOT DISTINCT FROM (SELECT id FROM units_of_measure WHERE code = $4 LIMIT 1));
-			`, payload.OrganizationID, item.ProductSKU, item.PriceListCode, item.UOMCode)
-
+			// Atomic upsert on product_prices to preserve row IDs and avoid
+			// DELETE+INSERT churn that causes uq_product_prices_natural_key (23505)
+			// collisions during POS change-log pull.
 			q := `
 			INSERT INTO product_prices (product_id, price_list_id, uom_id, price, is_active, metadata)
 			SELECT p.id, pl.id, (SELECT id FROM units_of_measure WHERE code = $6 LIMIT 1), $3, true, $4
 			FROM products p
 			CROSS JOIN price_lists pl
 			WHERE p.organization_id = $1 AND p.sku = $2 AND pl.code = $5
-			LIMIT 1;
+			LIMIT 1
+			ON CONFLICT ON CONSTRAINT uq_product_prices_natural_key DO UPDATE SET
+				price      = excluded.price,
+				is_active  = true,
+				metadata   = COALESCE(product_prices.metadata, '{}'::jsonb) || excluded.metadata,
+				updated_at = CURRENT_TIMESTAMP;
 			`
 			tag, err := execWithSavepointRows(ctx, tx, q, payload.OrganizationID, item.ProductSKU, item.Price, metaBytes, item.PriceListCode, item.UOMCode)
 			if err != nil {
-				failed++
-				errs = append(errs, fmt.Sprintf("price_item %s@%s error: %v", item.ProductSKU, item.PriceListCode, err))
+				// Fallback for databases where uq_product_prices_natural_key is not yet applied:
+				// update existing row in-place first, only inserting when absent.
+				updTag, updErr := execWithSavepointRows(ctx, tx, `
+					UPDATE product_prices
+					SET price = $3,
+					    is_active = true,
+					    metadata = COALESCE(metadata, '{}'::jsonb) || $4,
+					    updated_at = CURRENT_TIMESTAMP
+					WHERE product_id = (SELECT id FROM products WHERE organization_id = $1 AND sku = $2 LIMIT 1)
+					  AND price_list_id = (SELECT id FROM price_lists WHERE code = $5 LIMIT 1)
+					  AND product_variant_id IS NULL
+					  AND (uom_id IS NOT DISTINCT FROM (SELECT id FROM units_of_measure WHERE code = $6 LIMIT 1))
+					  AND min_quantity IS NOT DISTINCT FROM 1;
+				`, payload.OrganizationID, item.ProductSKU, item.Price, metaBytes, item.PriceListCode, item.UOMCode)
+				if updErr == nil && updTag.RowsAffected() > 0 {
+					staged++
+					continue
+				}
+				insTag, insErr := execWithSavepointRows(ctx, tx, `
+					INSERT INTO product_prices (product_id, price_list_id, uom_id, price, is_active, metadata)
+					SELECT p.id, pl.id, (SELECT id FROM units_of_measure WHERE code = $6 LIMIT 1), $3, true, $4
+					FROM products p
+					CROSS JOIN price_lists pl
+					WHERE p.organization_id = $1 AND p.sku = $2 AND pl.code = $5
+					LIMIT 1;
+				`, payload.OrganizationID, item.ProductSKU, item.Price, metaBytes, item.PriceListCode, item.UOMCode)
+				if insErr != nil {
+					failed++
+					errs = append(errs, fmt.Sprintf("price_item %s@%s error: %v", item.ProductSKU, item.PriceListCode, insErr))
+				} else if insTag.RowsAffected() == 0 {
+					skipped++
+				} else {
+					staged++
+				}
 			} else if tag.RowsAffected() == 0 {
 				skipped++
 			} else {
@@ -977,6 +1010,19 @@ func (uc *SAPMigrationUseCase) IngestBatch(ctx context.Context, orgID int, paylo
 				errs = append(errs, fmt.Sprintf("stock %s@%s: product or store not found", inv.ProductSKU, inv.StoreCode))
 				continue
 			}
+
+			// Resolve primary SAP bin location (OIBQ/OBIN) to storage_locations.id (Option A).
+			var storageLocationID *int64
+			binCode := strings.TrimSpace(inv.StorageLocationCode)
+			if binCode != "" {
+				_ = queryRowWithSavepoint(ctx, tx, func(r pgx.Row) error { return r.Scan(&storageLocationID) },
+					`SELECT id FROM storage_locations WHERE store_id = $1 AND code = $2 LIMIT 1`, *storeID, binCode)
+			}
+			if storageLocationID == nil && inv.BinAbsEntry != nil && *inv.BinAbsEntry > 0 {
+				_ = queryRowWithSavepoint(ctx, tx, func(r pgx.Row) error { return r.Scan(&storageLocationID) },
+					`SELECT id FROM storage_locations WHERE store_id = $1 AND (metadata->>'sap_abs_entry')::bigint = $2 LIMIT 1`, *storeID, *inv.BinAbsEntry)
+			}
+
 			prevStaged := staged
 			if inventoryConflictOK {
 				// A24: the conflict target must match the real arbiter index
@@ -986,11 +1032,12 @@ func (uc *SAPMigrationUseCase) IngestBatch(ctx context.Context, orgID int, paylo
 				// fails inference with 42P10 on every row.
 				q := `
 				INSERT INTO inventory_stock (
-					product_id, store_id, quantity_on_hand, quantity_allocated,
+					product_id, store_id, storage_location_id, quantity_on_hand, quantity_allocated,
 					quantity_available, quantity_on_order, reorder_level, max_stock_level, metadata
 				)
-				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 				ON CONFLICT (product_id, COALESCE(product_variant_id, -1), store_id) DO UPDATE SET
+					storage_location_id = COALESCE(excluded.storage_location_id, inventory_stock.storage_location_id),
 					quantity_on_hand    = excluded.quantity_on_hand,
 					quantity_allocated  = excluded.quantity_allocated,
 					quantity_available  = excluded.quantity_available,
@@ -999,7 +1046,7 @@ func (uc *SAPMigrationUseCase) IngestBatch(ctx context.Context, orgID int, paylo
 					max_stock_level     = excluded.max_stock_level,
 					metadata            = COALESCE(inventory_stock.metadata, '{}'::jsonb) || excluded.metadata;
 				`
-				if err := execWithSavepoint(ctx, tx, q, *productID, *storeID, inv.QuantityOnHand, inv.QuantityAllocated, inv.QuantityAvailable, inv.QuantityOnOrder, inv.ReorderLevel, inv.MaxStockLevel, metaBytes); err != nil {
+				if err := execWithSavepoint(ctx, tx, q, *productID, *storeID, storageLocationID, inv.QuantityOnHand, inv.QuantityAllocated, inv.QuantityAvailable, inv.QuantityOnOrder, inv.ReorderLevel, inv.MaxStockLevel, metaBytes); err != nil {
 					failed++
 					errs = append(errs, fmt.Sprintf("stock %s@%s error: %v", inv.ProductSKU, inv.StoreCode, err))
 				} else {
@@ -1011,11 +1058,12 @@ func (uc *SAPMigrationUseCase) IngestBatch(ctx context.Context, orgID int, paylo
 				// Migration rows never carry a product_variant_id.
 				tag, err := execWithSavepointRows(ctx, tx, `
 				UPDATE inventory_stock SET
-					quantity_on_hand = $3, quantity_allocated = $4, quantity_available = $5,
-					quantity_on_order = $6, reorder_level = $7, max_stock_level = $8,
-					metadata = COALESCE(metadata, '{}'::jsonb) || $9
+					storage_location_id = COALESCE($3, storage_location_id),
+					quantity_on_hand = $4, quantity_allocated = $5, quantity_available = $6,
+					quantity_on_order = $7, reorder_level = $8, max_stock_level = $9,
+					metadata = COALESCE(metadata, '{}'::jsonb) || $10
 				WHERE product_id = $1 AND store_id = $2 AND product_variant_id IS NULL;
-				`, *productID, *storeID, inv.QuantityOnHand, inv.QuantityAllocated, inv.QuantityAvailable, inv.QuantityOnOrder, inv.ReorderLevel, inv.MaxStockLevel, metaBytes)
+				`, *productID, *storeID, storageLocationID, inv.QuantityOnHand, inv.QuantityAllocated, inv.QuantityAvailable, inv.QuantityOnOrder, inv.ReorderLevel, inv.MaxStockLevel, metaBytes)
 				if err != nil {
 					failed++
 					errs = append(errs, fmt.Sprintf("stock %s@%s error: %v", inv.ProductSKU, inv.StoreCode, err))
@@ -1023,11 +1071,11 @@ func (uc *SAPMigrationUseCase) IngestBatch(ctx context.Context, orgID int, paylo
 					staged++
 				} else if _, ierr := execWithSavepointRows(ctx, tx, `
 				INSERT INTO inventory_stock (
-					product_id, store_id, quantity_on_hand, quantity_allocated,
+					product_id, store_id, storage_location_id, quantity_on_hand, quantity_allocated,
 					quantity_available, quantity_on_order, reorder_level, max_stock_level, metadata
 				)
-				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9);
-				`, *productID, *storeID, inv.QuantityOnHand, inv.QuantityAllocated, inv.QuantityAvailable, inv.QuantityOnOrder, inv.ReorderLevel, inv.MaxStockLevel, metaBytes); ierr != nil {
+				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10);
+				`, *productID, *storeID, storageLocationID, inv.QuantityOnHand, inv.QuantityAllocated, inv.QuantityAvailable, inv.QuantityOnOrder, inv.ReorderLevel, inv.MaxStockLevel, metaBytes); ierr != nil {
 					failed++
 					errs = append(errs, fmt.Sprintf("stock %s@%s error: %v", inv.ProductSKU, inv.StoreCode, ierr))
 				} else {
