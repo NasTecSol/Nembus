@@ -533,7 +533,7 @@ struct ContentView: View {
         content.title = "Order is cooked you can collect from counter"
         content.body = "Order #\(orderNumber) is ready for pickup at \(shopName.isEmpty ? "the counter" : shopName)!"
         // UNNotificationSound requires .caf / .wav container to play custom sound
-        content.sound = UNNotificationSound(named: UNNotificationSoundName("timer.caf"))
+        content.sound = UNNotificationSound(named: UNNotificationSoundName("complete.caf"))
         if #available(iOS 15.0, *) {
             content.interruptionLevel = .timeSensitive
         }
@@ -545,7 +545,7 @@ struct ContentView: View {
             if let error = error {
                 print("Failed to schedule alarm notification: \(error.localizedDescription)")
             } else {
-                print("Successfully scheduled alarm notification in \(seconds)s with timer.caf sound")
+                print("Successfully scheduled alarm notification in \(seconds)s with complete.caf sound")
             }
         }
     }
@@ -557,8 +557,8 @@ struct ContentView: View {
         let content = UNMutableNotificationContent()
         content.title = "Order is cooked you can collect from counter"
         content.body = "Order #\(orderNumber) is ready for pickup at \(shopName.isEmpty ? "the counter" : shopName)!"
-        // Plays custom timer sound on lock screen & open
-        content.sound = UNNotificationSound(named: UNNotificationSoundName("timer.caf"))
+        // Plays custom completion sound on lock screen & open
+        content.sound = UNNotificationSound(named: UNNotificationSoundName("complete.caf"))
         if #available(iOS 15.0, *) {
             content.interruptionLevel = .timeSensitive
         }
@@ -575,7 +575,7 @@ struct ContentView: View {
             if let error = error {
                 print("Failed to send order completion notification: \(error.localizedDescription)")
             } else {
-                print("Immediate order completion notification dispatched with timer.caf sound!")
+                print("Immediate order completion notification dispatched with complete.caf sound!")
             }
         }
     }
@@ -589,7 +589,7 @@ struct ContentView: View {
 
         if !alarmHasRung {
             alarmHasRung = true
-            // 1. Play timer tune immediately
+            // 1. Play complete tune immediately
             playAlarmRing()
             // 2. Send local notification of order completion immediately
             sendOrderCompletionNotification(orderNumber: orderNumber, shopName: shopName)
@@ -609,7 +609,7 @@ struct ContentView: View {
         }
     }
 
-    // MARK: - Play Alarm Sound & Haptic Alert (using timer.mp3 / timer.caf)
+    // MARK: - Play Alarm Sound & Haptic Alert (using complete.mp3 / complete.caf)
     private func playAlarmRing() {
         TimerSoundService.shared.playTimerSound()
     }

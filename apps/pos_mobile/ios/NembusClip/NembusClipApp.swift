@@ -32,8 +32,8 @@ struct NembusClipApp: App {
             print("Notification permission granted: \(granted)")
         }
 
-        // Copy timer sound files to Library/Sounds for iOS notification daemon
-        let soundFiles = ["timer.caf", "timer.wav", "timer.mp3"]
+        // Copy completion sound files to Library/Sounds for iOS notification daemon
+        let soundFiles = ["complete.caf", "complete.wav", "complete.mp3"]
         let fileManager = FileManager.default
         if let libraryDir = fileManager.urls(for: .libraryDirectory, in: .userDomainMask).first {
             let soundsDir = libraryDir.appendingPathComponent("Sounds", isDirectory: true)

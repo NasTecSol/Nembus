@@ -26,9 +26,9 @@ final class TimerSoundService: NSObject, AVAudioPlayerDelegate {
 
     func findAudioURL() -> URL? {
         let fileNames = [
-            ("timer", "caf"),
-            ("timer", "wav"),
-            ("timer", "mp3")
+            ("complete", "caf"),
+            ("complete", "mp3"),
+            ("complete", "wav")
         ]
 
         for (name, ext) in fileNames {

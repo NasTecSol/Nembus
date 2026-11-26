@@ -350,10 +350,10 @@ class OrderTrackingActivity : Activity() {
         cardCooking.visibility = View.GONE
         cardReady.visibility = View.VISIBLE
 
-        // 1. Auto-play timer.mp3 ringtone
+        // 1. Auto-play complete.mp3 ringtone
         playTimerAlarmSound()
 
-        // 2. Fire Lock Screen notification with timer.mp3 sound
+        // 2. Fire Lock Screen notification with complete.mp3 sound
         OrderNotificationManager.showOrderCookedNotification(this, orderNumber, shopName)
 
         // 3. Update Home Screen Widget to ready
@@ -365,7 +365,7 @@ class OrderTrackingActivity : Activity() {
     private fun playTimerAlarmSound() {
         try {
             mediaPlayer?.release()
-            mediaPlayer = MediaPlayer.create(this, R.raw.timer)?.apply {
+            mediaPlayer = MediaPlayer.create(this, R.raw.complete)?.apply {
                 setAudioAttributes(
                     AudioAttributes.Builder()
                         .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)

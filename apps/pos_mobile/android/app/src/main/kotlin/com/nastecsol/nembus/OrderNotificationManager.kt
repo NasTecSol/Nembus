@@ -33,8 +33,8 @@ object OrderNotificationManager {
                 setShowBadge(false)
             }
 
-            // 2. Alarm Ready Channel (plays timer.mp3 aloud when order is cooked)
-            val soundUri = Uri.parse("android.resource://${context.packageName}/raw/timer")
+            // 2. Alarm Ready Channel (plays complete.mp3 aloud when order is cooked)
+            val soundUri = Uri.parse("android.resource://${context.packageName}/raw/complete")
             val audioAttributes = AudioAttributes.Builder()
                 .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
                 .setUsage(AudioAttributes.USAGE_ALARM)
@@ -114,7 +114,7 @@ object OrderNotificationManager {
             PendingIntent.FLAG_UPDATE_CURRENT or (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0)
         )
 
-        val soundUri = Uri.parse("android.resource://${context.packageName}/raw/timer")
+        val soundUri = Uri.parse("android.resource://${context.packageName}/raw/complete")
 
         val builder = NotificationCompat.Builder(context, ALARM_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_bell_ready)
