@@ -3920,6 +3920,164 @@ func (q *Queries) ListActiveCarts(ctx context.Context, arg ListActiveCartsParams
 	return items, nil
 }
 
+const listApprovedPendingSalesOrdersV2ForSAP = `-- name: ListApprovedPendingSalesOrdersV2ForSAP :many
+SELECT o.id, o.order_number, o.organization_id, o.store_id, o.customer_id, o.customer_name, o.customer_email, o.customer_phone, o.order_type, o.order_status, o.payment_status, o.fulfillment_status, o.sales_channel, o.order_source, o.referral_source, o.source_cart_id, o.created_by_user_id, o.assigned_to_user_id, o.order_date, o.confirmed_date, o.expected_delivery_date, o.actual_delivery_date, o.cancelled_date, o.subtotal, o.discount_amount, o.tax_amount, o.shipping_amount, o.adjustment_amount, o.total_amount, o.paid_amount, o.refunded_amount, o.balance_due, o.coupon_code, o.discount_codes, o.promotional_credits, o.shipping_address, o.billing_address, o.shipping_method, o.shipping_carrier, o.tracking_number, o.tracking_url, o.payment_method, o.payment_gateway, o.payment_terms, o.payment_due_date, o.pos_terminal_id, o.cashier_id, o.is_gift, o.gift_message, o.special_instructions, o.internal_notes, o.tags, o.priority, o.metadata, o.created_at, o.updated_at,
+    COALESCE(NULLIF(c.customer_code, ''), NULLIF(c.metadata->>'sap_card_code', ''), '')::text AS customer_sap_code
+FROM sales_orders_v2 o
+LEFT JOIN customers c ON c.id = o.customer_id
+WHERE o.organization_id = $1
+  AND o.order_number NOT LIKE 'SO-SAP-%'
+  AND LOWER(COALESCE(o.sales_channel, '')) <> 'pos'
+  AND (o.metadata->>'sap_doc_num' IS NULL OR o.metadata->>'sap_doc_num' = '')
+  AND o.metadata->>'sap_sync_state' = 'approved_pending_upload'
+  AND NOT EXISTS (SELECT 1 FROM pos_transactions pt WHERE pt.sales_order_id = o.id)
+ORDER BY o.order_date ASC
+LIMIT $2
+`
+
+type ListApprovedPendingSalesOrdersV2ForSAPParams struct {
+	OrganizationID int32 `json:"organization_id"`
+	Limit          int32 `json:"limit"`
+}
+
+type ListApprovedPendingSalesOrdersV2ForSAPRow struct {
+	ID                   uuid.UUID         `json:"id"`
+	OrderNumber          string            `json:"order_number"`
+	OrganizationID       int32             `json:"organization_id"`
+	StoreID              pgtype.Int4       `json:"store_id"`
+	CustomerID           pgtype.UUID       `json:"customer_id"`
+	CustomerName         pgtype.Text       `json:"customer_name"`
+	CustomerEmail        pgtype.Text       `json:"customer_email"`
+	CustomerPhone        pgtype.Text       `json:"customer_phone"`
+	OrderType            OrderType         `json:"order_type"`
+	OrderStatus          OrderStatusV2     `json:"order_status"`
+	PaymentStatus        PaymentStatus     `json:"payment_status"`
+	FulfillmentStatus    FulfillmentStatus `json:"fulfillment_status"`
+	SalesChannel         pgtype.Text       `json:"sales_channel"`
+	OrderSource          pgtype.Text       `json:"order_source"`
+	ReferralSource       pgtype.Text       `json:"referral_source"`
+	SourceCartID         pgtype.UUID       `json:"source_cart_id"`
+	CreatedByUserID      pgtype.Int4       `json:"created_by_user_id"`
+	AssignedToUserID     pgtype.Int4       `json:"assigned_to_user_id"`
+	OrderDate            pgtype.Timestamp  `json:"order_date"`
+	ConfirmedDate        pgtype.Timestamp  `json:"confirmed_date"`
+	ExpectedDeliveryDate pgtype.Date       `json:"expected_delivery_date"`
+	ActualDeliveryDate   pgtype.Date       `json:"actual_delivery_date"`
+	CancelledDate        pgtype.Timestamp  `json:"cancelled_date"`
+	Subtotal             pgtype.Numeric    `json:"subtotal"`
+	DiscountAmount       pgtype.Numeric    `json:"discount_amount"`
+	TaxAmount            pgtype.Numeric    `json:"tax_amount"`
+	ShippingAmount       pgtype.Numeric    `json:"shipping_amount"`
+	AdjustmentAmount     pgtype.Numeric    `json:"adjustment_amount"`
+	TotalAmount          pgtype.Numeric    `json:"total_amount"`
+	PaidAmount           pgtype.Numeric    `json:"paid_amount"`
+	RefundedAmount       pgtype.Numeric    `json:"refunded_amount"`
+	BalanceDue           pgtype.Numeric    `json:"balance_due"`
+	CouponCode           pgtype.Text       `json:"coupon_code"`
+	DiscountCodes        []string          `json:"discount_codes"`
+	PromotionalCredits   pgtype.Numeric    `json:"promotional_credits"`
+	ShippingAddress      json.RawMessage   `json:"shipping_address"`
+	BillingAddress       json.RawMessage   `json:"billing_address"`
+	ShippingMethod       pgtype.Text       `json:"shipping_method"`
+	ShippingCarrier      pgtype.Text       `json:"shipping_carrier"`
+	TrackingNumber       pgtype.Text       `json:"tracking_number"`
+	TrackingUrl          pgtype.Text       `json:"tracking_url"`
+	PaymentMethod        pgtype.Text       `json:"payment_method"`
+	PaymentGateway       pgtype.Text       `json:"payment_gateway"`
+	PaymentTerms         pgtype.Text       `json:"payment_terms"`
+	PaymentDueDate       pgtype.Date       `json:"payment_due_date"`
+	PosTerminalID        pgtype.Int4       `json:"pos_terminal_id"`
+	CashierID            pgtype.Int4       `json:"cashier_id"`
+	IsGift               pgtype.Bool       `json:"is_gift"`
+	GiftMessage          pgtype.Text       `json:"gift_message"`
+	SpecialInstructions  pgtype.Text       `json:"special_instructions"`
+	InternalNotes        pgtype.Text       `json:"internal_notes"`
+	Tags                 []string          `json:"tags"`
+	Priority             pgtype.Text       `json:"priority"`
+	Metadata             json.RawMessage   `json:"metadata"`
+	CreatedAt            pgtype.Timestamp  `json:"created_at"`
+	UpdatedAt            pgtype.Timestamp  `json:"updated_at"`
+	CustomerSapCode      string            `json:"customer_sap_code"`
+}
+
+func (q *Queries) ListApprovedPendingSalesOrdersV2ForSAP(ctx context.Context, arg ListApprovedPendingSalesOrdersV2ForSAPParams) ([]ListApprovedPendingSalesOrdersV2ForSAPRow, error) {
+	rows, err := q.db.Query(ctx, listApprovedPendingSalesOrdersV2ForSAP, arg.OrganizationID, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListApprovedPendingSalesOrdersV2ForSAPRow
+	for rows.Next() {
+		var i ListApprovedPendingSalesOrdersV2ForSAPRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrderNumber,
+			&i.OrganizationID,
+			&i.StoreID,
+			&i.CustomerID,
+			&i.CustomerName,
+			&i.CustomerEmail,
+			&i.CustomerPhone,
+			&i.OrderType,
+			&i.OrderStatus,
+			&i.PaymentStatus,
+			&i.FulfillmentStatus,
+			&i.SalesChannel,
+			&i.OrderSource,
+			&i.ReferralSource,
+			&i.SourceCartID,
+			&i.CreatedByUserID,
+			&i.AssignedToUserID,
+			&i.OrderDate,
+			&i.ConfirmedDate,
+			&i.ExpectedDeliveryDate,
+			&i.ActualDeliveryDate,
+			&i.CancelledDate,
+			&i.Subtotal,
+			&i.DiscountAmount,
+			&i.TaxAmount,
+			&i.ShippingAmount,
+			&i.AdjustmentAmount,
+			&i.TotalAmount,
+			&i.PaidAmount,
+			&i.RefundedAmount,
+			&i.BalanceDue,
+			&i.CouponCode,
+			&i.DiscountCodes,
+			&i.PromotionalCredits,
+			&i.ShippingAddress,
+			&i.BillingAddress,
+			&i.ShippingMethod,
+			&i.ShippingCarrier,
+			&i.TrackingNumber,
+			&i.TrackingUrl,
+			&i.PaymentMethod,
+			&i.PaymentGateway,
+			&i.PaymentTerms,
+			&i.PaymentDueDate,
+			&i.PosTerminalID,
+			&i.CashierID,
+			&i.IsGift,
+			&i.GiftMessage,
+			&i.SpecialInstructions,
+			&i.InternalNotes,
+			&i.Tags,
+			&i.Priority,
+			&i.Metadata,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.CustomerSapCode,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listAutoReorderTemplates = `-- name: ListAutoReorderTemplates :many
 SELECT id, organization_id, customer_id, template_name, description, template_type, is_favorite, auto_reorder_enabled, reorder_frequency_days, next_reorder_date, total_items, estimated_total, metadata, notes, created_at, updated_at FROM draft_cart_templates
 WHERE organization_id = $1

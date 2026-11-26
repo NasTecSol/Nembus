@@ -6,32 +6,41 @@ import (
 	"time"
 )
 
+type SAPBinAllocation struct {
+	BinAbsEntry    int     `json:"BinAbsEntry"`
+	Quantity       float64 `json:"Quantity"`
+	BaseLineNumber *int    `json:"BaseLineNumber,omitempty"`
+}
+
 type SAPDocumentLine struct {
-	LineNum         *int     `json:"LineNum,omitempty"`
-	ItemCode        string   `json:"ItemCode"`
-	ItemDescription string   `json:"ItemDescription,omitempty"`
-	Quantity        float64  `json:"Quantity"`
-	UnitPrice       float64  `json:"UnitPrice"`
-	PriceAfterVAT   float64  `json:"PriceAfterVAT,omitempty"`
-	DiscountPercent float64  `json:"DiscountPercent,omitempty"`
-	TaxCode         string   `json:"TaxCode,omitempty"`
-	UoMEntry        *int     `json:"UoMEntry,omitempty"`
-	UseBaseUnits    string   `json:"UseBaseUnits,omitempty"`
-	WarehouseCode   string   `json:"WarehouseCode,omitempty"`
-	BaseEntry       *int     `json:"BaseEntry,omitempty"`
-	BaseLine        *int     `json:"BaseLine,omitempty"`
-	BaseType        *int     `json:"BaseType,omitempty"`
+	LineNum                     *int               `json:"LineNum,omitempty"`
+	ItemCode                    string             `json:"ItemCode"`
+	ItemDescription             string             `json:"ItemDescription,omitempty"`
+	Quantity                    float64            `json:"Quantity"`
+	UnitPrice                   float64            `json:"UnitPrice"`
+	PriceAfterVAT               float64            `json:"PriceAfterVAT,omitempty"`
+	DiscountPercent             float64            `json:"DiscountPercent,omitempty"`
+	TaxCode                     string             `json:"TaxCode,omitempty"`
+	UoMEntry                    *int               `json:"UoMEntry,omitempty"`
+	UseBaseUnits                string             `json:"UseBaseUnits,omitempty"`
+	WarehouseCode               string             `json:"WarehouseCode,omitempty"`
+	BaseEntry                   *int               `json:"BaseEntry,omitempty"`
+	BaseLine                    *int               `json:"BaseLine,omitempty"`
+	BaseType                    *int               `json:"BaseType,omitempty"`
+	DocumentLinesBinAllocations []SAPBinAllocation `json:"DocumentLinesBinAllocations,omitempty"`
 }
 
 type SAPInvoiceRequest struct {
-	CardCode      string            `json:"CardCode"`
-	DocDate       string            `json:"DocDate"`
-	DocDueDate    string            `json:"DocDueDate"`
-	TaxDate       string            `json:"TaxDate,omitempty"`
-	NumAtCard     string            `json:"NumAtCard,omitempty"`
-	Comments      string            `json:"Comments,omitempty"`
-	Reference2    string            `json:"Reference2,omitempty"`
-	DocumentLines []SAPDocumentLine `json:"DocumentLines"`
+	Series                 *int              `json:"Series,omitempty"`
+	BPLIDAssignedToInvoice *int              `json:"BPL_IDAssignedToInvoice,omitempty"`
+	CardCode               string            `json:"CardCode"`
+	DocDate                string            `json:"DocDate"`
+	DocDueDate             string            `json:"DocDueDate"`
+	TaxDate                string            `json:"TaxDate,omitempty"`
+	NumAtCard              string            `json:"NumAtCard,omitempty"`
+	Comments               string            `json:"Comments,omitempty"`
+	Reference2             string            `json:"Reference2,omitempty"`
+	DocumentLines          []SAPDocumentLine `json:"DocumentLines"`
 }
 
 type SAPInvoiceResponse struct {
@@ -46,10 +55,10 @@ type SAPInvoiceResponse struct {
 }
 
 type SAPPendingPaymentInvoice struct {
-	LineNum   int     `json:"LineNum"`
-	DocEntry  int     `json:"DocEntry"`
-	SumApplied float64 `json:"SumApplied"`
-	InvoiceType string `json:"InvoiceType"` // "it_Invoice"
+	LineNum     int     `json:"LineNum"`
+	DocEntry    int     `json:"DocEntry"`
+	SumApplied  float64 `json:"SumApplied"`
+	InvoiceType string  `json:"InvoiceType"` // "it_Invoice"
 }
 
 type SAPPaymentCard struct {
@@ -62,26 +71,28 @@ type SAPPaymentCard struct {
 }
 
 type SAPPaymentRequest struct {
-	CardCode             string                     `json:"CardCode"`
-	DocDate              string                     `json:"DocDate"`
-	DocType              string                     `json:"DocType"` // "rCustomer"
-	CashAccount          string                     `json:"CashAccount,omitempty"`
-	CashSum              float64                    `json:"CashSum,omitempty"`
-	TransferAccount      string                     `json:"TransferAccount,omitempty"`
-	TransferSum          float64                    `json:"TransferSum,omitempty"`
-	TransferDate         string                     `json:"TransferDate,omitempty"`
-	TransferReference    string                     `json:"TransferReference,omitempty"`
-	PaymentCreditCards   []SAPPaymentCard           `json:"PaymentCreditCards,omitempty"`
-	PaymentInvoices      []SAPPendingPaymentInvoice `json:"PaymentInvoices,omitempty"`
-	Remarks              string                     `json:"Remarks,omitempty"`
+	Series             *int                       `json:"Series,omitempty"`
+	BPLID              *int                       `json:"BPLID,omitempty"`
+	CardCode           string                     `json:"CardCode"`
+	DocDate            string                     `json:"DocDate"`
+	DocType            string                     `json:"DocType"` // "rCustomer"
+	CashAccount        string                     `json:"CashAccount,omitempty"`
+	CashSum            float64                    `json:"CashSum,omitempty"`
+	TransferAccount    string                     `json:"TransferAccount,omitempty"`
+	TransferSum        float64                    `json:"TransferSum,omitempty"`
+	TransferDate       string                     `json:"TransferDate,omitempty"`
+	TransferReference  string                     `json:"TransferReference,omitempty"`
+	PaymentCreditCards []SAPPaymentCard           `json:"PaymentCreditCards,omitempty"`
+	PaymentInvoices    []SAPPendingPaymentInvoice `json:"PaymentInvoices,omitempty"`
+	Remarks            string                     `json:"Remarks,omitempty"`
 }
 
 type SAPPaymentResponse struct {
-	DocEntry   int     `json:"DocEntry"`
-	DocNum     int     `json:"DocNum"`
-	CardCode   string  `json:"CardCode"`
-	DocDate    string  `json:"DocDate"`
-	CashSum    float64 `json:"CashSum"`
+	DocEntry    int     `json:"DocEntry"`
+	DocNum      int     `json:"DocNum"`
+	CardCode    string  `json:"CardCode"`
+	DocDate     string  `json:"DocDate"`
+	CashSum     float64 `json:"CashSum"`
 	TransferSum float64 `json:"TransferSum"`
 }
 

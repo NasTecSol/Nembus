@@ -2881,6 +2881,8 @@ DECLARE
     v_fulfilled_qty DECIMAL(15,3);
     v_conv_factor DECIMAL(15,6);
     v_base_fulfilled_qty DECIMAL(15,3);
+    v_reserved_qty DECIMAL(15,3);
+    v_release_allocated_qty DECIMAL(15,3);
     v_reservation RECORD;
 BEGIN
     -- Process when fulfillment_status becomes 'fulfilled'
@@ -2934,14 +2936,37 @@ BEGIN
         -- Convert quantity to base units (e.g. 2 Cartons * 10 = 20 Base Pieces)
         v_base_fulfilled_qty := v_fulfilled_qty * v_conv_factor;
 
+        -- Only release quantity_allocated that was actually reserved/allocated for THIS sales order.
+        SELECT COALESCE(SUM(quantity_reserved), 0) INTO v_reserved_qty
+        FROM stock_reservations
+        WHERE reference_type = 'sales_order'
+          AND reference_id = NEW.id::TEXT
+          AND product_id = v_order_line.product_id
+          AND (product_variant_id = v_order_line.product_variant_id
+               OR (product_variant_id IS NULL AND v_order_line.product_variant_id IS NULL))
+          AND store_id = NEW.store_id
+          AND status = 'active';
+        v_reserved_qty := COALESCE(v_reserved_qty, 0) + COALESCE((
+            SELECT SUM(quantity)
+            FROM stock_movements
+            WHERE movement_type = 'allocation'
+              AND reference_type = 'sales_order'
+              AND metadata->>'sales_order_id' = NEW.id::TEXT
+              AND product_id = v_order_line.product_id
+              AND (product_variant_id = v_order_line.product_variant_id
+                   OR (product_variant_id IS NULL AND v_order_line.product_variant_id IS NULL))
+              AND from_store_id = NEW.store_id
+        ), 0);
+        v_release_allocated_qty := LEAST(v_base_fulfilled_qty, v_reserved_qty);
+
         -- 1. FULFILLMENT DEDUCTION: Deduct base units from inventory_stock
         UPDATE inventory_stock
         SET 
             quantity_on_hand = GREATEST(0, quantity_on_hand - v_base_fulfilled_qty),
-            quantity_allocated = GREATEST(0, quantity_allocated - v_base_fulfilled_qty),
+            quantity_allocated = GREATEST(0, quantity_allocated - v_release_allocated_qty),
             quantity_available = GREATEST(0, 
                 (quantity_on_hand - v_base_fulfilled_qty) - 
-                GREATEST(0, quantity_allocated - v_base_fulfilled_qty)
+                GREATEST(0, quantity_allocated - v_release_allocated_qty)
             ),
             updated_at = CURRENT_TIMESTAMP
         WHERE product_id = v_order_line.product_id
@@ -6792,15 +6817,15 @@ ALTER TABLE partner_addresses ADD CONSTRAINT uq_partner_addresses_type_name
 
 INSERT INTO currencies (code, name, symbol, decimal_places, is_active)
 VALUES 
-    ('SAR', 'Saudi Riyal', 'ر.س', 2, true),
+    ('SAR', 'Saudi Riyal', 'Ã˜Â±.Ã˜Â³', 2, true),
     ('USD', 'US Dollar', '$', 2, true),
-    ('EUR', 'Euro', '€', 2, true),
-    ('AED', 'UAE Dirham', 'د.إ', 2, true),
-    ('GBP', 'British Pound', '£', 2, true),
-    ('KWD', 'Kuwaiti Dinar', 'د.ك', 3, true),
-    ('BHD', 'Bahraini Dinar', 'ب.د', 3, true),
-    ('OMR', 'Omani Rial', 'ر.ع', 3, true),
-    ('QAR', 'Qatari Riyal', 'ر.ق', 2, true)
+    ('EUR', 'Euro', 'Ã¢â€šÂ¬', 2, true),
+    ('AED', 'UAE Dirham', 'Ã˜Â¯.Ã˜Â¥', 2, true),
+    ('GBP', 'British Pound', 'Ã‚Â£', 2, true),
+    ('KWD', 'Kuwaiti Dinar', 'Ã˜Â¯.Ã™Æ’', 3, true),
+    ('BHD', 'Bahraini Dinar', 'Ã˜Â¨.Ã˜Â¯', 3, true),
+    ('OMR', 'Omani Rial', 'Ã˜Â±.Ã˜Â¹', 3, true),
+    ('QAR', 'Qatari Riyal', 'Ã˜Â±.Ã™â€š', 2, true)
 ON CONFLICT(code) DO NOTHING;
 
 ALTER TABLE business_partners DROP CONSTRAINT IF EXISTS business_partners_currency_code_fkey;

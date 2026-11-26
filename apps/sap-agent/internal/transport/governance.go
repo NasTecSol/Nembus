@@ -3,12 +3,14 @@ package transport
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"math"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -23,9 +25,40 @@ import (
 )
 
 const (
-	sapServiceUsername = "sap_migrator"
-	sapServicePassword = "SapAgent@2026"
+	sapServiceUsername        = "sap_migrator"
+	defaultSAPServicePassword = "SapAgent@2026"
 )
+
+func sapServicePasswordValue() string {
+	if envPass := strings.TrimSpace(os.Getenv("SAP_MIGRATOR_PASSWORD")); envPass != "" {
+		return envPass
+	}
+	return defaultSAPServicePassword
+}
+
+func parseCloudJWTClaims(token string) (exp time.Time, userID int32) {
+	exp = time.Now().Add(30 * time.Minute)
+	userID = 1
+	parts := strings.Split(token, ".")
+	if len(parts) != 3 {
+		return exp, userID
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return exp, userID
+	}
+	var claims map[string]any
+	if json.Unmarshal(raw, &claims) != nil {
+		return exp, userID
+	}
+	if e := parseFlexibleFloat(claims["exp"]); e > 0 {
+		exp = time.Unix(int64(e), 0)
+	}
+	if uid := parseFlexibleInt32(claims["user_id"]); uid > 0 {
+		userID = uid
+	}
+	return exp, userID
+}
 
 type cloudCatalogProduct struct {
 	ProductID  int32               `json:"product_id"`
@@ -179,7 +212,7 @@ func (c *CloudClient) tryLogin(ctx context.Context, baseURL, tenantID, userLogin
 // users table via the /api/v1/migration/batch endpoint so the agent can always mint a valid JWT
 // and submit approval requests under a non-admin identity (allowing admin to approve them).
 func (c *CloudClient) provisionSAPServiceUser(ctx context.Context, orgID int) error {
-	hashBytes, err := bcrypt.GenerateFromPassword([]byte(sapServicePassword), bcrypt.DefaultCost)
+	hashBytes, err := bcrypt.GenerateFromPassword([]byte(sapServicePasswordValue()), bcrypt.DefaultCost)
 	if err != nil {
 		return err
 	}
@@ -228,15 +261,37 @@ func (c *CloudClient) acquireCloudJWT(ctx context.Context) (string, string, int,
 		tenantID = fmt.Sprintf("%d", orgID)
 	}
 
-	// 1. Try the dedicated sap_migrator service user first
-	if tok, _, _, err := c.tryLogin(ctx, baseURL, tenantID, sapServiceUsername, sapServicePassword); err == nil && tok != "" {
+	cacheKey := baseURL + "|" + tenantID + "|" + strconv.Itoa(orgID)
+	c.jwtMu.RLock()
+	if c.cachedJWT != "" && c.cachedJWTKey == cacheKey && time.Now().Add(2*time.Minute).Before(c.cachedJWTExp) {
+		tok, ten, oid := c.cachedJWT, c.cachedJWTTen, c.cachedJWTOrgID
+		c.jwtMu.RUnlock()
+		return tok, ten, oid, nil
+	}
+	c.jwtMu.RUnlock()
+
+	cacheAndReturn := func(tok string) (string, string, int, error) {
+		exp, _ := parseCloudJWTClaims(tok)
+		c.jwtMu.Lock()
+		c.cachedJWT = tok
+		c.cachedJWTExp = exp
+		c.cachedJWTKey = cacheKey
+		c.cachedJWTTen = tenantID
+		c.cachedJWTOrgID = orgID
+		c.jwtMu.Unlock()
 		return tok, tenantID, orgID, nil
+	}
+
+	svcPass := sapServicePasswordValue()
+	// 1. Try the dedicated sap_migrator service user first
+	if tok, _, _, err := c.tryLogin(ctx, baseURL, tenantID, sapServiceUsername, svcPass); err == nil && tok != "" {
+		return cacheAndReturn(tok)
 	}
 
 	// 2. Provision sap_migrator via DomainUsers batch and log in
 	if err := c.provisionSAPServiceUser(ctx, orgID); err == nil {
-		if tok, _, _, lErr := c.tryLogin(ctx, baseURL, tenantID, sapServiceUsername, sapServicePassword); lErr == nil && tok != "" {
-			return tok, tenantID, orgID, nil
+		if tok, _, _, lErr := c.tryLogin(ctx, baseURL, tenantID, sapServiceUsername, svcPass); lErr == nil && tok != "" {
+			return cacheAndReturn(tok)
 		}
 	}
 
@@ -254,11 +309,11 @@ func (c *CloudClient) acquireCloudJWT(ctx context.Context) (string, string, int,
 		return "", tenantID, orgID, err
 	}
 	if tok != "" {
-		return tok, tenantID, orgID, nil
+		return cacheAndReturn(tok)
 	}
 
 	if strings.HasPrefix(appCfg.Cloud.APIKey, "eyJ") {
-		return appCfg.Cloud.APIKey, tenantID, orgID, nil
+		return cacheAndReturn(appCfg.Cloud.APIKey)
 	}
 	return "", tenantID, orgID, fmt.Errorf("cloud login failed (status %d): %s", statusCode, respBody)
 }
@@ -395,6 +450,7 @@ func (c *CloudClient) submitCatalogApprovalRequest(ctx context.Context, baseURL,
 		}
 	}
 
+	_, requestedBy := parseCloudJWTClaims(jwt)
 	rawPayload, _ := json.Marshal(payload)
 	reqBody, _ := json.Marshal(map[string]any{
 		"organization_id": orgID,
@@ -402,7 +458,7 @@ func (c *CloudClient) submitCatalogApprovalRequest(ctx context.Context, baseURL,
 		"action":          "price_change",
 		"entity_type":     "product",
 		"entity_id":       entityID,
-		"requested_by":    1,
+		"requested_by":    requestedBy,
 		"summary":         summary,
 		"payload":         json.RawMessage(rawPayload),
 	})

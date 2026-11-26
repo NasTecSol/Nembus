@@ -167,6 +167,16 @@ func (s *SQLiteStore) initSchema() error {
 		records_synced INTEGER DEFAULT 0
 	);
 
+	CREATE TABLE IF NOT EXISTS upstream_retries (
+		retry_key TEXT PRIMARY KEY,
+		attempts INTEGER NOT NULL DEFAULT 0,
+		permanent_attempts INTEGER NOT NULL DEFAULT 0,
+		next_retry TEXT NOT NULL,
+		quarantined INTEGER NOT NULL DEFAULT 0,
+		last_error TEXT,
+		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
+
 	CREATE TABLE IF NOT EXISTS downstream_watermarks (
 		domain TEXT PRIMARY KEY,
 		last_sync_time TEXT NOT NULL,
@@ -784,6 +794,106 @@ func (s *SQLiteStore) GetUpstreamWatermark(ctx context.Context, domain string) (
 // SetUpstreamWatermark records the last successful upstream sync timestamp and posted count.
 func (s *SQLiteStore) SetUpstreamWatermark(ctx context.Context, domain string, t time.Time, count int) error {
 	return s.setWatermark(ctx, "upstream_watermarks", domain, t, count)
+}
+
+// UpstreamRetryRecord persists upstream backoff/quarantine state across restarts.
+type UpstreamRetryRecord struct {
+	RetryKey          string    `json:"retry_key"`
+	Attempts          int       `json:"attempts"`
+	PermanentAttempts int       `json:"permanent_attempts"`
+	NextRetry         time.Time `json:"next_retry"`
+	Quarantined       bool      `json:"quarantined"`
+	LastError         string    `json:"last_error,omitempty"`
+	UpdatedAt         time.Time `json:"updated_at"`
+}
+
+func (s *SQLiteStore) UpsertUpstreamRetry(ctx context.Context, rec UpstreamRetryRecord) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	q := 0
+	if rec.Quarantined {
+		q = 1
+	}
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO upstream_retries (retry_key, attempts, permanent_attempts, next_retry, quarantined, last_error, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+		ON CONFLICT(retry_key) DO UPDATE SET
+			attempts = excluded.attempts,
+			permanent_attempts = excluded.permanent_attempts,
+			next_retry = excluded.next_retry,
+			quarantined = excluded.quarantined,
+			last_error = excluded.last_error,
+			updated_at = CURRENT_TIMESTAMP;
+	`, rec.RetryKey, rec.Attempts, rec.PermanentAttempts, rec.NextRetry.UTC().Format(time.RFC3339), q, rec.LastError)
+	return err
+}
+
+func (s *SQLiteStore) GetUpstreamRetry(ctx context.Context, retryKey string) (*UpstreamRetryRecord, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var rec UpstreamRetryRecord
+	var nextStr string
+	var q int
+	var lastErr sql.NullString
+	err := s.db.QueryRowContext(ctx, `
+		SELECT retry_key, attempts, permanent_attempts, next_retry, quarantined, last_error, updated_at
+		FROM upstream_retries WHERE retry_key = ?;
+	`, retryKey).Scan(&rec.RetryKey, &rec.Attempts, &rec.PermanentAttempts, &nextStr, &q, &lastErr, &rec.UpdatedAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if t, pErr := time.Parse(time.RFC3339, nextStr); pErr == nil {
+		rec.NextRetry = t
+	}
+	rec.Quarantined = q != 0
+	if lastErr.Valid {
+		rec.LastError = lastErr.String
+	}
+	return &rec, nil
+}
+
+func (s *SQLiteStore) DeleteUpstreamRetry(ctx context.Context, retryKey string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_, err := s.db.ExecContext(ctx, `DELETE FROM upstream_retries WHERE retry_key = ?;`, retryKey)
+	return err
+}
+
+func (s *SQLiteStore) ListUpstreamRetries(ctx context.Context, quarantinedOnly bool) ([]UpstreamRetryRecord, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	query := `SELECT retry_key, attempts, permanent_attempts, next_retry, quarantined, last_error, updated_at FROM upstream_retries`
+	if quarantinedOnly {
+		query += ` WHERE quarantined = 1`
+	}
+	query += ` ORDER BY updated_at DESC;`
+	rows, err := s.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []UpstreamRetryRecord
+	for rows.Next() {
+		var rec UpstreamRetryRecord
+		var nextStr string
+		var q int
+		var lastErr sql.NullString
+		if err := rows.Scan(&rec.RetryKey, &rec.Attempts, &rec.PermanentAttempts, &nextStr, &q, &lastErr, &rec.UpdatedAt); err != nil {
+			continue
+		}
+		if t, pErr := time.Parse(time.RFC3339, nextStr); pErr == nil {
+			rec.NextRetry = t
+		}
+		rec.Quarantined = q != 0
+		if lastErr.Valid {
+			rec.LastError = lastErr.String
+		}
+		out = append(out, rec)
+	}
+	return out, nil
 }
 
 func (s *SQLiteStore) Close() error {

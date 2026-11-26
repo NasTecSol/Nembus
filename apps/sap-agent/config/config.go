@@ -10,11 +10,15 @@ import (
 
 type Config struct {
 	// SAP Service Layer
-	SAPServiceLayerURL string
-	SAPCompanyDB       string
-	SAPUsername        string
-	SAPPassword        string
-	SAPInsecureSkipSSL bool
+	SAPServiceLayerURL  string
+	SAPCompanyDB        string
+	SAPUsername         string
+	SAPPassword         string
+	SAPInsecureSkipSSL  bool
+	SAPBranchID         int
+	SAPInvoiceSeries    int
+	SAPCreditMemoSeries int
+	SAPPaymentSeries    int
 
 	// SAP Direct MSSQL
 	SAPMSSQLEnabled  bool
@@ -53,6 +57,10 @@ func LoadConfig() (*Config, error) {
 		SAPUsername:               getEnv("SAP_USERNAME", ""),
 		SAPPassword:               getEnv("SAP_PASSWORD", ""),
 		SAPInsecureSkipSSL:        getEnvBool("SAP_INSECURE_SKIP_VERIFY", true),
+		SAPBranchID:               getEnvInt("SAP_BRANCH_ID", 0),
+		SAPInvoiceSeries:          getEnvInt("SAP_INVOICE_SERIES", 0),
+		SAPCreditMemoSeries:       getEnvInt("SAP_CREDIT_MEMO_SERIES", 0),
+		SAPPaymentSeries:          getEnvInt("SAP_PAYMENT_SERIES", 0),
 
 		SAPMSSQLEnabled:           getEnvBool("SAP_MSSQL_ENABLED", false),
 		SAPMSSQLHost:              getEnv("SAP_MSSQL_HOST", "127.0.0.1"),

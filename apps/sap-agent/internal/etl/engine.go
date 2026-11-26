@@ -20,6 +20,7 @@ import (
 	"github.com/NasTecSol/nembus-sap-agent/internal/transport"
 	"github.com/NasTecSol/nembus-sap/contracts"
 	"github.com/NasTecSol/nembus-sap/mappings"
+	"github.com/NasTecSol/nembus-sap/schema"
 )
 
 // defaultDomainOrder is the canonical ordering of all migration domains.
@@ -346,13 +347,21 @@ func (e *Engine) ExecuteDownstreamSync(ctx context.Context, domains []contracts.
 		Timestamp: time.Now(),
 	})
 
-	syncStartTime := time.Now()
+	// Anchor downstream watermarks to SAP SQL Server's clock (GETDATE()) to prevent
+	// timezone or clock-skew drift from skipping SAP edits.
+	syncStartTime := e.resolveSAPServerNow(ctx)
 	var domainErrors []string
 
 	for _, domain := range domains {
 		since := e.resolveDownstreamSince(ctx, domain, syncStartTime)
+		querySince := since
+		if !querySince.IsZero() {
+			// Apply a 2-minute overlap window so transactions committed across the boundary
+			// are never missed (downstream ingestion is idempotent).
+			querySince = querySince.Add(-2 * time.Minute)
+		}
 
-		processed, err := e.executeDownstreamDomainStep(ctx, domain, since)
+		processed, err := e.executeDownstreamDomainStep(ctx, domain, querySince)
 		if err != nil {
 			domainErrors = append(domainErrors, fmt.Sprintf("%s: %v", domain, err))
 			if e.sqlite != nil {
@@ -421,6 +430,19 @@ func (e *Engine) ExecuteDownstreamSync(ctx context.Context, domains []contracts.
 		return stats, fmt.Errorf("downstream sync partial failure: %s", strings.Join(domainErrors, "; "))
 	}
 	return stats, nil
+}
+
+func (e *Engine) resolveSAPServerNow(ctx context.Context) time.Time {
+	mssqlClient, err := e.getMSSQLClient()
+	if err == nil && mssqlClient != nil && mssqlClient.DB != nil {
+		qCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+		var serverNow time.Time
+		if scanErr := mssqlClient.DB.QueryRowContext(qCtx, schema.QueryServerNow).Scan(&serverNow); scanErr == nil && !serverNow.IsZero() {
+			return serverNow
+		}
+	}
+	return time.Now()
 }
 
 // resolveDownstreamSince returns the SAP delta cutoff for a downstream domain.
@@ -546,6 +568,10 @@ func (e *Engine) executeDownstreamDomainStep(ctx context.Context, domain contrac
 		if len(cats) == 0 {
 			return 0, nil
 		}
+		payloadHash, _ := computePayloadHash(cats)
+		if e.isDownstreamPayloadUnchanged(domain, payloadHash) {
+			return 0, nil
+		}
 		payload := &contracts.MigrationBatchPayload{
 			BatchID:        uuid.New().String(),
 			RunID:          runID,
@@ -559,6 +585,9 @@ func (e *Engine) executeDownstreamDomainStep(ctx context.Context, domain contrac
 		if err != nil {
 			return 0, err
 		}
+		if isBatchFullySucceeded(resp) {
+			e.setDownstreamPayloadHash(domain, payloadHash)
+		}
 		return int64(resp.RecordsStaged), nil
 
 	case contracts.DomainBrands:
@@ -568,6 +597,10 @@ func (e *Engine) executeDownstreamDomainStep(ctx context.Context, domain contrac
 			return 0, err
 		}
 		if len(brands) == 0 {
+			return 0, nil
+		}
+		payloadHash, _ := computePayloadHash(brands)
+		if e.isDownstreamPayloadUnchanged(domain, payloadHash) {
 			return 0, nil
 		}
 		payload := &contracts.MigrationBatchPayload{
@@ -582,6 +615,9 @@ func (e *Engine) executeDownstreamDomainStep(ctx context.Context, domain contrac
 		resp, err := cloudClient.SendBatchWithRetry(ctx, payload)
 		if err != nil {
 			return 0, err
+		}
+		if isBatchFullySucceeded(resp) {
+			e.setDownstreamPayloadHash(domain, payloadHash)
 		}
 		return int64(resp.RecordsStaged), nil
 
