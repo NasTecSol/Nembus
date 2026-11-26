@@ -139,3 +139,15 @@ func TestUpstreamQuarantinePersistsAcrossRestarts(t *testing.T) {
 		t.Fatalf("expected cleared retry key not to back off")
 	}
 }
+
+func TestBinAllocationMSSQLErrorAbortsPostWithoutQuarantine(t *testing.T) {
+	u := &UpstreamSync{failedRetries: make(map[string]retryEntry)}
+	now := time.Date(2026, 11, 26, 12, 0, 0, 0, time.UTC)
+	binErr := fmt.Errorf("bin allocation lookup failed for item INV00028 in warehouse 01: %w", errors.New("mssql: login error: Login failed for user 'sa'"))
+
+	for i := 0; i < 4; i++ {
+		if q := u.recordRetryFailure("tx:bin-mssql-err", now.Add(time.Duration(i)*time.Minute), binErr); q {
+			t.Fatalf("MSSQL bin lookup error must be treated as transient and never quarantine (attempt %d)", i+1)
+		}
+	}
+}

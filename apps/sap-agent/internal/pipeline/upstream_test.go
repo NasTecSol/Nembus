@@ -32,6 +32,7 @@ type MockSAPClient struct {
 	postCreditMemoFunc      func(ctx context.Context, memo *sap.SAPInvoiceRequest) (*sap.SAPInvoiceResponse, error)
 	stockBySKU              map[string]float64
 	binAllocations          []sap.SAPBinAllocation
+	binAllocErr             error
 	seriesByObj             map[string]int
 	baseLineByItem          map[string]int
 
@@ -39,6 +40,9 @@ type MockSAPClient struct {
 }
 
 func (m *MockSAPClient) ResolveWarehouseBinAllocations(ctx context.Context, itemCode, warehouseCode string, requiredQty float64, isReturn bool) ([]sap.SAPBinAllocation, error) {
+	if m.binAllocErr != nil {
+		return nil, m.binAllocErr
+	}
 	if len(m.binAllocations) == 0 {
 		return nil, nil
 	}
@@ -1316,8 +1320,8 @@ func TestPostTransactionToSAP_UoMEntryAndManualUseBaseUnits(t *testing.T) {
 	if line0.TaxCode != "O15" {
 		t.Fatalf("expected TaxCode O15, got %q", line0.TaxCode)
 	}
-	if math.Abs(line0.UnitPrice-300.0) > 0.001 {
-		t.Fatalf("expected net UnitPrice 300.0, got %f", line0.UnitPrice)
+	if math.Abs(line0.PriceAfterVAT-345.0) > 0.001 || line0.UnitPrice != 0 {
+		t.Fatalf("expected PriceAfterVAT 345.0 and omitted UnitPrice 0, got afterVAT=%f unitPrice=%f", line0.PriceAfterVAT, line0.UnitPrice)
 	}
 
 	line1 := capturedInv.DocumentLines[1]
@@ -1327,8 +1331,8 @@ func TestPostTransactionToSAP_UoMEntryAndManualUseBaseUnits(t *testing.T) {
 	if line1.UseBaseUnits != "tYES" {
 		t.Fatalf("expected UseBaseUnits=tYES for manual UoM item, got %q", line1.UseBaseUnits)
 	}
-	if math.Abs(line1.Quantity-12.0) > 0.001 || math.Abs(line1.UnitPrice-21.0) > 0.001 || math.Abs(line1.PriceAfterVAT-21.0) > 0.001 {
-		t.Fatalf("expected converted base qty=12 and price=21, got qty=%f unitPrice=%f afterVAT=%f", line1.Quantity, line1.UnitPrice, line1.PriceAfterVAT)
+	if math.Abs(line1.Quantity-12.0) > 0.001 || line1.UnitPrice != 0 || math.Abs(line1.PriceAfterVAT-21.0) > 0.001 {
+		t.Fatalf("expected converted base qty=12, afterVAT=21, omitted unitPrice=0, got qty=%f unitPrice=%f afterVAT=%f", line1.Quantity, line1.UnitPrice, line1.PriceAfterVAT)
 	}
 	if line1.TaxCode != "O0" {
 		t.Fatalf("expected TaxCode O0, got %q", line1.TaxCode)
@@ -1492,6 +1496,45 @@ func TestProcessOutbox_ErrorLoggingNotUpToDate(t *testing.T) {
 	joined := strings.Join(logs, "\n")
 	if !strings.Contains(joined, "1 failed") || !strings.Contains(joined, "1 errors") {
 		t.Fatalf("expected failure counts in logs, got:\n%s", joined)
+	}
+}
+
+func TestUpstreamBinAllocationErrorSkipsPostInvoice(t *testing.T) {
+	ctx := context.Background()
+	postCalled := false
+	mockSAP := &MockSAPClient{
+		binAllocErr: errors.New("mssql: login error: Login failed for user 'sa'"),
+		postInvoiceFunc: func(ctx context.Context, invoice *sap.SAPInvoiceRequest) (*sap.SAPInvoiceResponse, error) {
+			postCalled = true
+			return &sap.SAPInvoiceResponse{DocEntry: 1, DocNum: 100}, nil
+		},
+	}
+	mockNembus := newMockNembusClient()
+	txID := testUUID(802)
+	mockNembus.unpostedPOSTransactions = []nembus.POSTransaction{
+		{
+			ID:                txID,
+			StoreID:           1,
+			TransactionNumber: "TXN-BIN-ERR-1",
+			TransactionDate:   time.Now().UTC(),
+			TotalAmount:       25.0,
+			Status:            "completed",
+		},
+	}
+	mockNembus.txLines[txID] = []nembus.POSTransactionLine{
+		{ID: testUUID(2), ProductSKU: "INV00028", Quantity: 1, UnitPrice: 25, LineTotal: 25},
+	}
+
+	sync := pipeline.NewUpstreamSync(&config.Config{BatchSize: 10, NembusDefaultWarehouse: "01"}, mockSAP, mockNembus)
+	stats, err := sync.ProcessOutbox(ctx)
+	if err != nil {
+		t.Fatalf("ProcessOutbox: %v", err)
+	}
+	if postCalled {
+		t.Fatalf("PostInvoice must not be called when MSSQL bin allocation lookup fails")
+	}
+	if stats.Errors != 1 || stats.TransactionsPosted != 0 {
+		t.Fatalf("expected 1 transient error and 0 posted, got %+v", stats)
 	}
 }
 

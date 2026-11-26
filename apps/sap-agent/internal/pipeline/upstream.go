@@ -260,19 +260,23 @@ func (s *UpstreamSync) Close() error {
 	return nil
 }
 
-func (s *UpstreamSync) attachBinAllocations(ctx context.Context, docLine *sap.SAPDocumentLine, lineNum int, isReturn bool) {
+func (s *UpstreamSync) attachBinAllocations(ctx context.Context, docLine *sap.SAPDocumentLine, lineNum int, isReturn bool) error {
 	if docLine == nil || docLine.ItemCode == "" || docLine.WarehouseCode == "" || docLine.Quantity <= 0 {
-		return
+		return nil
 	}
 	allocs, err := s.sapClient.ResolveWarehouseBinAllocations(ctx, docLine.ItemCode, docLine.WarehouseCode, docLine.Quantity, isReturn)
-	if err != nil || len(allocs) == 0 {
-		return
+	if err != nil {
+		return fmt.Errorf("bin allocation lookup failed for item %s in warehouse %s: %w", docLine.ItemCode, docLine.WarehouseCode, err)
+	}
+	if len(allocs) == 0 {
+		return nil
 	}
 	for i := range allocs {
 		ln := lineNum
 		allocs[i].BaseLineNumber = &ln
 	}
 	docLine.DocumentLinesBinAllocations = allocs
+	return nil
 }
 
 func (s *UpstreamSync) applyDocumentHeaderMeta(ctx context.Context, req *sap.SAPInvoiceRequest, objectCode string) {
@@ -657,30 +661,14 @@ func (s *UpstreamSync) postTransactionToSAP(ctx context.Context, tx *nembus.POST
 	// 2. Build SAP Document Lines
 	var docLines []sap.SAPDocumentLine
 	for idx, line := range lines {
-		// Calculate unit price net of tax if not already net
-		unitPriceNet := line.UnitPrice
-		if line.TaxAmount > 0 && line.Quantity > 0 {
-			netAfterDiscount := line.LineTotal - line.TaxAmount
-			if line.DiscountAmount > 0 {
-				unitPriceNet = (netAfterDiscount + line.DiscountAmount) / line.Quantity
-			} else {
-				unitPriceNet = netAfterDiscount / line.Quantity
-			}
-			if unitPriceNet <= 0 {
-				unitPriceNet = line.UnitPrice
-			}
-		}
-
-		// Calculate discount percent from discount amount
-		discountPct := 0.0
-		if line.UnitPrice > 0 && line.Quantity > 0 && line.DiscountAmount > 0 {
-			gross := line.UnitPrice * line.Quantity
-			discountPct = (line.DiscountAmount / gross) * 100.0
-		}
-
-		priceAfterVAT := 0.0
-		if line.Quantity > 0 {
+		// Use PriceAfterVAT (gross unit price net of line discount) without UnitPrice so SAP
+		// computes the exact gross LineTotal and back-calculates VAT cleanly without 1.15
+		// rounding drift or double-discounting. Fall back to UnitPrice only when LineTotal <= 0.
+		var unitPriceNet, priceAfterVAT float64
+		if line.LineTotal > 0 && line.Quantity > 0 {
 			priceAfterVAT = line.LineTotal / line.Quantity
+		} else {
+			unitPriceNet = line.UnitPrice
 		}
 
 		lineNum := idx
@@ -691,12 +679,13 @@ func (s *UpstreamSync) postTransactionToSAP(ctx context.Context, tx *nembus.POST
 			Quantity:        line.Quantity,
 			UnitPrice:       unitPriceNet,
 			PriceAfterVAT:   priceAfterVAT,
-			DiscountPercent: discountPct,
 			TaxCode:         strings.TrimSpace(line.SAPTaxCode),
 			WarehouseCode:   s.cfg.NembusDefaultWarehouse,
 		}
 		applySAPUoM(&docLine, line.SAPUoMEntry, line.SAPUgpEntry, line.UoMConversionFactor, line.IsBaseUoM)
-		s.attachBinAllocations(ctx, &docLine, lineNum, false)
+		if err := s.attachBinAllocations(ctx, &docLine, lineNum, false); err != nil {
+			return err
+		}
 		docLines = append(docLines, docLine)
 	}
 
@@ -830,12 +819,34 @@ func (s *UpstreamSync) postTransactionToSAP(ctx context.Context, tx *nembus.POST
 					payReq.Series = paySeries
 				}
 
-				if p.PaymentMethod == "cash" || p.PaymentMethod == "CASH" {
+				if strings.EqualFold(strings.TrimSpace(p.PaymentMethod), "cash") {
 					payReq.CashSum = sumApplied
+					if s.cfg != nil && strings.TrimSpace(s.cfg.SAPCashAccount) != "" {
+						payReq.CashAccount = strings.TrimSpace(s.cfg.SAPCashAccount)
+					}
 				} else {
 					payReq.TransferSum = sumApplied
-					if p.Reference != nil {
-						payReq.TransferReference = *p.Reference
+					payReq.TransferDate = invDate
+					transferAcct := ""
+					if s.cfg != nil {
+						transferAcct = strings.TrimSpace(s.cfg.SAPBankTransferAccount)
+					}
+					if transferAcct == "" {
+						if resolver, ok := s.sapClient.(interface {
+							ResolveDefaultTransferAccount(context.Context) (string, error)
+						}); ok {
+							if resolved, rErr := resolver.ResolveDefaultTransferAccount(ctx); rErr == nil {
+								transferAcct = strings.TrimSpace(resolved)
+							}
+						}
+					}
+					if transferAcct != "" {
+						payReq.TransferAccount = transferAcct
+					}
+					if p.Reference != nil && strings.TrimSpace(*p.Reference) != "" {
+						payReq.TransferReference = strings.TrimSpace(*p.Reference)
+					} else {
+						payReq.TransferReference = tx.TransactionNumber
 					}
 				}
 
@@ -934,7 +945,9 @@ func (s *UpstreamSync) postSalesReturnToSAP(ctx context.Context, ret *nembus.Sal
 			}
 		}
 		applySAPUoM(&docLine, line.SAPUoMEntry, line.SAPUgpEntry, line.UoMConversionFactor, line.IsBaseUoM)
-		s.attachBinAllocations(ctx, &docLine, lineNum, true)
+		if err := s.attachBinAllocations(ctx, &docLine, lineNum, true); err != nil {
+			return err
+		}
 		docLines = append(docLines, docLine)
 	}
 
@@ -995,15 +1008,13 @@ func (s *UpstreamSync) postSalesOrderToSAP(ctx context.Context, order *nembus.Sa
 		if line.Quantity <= 0 {
 			continue
 		}
-		unitPriceNet := line.UnitPrice
-		if line.TaxAmount > 0 && line.Quantity > 0 {
-			unitPriceNet = (line.LineTotal - line.TaxAmount) / line.Quantity
-			if unitPriceNet <= 0 {
-				unitPriceNet = line.UnitPrice
-			}
+		var unitPriceNet, priceAfterVAT float64
+		if line.LineTotal > 0 {
+			priceAfterVAT = line.LineTotal / line.Quantity
+		} else {
+			unitPriceNet = line.UnitPrice
 		}
 		lineNum := idx
-		priceAfterVAT := line.LineTotal / line.Quantity
 		docLine := sap.SAPDocumentLine{
 			LineNum:         &lineNum,
 			ItemCode:        line.ProductSKU,
@@ -1015,7 +1026,9 @@ func (s *UpstreamSync) postSalesOrderToSAP(ctx context.Context, order *nembus.Sa
 			WarehouseCode:   s.cfg.NembusDefaultWarehouse,
 		}
 		applySAPUoM(&docLine, line.SAPUoMEntry, line.SAPUgpEntry, line.UoMConversionFactor, line.IsBaseUoM)
-		s.attachBinAllocations(ctx, &docLine, lineNum, false)
+		if err := s.attachBinAllocations(ctx, &docLine, lineNum, false); err != nil {
+			return err
+		}
 		docLines = append(docLines, docLine)
 	}
 	if len(docLines) == 0 {
