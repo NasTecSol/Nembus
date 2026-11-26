@@ -3,6 +3,7 @@ package middleware
 import (
 	"fmt"
 	"log/slog"
+	"net/url"
 	"strings"
 	"time"
 
@@ -90,7 +91,7 @@ func OTelGinMiddleware(serviceName string) gin.HandlerFunc {
 
 		fullPath := rawPath
 		if rawQuery != "" {
-			fullPath = rawPath + "?" + rawQuery
+			fullPath = rawPath + "?" + redactSensitiveQuery(rawQuery)
 		}
 
 		logAttrs := []slog.Attr{
@@ -134,4 +135,25 @@ func isQuietHealthOrPollRoute(route string) bool {
 	default:
 		return false
 	}
+}
+
+// redactSensitiveQuery masks secret-bearing query parameters (e.g. WebSocket JWTs)
+// before writing http.path into structured logs or OTel exporters.
+func redactSensitiveQuery(rawQuery string) string {
+	vals, err := url.ParseQuery(rawQuery)
+	if err != nil {
+		return "[redacted]"
+	}
+	redacted := false
+	for k := range vals {
+		switch strings.ToLower(k) {
+		case "token", "access_token", "refresh_token", "jwt", "api_key", "apikey", "key", "password", "secret", "authorization":
+			vals.Set(k, "REDACTED")
+			redacted = true
+		}
+	}
+	if !redacted {
+		return rawQuery
+	}
+	return vals.Encode()
 }

@@ -1316,8 +1316,8 @@ func TestPostTransactionToSAP_UoMEntryAndManualUseBaseUnits(t *testing.T) {
 	if line0.TaxCode != "O15" {
 		t.Fatalf("expected TaxCode O15, got %q", line0.TaxCode)
 	}
-	if math.Abs(line0.UnitPrice-300.0) > 0.001 {
-		t.Fatalf("expected net UnitPrice 300.0, got %f", line0.UnitPrice)
+	if math.Abs(line0.PriceAfterVAT-345.0) > 0.001 || line0.UnitPrice != 0 {
+		t.Fatalf("expected PriceAfterVAT 345.0 and omitted UnitPrice 0, got afterVAT=%f unitPrice=%f", line0.PriceAfterVAT, line0.UnitPrice)
 	}
 
 	line1 := capturedInv.DocumentLines[1]
@@ -1327,8 +1327,8 @@ func TestPostTransactionToSAP_UoMEntryAndManualUseBaseUnits(t *testing.T) {
 	if line1.UseBaseUnits != "tYES" {
 		t.Fatalf("expected UseBaseUnits=tYES for manual UoM item, got %q", line1.UseBaseUnits)
 	}
-	if math.Abs(line1.Quantity-12.0) > 0.001 || math.Abs(line1.UnitPrice-21.0) > 0.001 || math.Abs(line1.PriceAfterVAT-21.0) > 0.001 {
-		t.Fatalf("expected converted base qty=12 and price=21, got qty=%f unitPrice=%f afterVAT=%f", line1.Quantity, line1.UnitPrice, line1.PriceAfterVAT)
+	if math.Abs(line1.Quantity-12.0) > 0.001 || line1.UnitPrice != 0 || math.Abs(line1.PriceAfterVAT-21.0) > 0.001 {
+		t.Fatalf("expected converted base qty=12, afterVAT=21, omitted unitPrice=0, got qty=%f unitPrice=%f afterVAT=%f", line1.Quantity, line1.UnitPrice, line1.PriceAfterVAT)
 	}
 	if line1.TaxCode != "O0" {
 		t.Fatalf("expected TaxCode O0, got %q", line1.TaxCode)

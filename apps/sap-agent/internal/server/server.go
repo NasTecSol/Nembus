@@ -571,6 +571,12 @@ func (s *Server) handleSaveConfig(c *gin.Context) {
 	if req.SAPPaymentSeries > 0 {
 		current.SAPPaymentSeries = req.SAPPaymentSeries
 	}
+	if strings.TrimSpace(req.SAPCashAccount) != "" {
+		current.SAPCashAccount = strings.TrimSpace(req.SAPCashAccount)
+	}
+	if strings.TrimSpace(req.SAPBankTransferAccount) != "" {
+		current.SAPBankTransferAccount = strings.TrimSpace(req.SAPBankTransferAccount)
+	}
 	if req.NembusStoreID > 0 {
 		current.NembusStoreID = req.NembusStoreID
 	}
@@ -1484,6 +1490,8 @@ func (s *Server) buildPipeConfig() *legacyconfig.Config {
 		SAPInvoiceSeries:       cfg.SAPInvoiceSeries,
 		SAPCreditMemoSeries:    cfg.SAPCreditMemoSeries,
 		SAPPaymentSeries:       cfg.SAPPaymentSeries,
+		SAPCashAccount:         cfg.SAPCashAccount,
+		SAPBankTransferAccount: cfg.SAPBankTransferAccount,
 		SAPMSSQLEnabled:        true,
 		SAPMSSQLHost:           cfg.MSSQL.Host,
 		SAPMSSQLPort:           cfg.MSSQL.Port,
