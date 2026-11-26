@@ -127,13 +127,13 @@ func (uc *ReleaseUseCase) UploadRelease(
 	}
 
 	// PRUNE OLD BUILDS: Remove older release binaries from disk and database
-	go uc.cleanupOldReleases(context.Background(), appName, channel, newRelease.ID)
+	go uc.cleanupOldReleases(context.Background(), appName, channel, newRelease.ID, destPath)
 
 	return utils.NewResponse(utils.CodeCreated, "release published successfully", newRelease)
 }
 
 // cleanupOldReleases removes files of older releases from disk and database
-func (uc *ReleaseUseCase) cleanupOldReleases(ctx context.Context, appName, channel string, currentReleaseID int32) {
+func (uc *ReleaseUseCase) cleanupOldReleases(ctx context.Context, appName, channel string, currentReleaseID int32, currentFilePath string) {
 	olderReleases, err := uc.repo.GetOlderReleasesToPrune(ctx, repository.GetOlderReleasesToPruneParams{
 		AppName: appName,
 		Channel: channel,
@@ -145,7 +145,7 @@ func (uc *ReleaseUseCase) cleanupOldReleases(ctx context.Context, appName, chann
 	}
 
 	for _, rel := range olderReleases {
-		if rel.FilePath != "" {
+		if rel.FilePath != "" && !strings.EqualFold(filepath.Clean(rel.FilePath), filepath.Clean(currentFilePath)) {
 			if _, statErr := os.Stat(rel.FilePath); statErr == nil {
 				if removeErr := os.Remove(rel.FilePath); removeErr != nil {
 					log.Printf("[RELEASE_CLEANUP] Could not remove old binary '%s': %v", rel.FilePath, removeErr)

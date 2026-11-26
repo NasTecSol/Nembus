@@ -29,6 +29,7 @@ import (
 	"github.com/NasTecSol/nembus-sap-agent/internal/reconciliation"
 	"github.com/NasTecSol/nembus-sap-agent/internal/sap"
 	"github.com/NasTecSol/nembus-sap-agent/internal/transport"
+	"github.com/NasTecSol/nembus-sap-agent/internal/tray"
 	"github.com/NasTecSol/nembus-sap-agent/internal/updater"
 	"github.com/NasTecSol/nembus-sap/contracts"
 	"github.com/NasTecSol/nembus-sap/mappings"
@@ -46,6 +47,7 @@ type Server struct {
 	upstreamMu           sync.Mutex
 	downstreamMu         sync.Mutex
 	autoStateMu          sync.RWMutex
+	statusMu             sync.RWMutex
 	downstreamAutoActive bool
 	upstreamAutoActive   bool
 	lastDownstreamStats  *etl.DownstreamStats
@@ -56,6 +58,8 @@ type Server struct {
 	router               *gin.Engine
 	httpServer           *http.Server
 	uiFS                 embed.FS
+	stopCtx              context.Context
+	stopCancel           context.CancelFunc
 }
 
 func (s *Server) isDownstreamAutoActive() bool {
@@ -88,6 +92,7 @@ func NewServer(cfg *config.AgentConfig, engine *etl.Engine, sqlite *db.SQLiteSto
 	r.Use(gin.Recovery())
 	r.Use(middleware.OTelGinMiddleware("nembus-sap-agent"))
 
+	stopCtx, stopCancel := context.WithCancel(context.Background())
 	s := &Server{
 		cfg:                  cfg,
 		engine:               engine,
@@ -98,6 +103,8 @@ func NewServer(cfg *config.AgentConfig, engine *etl.Engine, sqlite *db.SQLiteSto
 		upstreamAutoActive:   cfg != nil && cfg.OnboardingCompleted && cfg.UpstreamAutoActive,
 		router:               r,
 		uiFS:                 uiFS,
+		stopCtx:              stopCtx,
+		stopCancel:           stopCancel,
 	}
 
 	s.setupRoutes()
@@ -151,6 +158,8 @@ func (s *Server) setupRoutes() {
 		api.POST("/sync/downstream/run", s.handleRunDownstreamSync)
 		api.POST("/sync/upstream/run", s.handleRunUpstreamSync)
 		api.GET("/sync/upstream/outbox", s.handleGetUpstreamOutbox)
+		api.GET("/sync/upstream/quarantine", s.handleGetUpstreamQuarantine)
+		api.POST("/sync/upstream/quarantine/retry", s.handleRetryUpstreamQuarantine)
 
 		// Migration Control (ETL)
 		api.POST("/migration/start", s.handleStartMigration)
@@ -160,9 +169,10 @@ func (s *Server) setupRoutes() {
 		// Reconciliation & Audit
 		api.POST("/reconciliation", s.handleReconciliation)
 
-		// History & Logs
+		// History, Logs & Diagnostics
 		api.GET("/history", s.handleGetHistory)
 		api.GET("/logs", s.handleGetLogs)
+		api.GET("/diagnostics", s.handleGetDiagnostics)
 
 		// Application Auto-Update
 		api.GET("/updates/check", s.handleCheckUpdates)
@@ -187,6 +197,7 @@ var DownstreamMasterDomains = []contracts.DomainType{
 func (s *Server) Start(port int) error {
 	go s.startDownstreamScheduler()
 	go s.startUpstreamScheduler()
+	go s.startReconciliationScheduler()
 	addr := fmt.Sprintf("127.0.0.1:%d", port)
 	s.httpServer = &http.Server{
 		Addr:    addr,
@@ -199,8 +210,21 @@ func (s *Server) Start(port int) error {
 	return err
 }
 
-// Shutdown gracefully closes the HTTP listener (used prior to self-update restart).
+// Shutdown gracefully stops schedulers, closes DB/SAP pools, and closes the HTTP listener.
 func (s *Server) Shutdown(ctx context.Context) error {
+	if s.stopCancel != nil {
+		s.stopCancel()
+	}
+	s.upstreamMu.Lock()
+	if s.upstreamSync != nil {
+		_ = s.upstreamSync.Close()
+		s.upstreamSync = nil
+	}
+	s.upstreamMu.Unlock()
+	if s.pgPool != nil {
+		s.pgPool.Close()
+		s.pgPool = nil
+	}
 	if s.httpServer == nil {
 		return nil
 	}
@@ -219,13 +243,33 @@ func nextScheduledRunTime(runStart, now time.Time, interval time.Duration) time.
 	return next
 }
 
+func (s *Server) sleepOrStop(d time.Duration) bool {
+	if s.stopCtx == nil {
+		time.Sleep(d)
+		return true
+	}
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-s.stopCtx.Done():
+		return false
+	case <-t.C:
+		return true
+	}
+}
+
 func (s *Server) runPeriodicScheduler(defaultIntervalSec int, getInterval func(*config.AgentConfig) int, isActive func() bool, run func(interval int)) {
 	var nextRunAt time.Time
 	for {
+		if s.stopCtx != nil && s.stopCtx.Err() != nil {
+			return
+		}
 		cfg := config.Get()
 		if !cfg.OnboardingCompleted || !isActive() {
 			nextRunAt = time.Time{}
-			time.Sleep(2 * time.Second)
+			if !s.sleepOrStop(2 * time.Second) {
+				return
+			}
 			continue
 		}
 
@@ -243,7 +287,9 @@ func (s *Server) runPeriodicScheduler(defaultIntervalSec int, getInterval func(*
 			if remaining > 2*time.Second {
 				remaining = 2 * time.Second
 			}
-			time.Sleep(remaining)
+			if !s.sleepOrStop(remaining) {
+				return
+			}
 			if !config.Get().OnboardingCompleted || !isActive() {
 				nextRunAt = time.Time{}
 				break
@@ -274,11 +320,15 @@ func (s *Server) startDownstreamScheduler() {
 		func(c *config.AgentConfig) int { return c.DownstreamIntervalSec },
 		s.isDownstreamAutoActive,
 		func(interval int) {
-			if stats, err := s.runDownstreamSync(context.Background(), DownstreamMasterDomains); err != nil {
+			ctx := s.stopCtx
+			if ctx == nil {
+				ctx = context.Background()
+			}
+			if stats, err := s.runDownstreamSync(ctx, DownstreamMasterDomains); err != nil {
 				log.Printf("[SAP-AGENT] Scheduled downstream sync notice: %v", err)
-			} else if stats != nil && (stats.UOMs+stats.Products+stats.Barcodes+stats.Prices > 0) {
-				log.Printf("[SAP-AGENT] Scheduled downstream sync completed (interval: %ds): %d uoms, %d products, %d barcodes, %d prices in %v",
-					interval, stats.UOMs, stats.Products, stats.Barcodes, stats.Prices, stats.Duration)
+			} else if stats != nil && (stats.UOMs+stats.Products+stats.Barcodes+stats.Prices+stats.Inventory+stats.Categories > 0) {
+				log.Printf("[SAP-AGENT] Scheduled downstream sync completed (interval: %ds): %d uoms, %d products, %d barcodes, %d prices, %d stock, %d categories in %v",
+					interval, stats.UOMs, stats.Products, stats.Barcodes, stats.Prices, stats.Inventory, stats.Categories, stats.Duration)
 			}
 		},
 	)
@@ -290,9 +340,46 @@ func (s *Server) startUpstreamScheduler() {
 		func(c *config.AgentConfig) int { return c.UpstreamIntervalSec },
 		s.isUpstreamAutoActive,
 		func(_ int) {
-			if _, err := s.runUpstreamSync(context.Background()); err != nil {
+			ctx := s.stopCtx
+			if ctx == nil {
+				ctx = context.Background()
+			}
+			if _, err := s.runUpstreamSync(ctx); err != nil {
 				log.Printf("[SAP-AGENT] Scheduled upstream sync notice: %v", err)
 			}
+		},
+	)
+}
+
+func (s *Server) startReconciliationScheduler() {
+	s.runPeriodicScheduler(
+		3600,
+		func(c *config.AgentConfig) int { return c.ReconciliationIntervalSec },
+		func() bool { return config.Get().ReconciliationAutoRun },
+		func(_ int) {
+			ctx := s.stopCtx
+			if ctx == nil {
+				ctx = context.Background()
+			}
+			cfg := config.Get()
+			mssql, err := db.NewMSSQLClient(cfg.MSSQL)
+			if err != nil {
+				log.Printf("[SAP-AGENT] Scheduled reconciliation skipped (MSSQL unavailable): %v", err)
+				return
+			}
+			defer mssql.Close()
+			cloudClient := transport.NewCloudClient(cfg.Cloud)
+			pgPool := s.getPGPool(ctx)
+			auditor := reconciliation.NewAuditEngine(mssql, cloudClient, s.sqlite, pgPool)
+			report, err := auditor.Reconcile(ctx, "", cfg.Cloud.OrganizationID)
+			if err != nil {
+				log.Printf("[SAP-AGENT] Scheduled reconciliation error: %v", err)
+				return
+			}
+			s.statusMu.Lock()
+			s.lastReconcileReport = report
+			s.statusMu.Unlock()
+			log.Printf("[SAP-AGENT] Scheduled reconciliation completed: %s", report.AuditSummary)
 		},
 	)
 }
@@ -300,7 +387,11 @@ func (s *Server) startUpstreamScheduler() {
 // Handlers
 
 func (s *Server) handleGetConfig(c *gin.Context) {
-	c.JSON(http.StatusOK, config.Get())
+	c.JSON(http.StatusOK, config.Get().Sanitized())
+}
+
+func isUnmaskedSecret(v string) bool {
+	return v != "" && v != config.MaskedSecret
 }
 
 // applySAPCompanyDB keeps SAPCompanyDB synced with an explicit value or the configured MSSQL database.
@@ -382,9 +473,13 @@ func (s *Server) handleSaveConfig(c *gin.Context) {
 
 	current := config.Get()
 	if req.MSSQL.Host != "" {
+		prevPass := current.MSSQL.Password
 		current.MSSQL = req.MSSQL
+		if !isUnmaskedSecret(req.MSSQL.Password) {
+			current.MSSQL.Password = prevPass
+		}
 	}
-	if req.ServiceLayer.URL != "" || req.ServiceLayer.Username != "" || req.ServiceLayer.Password != "" || req.ServiceLayer.CompanyDB != "" {
+	if req.ServiceLayer.URL != "" || req.ServiceLayer.Username != "" || isUnmaskedSecret(req.ServiceLayer.Password) || req.ServiceLayer.CompanyDB != "" {
 		if req.ServiceLayer.URL != "" {
 			current.ServiceLayer.URL = req.ServiceLayer.URL
 		}
@@ -397,20 +492,32 @@ func (s *Server) handleSaveConfig(c *gin.Context) {
 				current.SAPUserMapping = req.ServiceLayer.Username
 			}
 		}
-		if req.ServiceLayer.Password != "" {
+		if isUnmaskedSecret(req.ServiceLayer.Password) {
 			current.ServiceLayer.Password = req.ServiceLayer.Password
-			if req.SAPPassword == "" {
+			if !isUnmaskedSecret(req.SAPPassword) {
 				current.SAPPassword = req.ServiceLayer.Password
 			}
 		}
 		current.ServiceLayer.InsecureSkipSSL = req.ServiceLayer.InsecureSkipSSL
 	}
 	applySAPCompanyDB(current, req.SAPCompanyDB, req.MSSQL.Database)
-	if req.ServiceLayer.CompanyDB == "" && (current.ServiceLayer.CompanyDB == "" || current.ServiceLayer.CompanyDB == "Qadsiya") && current.SAPCompanyDB != "" {
+	if req.ServiceLayer.CompanyDB == "" && current.ServiceLayer.CompanyDB == "" && current.SAPCompanyDB != "" {
 		current.ServiceLayer.CompanyDB = current.SAPCompanyDB
 	}
 	if req.Cloud.BaseURL != "" {
+		prevAPIKey := current.Cloud.APIKey
+		prevUpdateKey := current.Cloud.AppUpdateClientKey
+		prevDBURL := current.Cloud.DatabaseURL
 		current.Cloud = req.Cloud
+		if !isUnmaskedSecret(req.Cloud.APIKey) {
+			current.Cloud.APIKey = prevAPIKey
+		}
+		if !isUnmaskedSecret(req.Cloud.AppUpdateClientKey) {
+			current.Cloud.AppUpdateClientKey = prevUpdateKey
+		}
+		if !isUnmaskedSecret(req.Cloud.DatabaseURL) {
+			current.Cloud.DatabaseURL = prevDBURL
+		}
 	}
 	if req.BatchSize > 0 {
 		current.BatchSize = req.BatchSize
@@ -424,13 +531,13 @@ func (s *Server) handleSaveConfig(c *gin.Context) {
 	if req.MigratorUser != "" {
 		current.MigratorUser = req.MigratorUser
 	}
-	if req.MigratorPassword != "" {
+	if isUnmaskedSecret(req.MigratorPassword) {
 		current.MigratorPassword = req.MigratorPassword
 	}
 	if req.MigratorRole != "" {
 		current.MigratorRole = req.MigratorRole
 	}
-	if req.MigratorToken != "" {
+	if isUnmaskedSecret(req.MigratorToken) {
 		current.MigratorToken = req.MigratorToken
 		current.Cloud.APIKey = req.MigratorToken
 	}
@@ -446,11 +553,23 @@ func (s *Server) handleSaveConfig(c *gin.Context) {
 			current.ServiceLayer.Username = req.SAPUserMapping
 		}
 	}
-	if req.SAPPassword != "" {
+	if isUnmaskedSecret(req.SAPPassword) {
 		current.SAPPassword = req.SAPPassword
 		if current.ServiceLayer.Password == "" {
 			current.ServiceLayer.Password = req.SAPPassword
 		}
+	}
+	if req.SAPBranchID > 0 {
+		current.SAPBranchID = req.SAPBranchID
+	}
+	if req.SAPInvoiceSeries > 0 {
+		current.SAPInvoiceSeries = req.SAPInvoiceSeries
+	}
+	if req.SAPCreditMemoSeries > 0 {
+		current.SAPCreditMemoSeries = req.SAPCreditMemoSeries
+	}
+	if req.SAPPaymentSeries > 0 {
+		current.SAPPaymentSeries = req.SAPPaymentSeries
 	}
 	if req.NembusStoreID > 0 {
 		current.NembusStoreID = req.NembusStoreID
@@ -485,10 +604,13 @@ func (s *Server) handleSaveConfig(c *gin.Context) {
 		s.cloudClient.UpdateConfig(current.Cloud)
 	}
 	s.upstreamMu.Lock()
-	s.upstreamSync = nil
+	if s.upstreamSync != nil {
+		_ = s.upstreamSync.Close()
+		s.upstreamSync = nil
+	}
 	s.upstreamMu.Unlock()
 
-	c.JSON(http.StatusOK, gin.H{"success": true, "config": current})
+	c.JSON(http.StatusOK, gin.H{"success": true, "config": current.Sanitized()})
 }
 
 // Onboarding Endpoints
@@ -521,7 +643,7 @@ func (s *Server) handleGetOnboardingStatus(c *gin.Context) {
 		"has_migrator_token":   cfg.MigratorToken != "" || cfg.Cloud.APIKey != "",
 		"mssql_connected":      mssqlOK,
 		"cloud_connected":      cloudOK,
-		"config":               cfg,
+		"config":               cfg.Sanitized(),
 	})
 }
 
@@ -835,7 +957,11 @@ func (s *Server) handleOnboardingComplete(c *gin.Context) {
 
 	current := config.Get()
 	if req.MSSQL.Host != "" {
+		prevPass := current.MSSQL.Password
 		current.MSSQL = req.MSSQL
+		if !isUnmaskedSecret(req.MSSQL.Password) {
+			current.MSSQL.Password = prevPass
+		}
 	}
 	if req.ServiceLayer.URL != "" || req.ServiceLayer.Username != "" || req.ServiceLayer.Password != "" || req.ServiceLayer.CompanyDB != "" {
 		if req.ServiceLayer.URL != "" {
@@ -859,11 +985,23 @@ func (s *Server) handleOnboardingComplete(c *gin.Context) {
 		current.ServiceLayer.InsecureSkipSSL = req.ServiceLayer.InsecureSkipSSL
 	}
 	applySAPCompanyDB(current, req.SAPCompanyDB, req.MSSQL.Database)
-	if req.ServiceLayer.CompanyDB == "" && (current.ServiceLayer.CompanyDB == "" || current.ServiceLayer.CompanyDB == "Qadsiya") && current.SAPCompanyDB != "" {
+	if req.ServiceLayer.CompanyDB == "" && current.ServiceLayer.CompanyDB == "" && current.SAPCompanyDB != "" {
 		current.ServiceLayer.CompanyDB = current.SAPCompanyDB
 	}
 	if req.Cloud.BaseURL != "" {
+		prevAPIKey := current.Cloud.APIKey
+		prevUpdateKey := current.Cloud.AppUpdateClientKey
+		prevDBURL := current.Cloud.DatabaseURL
 		current.Cloud = req.Cloud
+		if !isUnmaskedSecret(req.Cloud.APIKey) {
+			current.Cloud.APIKey = prevAPIKey
+		}
+		if !isUnmaskedSecret(req.Cloud.AppUpdateClientKey) {
+			current.Cloud.AppUpdateClientKey = prevUpdateKey
+		}
+		if !isUnmaskedSecret(req.Cloud.DatabaseURL) {
+			current.Cloud.DatabaseURL = prevDBURL
+		}
 	}
 	if req.TenantSlug != "" {
 		current.TenantSlug = req.TenantSlug
@@ -935,27 +1073,43 @@ func (s *Server) handleOnboardingComplete(c *gin.Context) {
 		s.cloudClient.UpdateConfig(current.Cloud)
 	}
 	s.upstreamMu.Lock()
-	s.upstreamSync = nil
+	if s.upstreamSync != nil {
+		_ = s.upstreamSync.Close()
+		s.upstreamSync = nil
+	}
 	s.upstreamMu.Unlock()
 
-	// Do not auto-start Downstream or Upstream after onboarding; each starts when the
-	// operator clicks Run Downstream / Run Upstream, and then continues automatically.
-	s.setDownstreamAutoActive(false)
-	s.setUpstreamAutoActive(false)
-	current.DownstreamAutoActive = false
-	current.UpstreamAutoActive = false
+	// Auto-start Downstream and Upstream schedulers immediately upon setup completion.
+	s.setDownstreamAutoActive(true)
+	s.setUpstreamAutoActive(true)
+	current.DownstreamAutoActive = true
+	current.UpstreamAutoActive = true
 	_ = config.SaveConfig(current)
 
 	if err := s.ensureOnboardingOrganization(c.Request.Context(), current, req.OrganizationName); err != nil {
 		log.Printf("[SAP-AGENT] Warning: failed to migrate organization via /api/v1/migration/batch: %v", err)
 	}
 
-	log.Printf("[SAP-AGENT] Onboarding completed for tenant '%s'. Waiting for manual 'Run Downstream' / 'Run Upstream' to activate auto-sync.", current.TenantSlug)
+	// Kick off an immediate non-blocking sync cycle so data starts flowing right away.
+	go func() {
+		bgCtx := s.stopCtx
+		if bgCtx == nil {
+			bgCtx = context.Background()
+		}
+		if _, err := s.runDownstreamSync(bgCtx, DownstreamMasterDomains); err != nil {
+			log.Printf("[SAP-AGENT] Initial post-onboarding downstream sync notice: %v", err)
+		}
+		if _, err := s.runUpstreamSync(bgCtx); err != nil {
+			log.Printf("[SAP-AGENT] Initial post-onboarding upstream sync notice: %v", err)
+		}
+	}()
+
+	log.Printf("[SAP-AGENT] Onboarding completed for tenant '%s'. Downstream and Upstream auto-sync activated.", current.TenantSlug)
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
-		"message": "Onboarding finalized successfully! Click Run Downstream or Run Upstream to start automatic synchronization.",
-		"config":  current,
+		"message": "Onboarding finalized successfully! Downstream and Upstream synchronization have started automatically.",
+		"config":  current.Sanitized(),
 	})
 }
 
@@ -1000,11 +1154,18 @@ func (s *Server) handleGetSyncStatus(c *gin.Context) {
 		lastFlushStr = &formatted
 	}
 
+	s.statusMu.RLock()
+	lastDownstreamErr := s.lastDownstreamErr
+	lastDownstreamTime := s.lastDownstreamTime
+	lastDownstreamStats := s.lastDownstreamStats
+	lastReconcileReport := s.lastReconcileReport
+	s.statusMu.RUnlock()
+
 	downstreamStatus := "standby"
 	downstreamErrors := 0
 	if s.isDownstreamAutoActive() {
 		downstreamStatus = "active"
-		if s.lastDownstreamErr != "" {
+		if lastDownstreamErr != "" {
 			downstreamStatus = "warning"
 			downstreamErrors = 1
 		}
@@ -1016,8 +1177,8 @@ func (s *Server) handleGetSyncStatus(c *gin.Context) {
 	}
 
 	var lastDownstreamTimeStr *string
-	if s.lastDownstreamTime != nil {
-		formatted := s.lastDownstreamTime.Format(time.RFC3339)
+	if lastDownstreamTime != nil {
+		formatted := lastDownstreamTime.Format(time.RFC3339)
 		lastDownstreamTimeStr = &formatted
 	}
 
@@ -1027,29 +1188,29 @@ func (s *Server) handleGetSyncStatus(c *gin.Context) {
 	syncedCategories := 0
 	syncedUOMs := 0
 	syncedInventory := 0
-	if s.lastDownstreamStats != nil {
-		syncedProducts = s.lastDownstreamStats.Products
-		syncedPrices = s.lastDownstreamStats.Prices
-		syncedBarcodes = s.lastDownstreamStats.Barcodes
-		syncedCategories = s.lastDownstreamStats.Categories
-		syncedUOMs = s.lastDownstreamStats.UOMs
-		syncedInventory = s.lastDownstreamStats.Inventory
+	if lastDownstreamStats != nil {
+		syncedProducts = lastDownstreamStats.Products
+		syncedPrices = lastDownstreamStats.Prices
+		syncedBarcodes = lastDownstreamStats.Barcodes
+		syncedCategories = lastDownstreamStats.Categories
+		syncedUOMs = lastDownstreamStats.UOMs
+		syncedInventory = lastDownstreamStats.Inventory
 	}
 
 	reconcileStatus := "not_run"
 	var reconcileScore *string
 	var reconcileTime *string
-	if s.lastReconcileReport != nil {
-		if s.lastReconcileReport.FailedDomains == 0 {
+	if lastReconcileReport != nil {
+		if lastReconcileReport.FailedDomains == 0 {
 			reconcileStatus = "matched"
 		} else {
 			reconcileStatus = "mismatch"
 		}
-		if s.lastReconcileReport.TotalDomains > 0 {
-			pct := fmt.Sprintf("%.1f%%", float64(s.lastReconcileReport.PassedDomains)*100.0/float64(s.lastReconcileReport.TotalDomains))
+		if lastReconcileReport.TotalDomains > 0 {
+			pct := fmt.Sprintf("%.1f%%", float64(lastReconcileReport.PassedDomains)*100.0/float64(lastReconcileReport.TotalDomains))
 			reconcileScore = &pct
 		}
-		ts := s.lastReconcileReport.GeneratedAt.Format(time.RFC3339)
+		ts := lastReconcileReport.GeneratedAt.Format(time.RFC3339)
 		reconcileTime = &ts
 	}
 
@@ -1145,6 +1306,55 @@ func (s *Server) handleGetUpstreamOutbox(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true, "dispatches": dispatches})
 }
 
+func (s *Server) handleGetUpstreamQuarantine(c *gin.Context) {
+	if s.sqlite == nil {
+		c.JSON(http.StatusOK, gin.H{"success": true, "items": []interface{}{}})
+		return
+	}
+	quarantinedOnly := c.DefaultQuery("all", "false") != "true"
+	items, err := s.sqlite.ListUpstreamRetries(c.Request.Context(), quarantinedOnly)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "error": err.Error(), "items": []interface{}{}})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "items": items})
+}
+
+func (s *Server) handleRetryUpstreamQuarantine(c *gin.Context) {
+	var req struct {
+		RetryKey string `json:"retry_key"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil || strings.TrimSpace(req.RetryKey) == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "retry_key is required (use '*' to clear all)"})
+		return
+	}
+	key := strings.TrimSpace(req.RetryKey)
+	if key == "*" {
+		if s.sqlite != nil {
+			items, _ := s.sqlite.ListUpstreamRetries(c.Request.Context(), false)
+			for _, it := range items {
+				_ = s.sqlite.DeleteUpstreamRetry(c.Request.Context(), it.RetryKey)
+				s.upstreamMu.Lock()
+				if s.upstreamSync != nil {
+					s.upstreamSync.ClearRetryKey(it.RetryKey)
+				}
+				s.upstreamMu.Unlock()
+			}
+		}
+		c.JSON(http.StatusOK, gin.H{"success": true, "message": "All quarantined upstream items cleared for immediate retry"})
+		return
+	}
+	s.upstreamMu.Lock()
+	if s.upstreamSync != nil {
+		s.upstreamSync.ClearRetryKey(key)
+	}
+	s.upstreamMu.Unlock()
+	if s.sqlite != nil {
+		_ = s.sqlite.DeleteUpstreamRetry(c.Request.Context(), key)
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": fmt.Sprintf("Cleared quarantine for %s", key)})
+}
+
 func (s *Server) handleRunUpstreamSync(c *gin.Context) {
 	log.Println("[SAP-AGENT] Manual Upstream Outbox Sync triggered")
 	if cfg := config.Get(); cfg.OnboardingCompleted && !s.isUpstreamAutoActive() {
@@ -1193,7 +1403,7 @@ func (s *Server) buildPipeConfig() *legacyconfig.Config {
 	if companyDB == "" {
 		companyDB = cfg.SAPCompanyDB
 	}
-	if companyDB == "" || (companyDB == "Qadsiya" && cfg.MSSQL.Database != "" && cfg.MSSQL.Database != "Qadsiya") {
+	if companyDB == "" {
 		companyDB = cfg.MSSQL.Database
 	}
 	if envDB := os.Getenv("SAP_COMPANY_DB"); envDB != "" {
@@ -1270,6 +1480,10 @@ func (s *Server) buildPipeConfig() *legacyconfig.Config {
 		SAPUsername:            username,
 		SAPPassword:            password,
 		SAPInsecureSkipSSL:     insecureSSL,
+		SAPBranchID:            cfg.SAPBranchID,
+		SAPInvoiceSeries:       cfg.SAPInvoiceSeries,
+		SAPCreditMemoSeries:    cfg.SAPCreditMemoSeries,
+		SAPPaymentSeries:       cfg.SAPPaymentSeries,
 		SAPMSSQLEnabled:        true,
 		SAPMSSQLHost:           cfg.MSSQL.Host,
 		SAPMSSQLPort:           cfg.MSSQL.Port,
@@ -1319,26 +1533,33 @@ func (s *Server) runDownstreamSync(ctx context.Context, domains []contracts.Doma
 
 	if cfg.Cloud.BaseURL == "" {
 		err := fmt.Errorf("cloud.base_url is not configured")
+		s.statusMu.Lock()
 		s.lastDownstreamErr = err.Error()
+		s.statusMu.Unlock()
 		return nil, err
 	}
 
 	if s.engine == nil {
 		err := fmt.Errorf("ETL engine is not initialized")
+		s.statusMu.Lock()
 		s.lastDownstreamErr = err.Error()
+		s.statusMu.Unlock()
 		return nil, err
 	}
 
 	stats, err := s.engine.ExecuteDownstreamSync(ctx, domains)
 	now := time.Now()
+	s.statusMu.Lock()
 	s.lastDownstreamTime = &now
 	if err != nil {
 		s.lastDownstreamErr = err.Error()
+		s.statusMu.Unlock()
 		return stats, err
 	}
 
 	s.lastDownstreamStats = stats
 	s.lastDownstreamErr = ""
+	s.statusMu.Unlock()
 	return stats, nil
 }
 
@@ -1568,7 +1789,9 @@ func (s *Server) handleReconciliation(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	s.statusMu.Lock()
 	s.lastReconcileReport = report
+	s.statusMu.Unlock()
 
 	c.JSON(http.StatusOK, report)
 }
@@ -1627,12 +1850,96 @@ func (s *Server) handleGetLogs(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"logs": logs})
 }
 
+// TrayStatus returns a concise live health snapshot for the Windows System Tray status bar.
+func (s *Server) TrayStatus() tray.StatusSnapshot {
+	cfg := config.Get()
+	ver := cfg.Version
+	if ver == "" {
+		ver = "v1.0.0"
+	}
+	if !cfg.OnboardingCompleted {
+		return tray.StatusSnapshot{
+			Kind:    tray.StatusStandby,
+			Label:   fmt.Sprintf("Status: Setup Required (%s)", ver),
+			Tooltip: fmt.Sprintf("Nembus SAP Agent %s — Click Control Panel to complete setup", ver),
+		}
+	}
+
+	s.statusMu.RLock()
+	dsErr := s.lastDownstreamErr
+	s.statusMu.RUnlock()
+
+	dsOn := s.isDownstreamAutoActive()
+	usOn := s.isUpstreamAutoActive()
+	tenant := cfg.TenantSlug
+	if tenant == "" {
+		tenant = "default"
+	}
+
+	if dsErr != "" {
+		return tray.StatusSnapshot{
+			Kind:    tray.StatusWarning,
+			Label:   fmt.Sprintf("Status: Warning (%s) | Tenant: %s", ver, tenant),
+			Tooltip: fmt.Sprintf("Nembus SAP Agent %s (%s) — Sync notice: %s", ver, tenant, dsErr),
+		}
+	}
+	if dsOn || usOn {
+		return tray.StatusSnapshot{
+			Kind:    tray.StatusActive,
+			Label:   fmt.Sprintf("Status: Syncing (%s) | Tenant: %s", ver, tenant),
+			Tooltip: fmt.Sprintf("Nembus SAP Agent %s (%s) — Downstream=%v Upstream=%v", ver, tenant, dsOn, usOn),
+		}
+	}
+	return tray.StatusSnapshot{
+		Kind:    tray.StatusStandby,
+		Label:   fmt.Sprintf("Status: Standby (%s) | Tenant: %s", ver, tenant),
+		Tooltip: fmt.Sprintf("Nembus SAP Agent %s (%s) — Standby", ver, tenant),
+	}
+}
+
+func (s *Server) handleGetDiagnostics(c *gin.Context) {
+	cfg := config.Get()
+	s.statusMu.RLock()
+	lastDSErr := s.lastDownstreamErr
+	lastDSTime := s.lastDownstreamTime
+	lastDSStats := s.lastDownstreamStats
+	s.statusMu.RUnlock()
+
+	var logs interface{} = []interface{}{}
+	var quarantine interface{} = []interface{}{}
+	if s.sqlite != nil {
+		if l, err := s.sqlite.GetRecentLogs(c.Request.Context(), "", 100); err == nil {
+			logs = l
+		}
+		if q, err := s.sqlite.ListUpstreamRetries(c.Request.Context(), false); err == nil {
+			quarantine = q
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"version":                cfg.Version,
+		"config_path":            config.ConfigPath(),
+		"sqlite_path":            cfg.SQLitePath,
+		"log_path":               config.DefaultLogPath(!service.Interactive()),
+		"tenant_slug":            cfg.TenantSlug,
+		"onboarding_completed":   cfg.OnboardingCompleted,
+		"downstream_auto_active": s.isDownstreamAutoActive(),
+		"upstream_auto_active":   s.isUpstreamAutoActive(),
+		"last_downstream_time":   lastDSTime,
+		"last_downstream_error":  lastDSErr,
+		"last_downstream_stats":  lastDSStats,
+		"quarantine":             quarantine,
+		"recent_logs":            logs,
+	})
+}
+
 func (s *Server) handleCheckUpdates(c *gin.Context) {
-	currVer := s.cfg.Version
+	cfg := config.Get()
+	currVer := cfg.Version
 	if currVer == "" {
 		currVer = "v1.0.0"
 	}
-	info, err := updater.CheckForUpdate(currVer, s.cfg.Cloud.BaseURL, s.cfg.Cloud.AppUpdateClientKey)
+	info, err := updater.CheckForUpdate(currVer, cfg.Cloud.BaseURL, cfg.Cloud.AppUpdateClientKey)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
 			"hasUpdate":      false,

@@ -31,8 +31,40 @@ type MockSAPClient struct {
 	postIncomingPaymentFunc func(ctx context.Context, payment *sap.SAPPaymentRequest) (*sap.SAPPaymentResponse, error)
 	postCreditMemoFunc      func(ctx context.Context, memo *sap.SAPInvoiceRequest) (*sap.SAPInvoiceResponse, error)
 	stockBySKU              map[string]float64
+	binAllocations          []sap.SAPBinAllocation
+	seriesByObj             map[string]int
+	baseLineByItem          map[string]int
 
 	postedCreditMemos []*sap.SAPInvoiceRequest
+}
+
+func (m *MockSAPClient) ResolveWarehouseBinAllocations(ctx context.Context, itemCode, warehouseCode string, requiredQty float64, isReturn bool) ([]sap.SAPBinAllocation, error) {
+	if len(m.binAllocations) == 0 {
+		return nil, nil
+	}
+	out := make([]sap.SAPBinAllocation, len(m.binAllocations))
+	copy(out, m.binAllocations)
+	return out, nil
+}
+
+func (m *MockSAPClient) ResolveDocumentSeries(ctx context.Context, objectCode string, docDate string, bplID int) (*int, error) {
+	if m.seriesByObj != nil {
+		if s, ok := m.seriesByObj[objectCode]; ok && s > 0 {
+			v := s
+			return &v, nil
+		}
+	}
+	return nil, nil
+}
+
+func (m *MockSAPClient) ResolveInvoiceBaseLine(ctx context.Context, baseDocEntry int, itemCode string) (*int, error) {
+	if m.baseLineByItem != nil {
+		if ln, ok := m.baseLineByItem[itemCode]; ok {
+			v := ln
+			return &v, nil
+		}
+	}
+	return nil, nil
 }
 
 func (m *MockSAPClient) PostInvoice(ctx context.Context, invoice *sap.SAPInvoiceRequest) (*sap.SAPInvoiceResponse, error) {
@@ -783,6 +815,118 @@ func TestProcessOutbox_StockShortageHold(t *testing.T) {
 		t.Errorf("expected transaction 88 to be held for review")
 	} else if !strings.Contains(summary, "SAP Stock Shortage") {
 		t.Errorf("expected shortage summary, got: %s", summary)
+	}
+}
+
+func TestProcessOutbox_BinAllocationsAndSeries(t *testing.T) {
+	var capturedInvoice *sap.SAPInvoiceRequest
+	mockSAP := &MockSAPClient{
+		binAllocations: []sap.SAPBinAllocation{{BinAbsEntry: 2, Quantity: 3}},
+		seriesByObj:    map[string]int{"13": 101, "14": 202},
+		baseLineByItem: map[string]int{"INV00028": 4},
+		postInvoiceFunc: func(ctx context.Context, inv *sap.SAPInvoiceRequest) (*sap.SAPInvoiceResponse, error) {
+			capturedInvoice = inv
+			return &sap.SAPInvoiceResponse{DocEntry: 500, DocNum: 5000}, nil
+		},
+	}
+	mockNembus := newMockNembusClient()
+	mockNembus.unpostedPOSTransactions = []nembus.POSTransaction{
+		{
+			ID:                testUUID(901),
+			TransactionNumber: "TX-BIN-001",
+			TransactionDate:   time.Now(),
+			TotalAmount:       60.0,
+			Status:            "completed",
+		},
+	}
+	mockNembus.txLines[testUUID(901)] = []nembus.POSTransactionLine{
+		{ID: testUUID(9011), TransactionID: testUUID(901), ProductSKU: "INV00028", Quantity: 3, UnitPrice: 20, LineTotal: 60},
+	}
+	origTxID := testUUID(902)
+	mockNembus.originalSAPDocEntries[origTxID] = 500
+	mockNembus.unpostedSalesReturns = []nembus.SalesReturn{
+		{
+			ID:                    testUUID(903),
+			ReturnNumber:          "RET-SER-001",
+			ReturnDate:            time.Now(),
+			OriginalTransactionID: &origTxID,
+			TotalRefundAmount:     60.0,
+		},
+	}
+	mockNembus.returnLines[testUUID(903)] = []nembus.SalesReturnLine{
+		{ID: testUUID(9031), ReturnID: testUUID(903), ProductSKU: "INV00028", Quantity: 3, UnitPrice: 20, RefundAmount: 60},
+	}
+
+	cfg := &config.Config{BatchSize: 10, NembusDefaultWarehouse: "01"}
+	u := pipeline.NewUpstreamSync(cfg, mockSAP, mockNembus)
+	stats, err := u.ProcessOutbox(context.Background())
+	if err != nil {
+		t.Fatalf("ProcessOutbox error: %v", err)
+	}
+	if stats.TransactionsPosted != 1 || stats.ReturnsPosted != 1 {
+		t.Fatalf("expected 1 tx and 1 return posted, got %+v", stats)
+	}
+	if capturedInvoice == nil || capturedInvoice.Series == nil || *capturedInvoice.Series != 101 {
+		t.Fatalf("expected invoice Series=101, got %+v", capturedInvoice)
+	}
+	if len(capturedInvoice.DocumentLines[0].DocumentLinesBinAllocations) != 1 ||
+		capturedInvoice.DocumentLines[0].DocumentLinesBinAllocations[0].BinAbsEntry != 2 ||
+		capturedInvoice.DocumentLines[0].DocumentLinesBinAllocations[0].BaseLineNumber == nil ||
+		*capturedInvoice.DocumentLines[0].DocumentLinesBinAllocations[0].BaseLineNumber != 0 {
+		t.Fatalf("unexpected invoice bin allocations: %+v", capturedInvoice.DocumentLines[0].DocumentLinesBinAllocations)
+	}
+	if len(mockSAP.postedCreditMemos) != 1 {
+		t.Fatalf("expected 1 credit memo posted")
+	}
+	memo := mockSAP.postedCreditMemos[0]
+	if memo.Series == nil || *memo.Series != 202 {
+		t.Fatalf("expected credit memo Series=202, got %v", memo.Series)
+	}
+	if memo.DocumentLines[0].BaseLine == nil || *memo.DocumentLines[0].BaseLine != 4 {
+		t.Fatalf("expected credit memo BaseLine=4, got %v", memo.DocumentLines[0].BaseLine)
+	}
+	if len(memo.DocumentLines[0].DocumentLinesBinAllocations) != 1 {
+		t.Fatalf("expected credit memo bin allocation to be attached")
+	}
+}
+
+func TestProcessOutbox_CodeMinus10BinErrorDoesNotCreateStockApproval(t *testing.T) {
+	mockSAP := &MockSAPClient{
+		postInvoiceFunc: func(ctx context.Context, inv *sap.SAPInvoiceRequest) (*sap.SAPInvoiceResponse, error) {
+			return nil, fmt.Errorf("failed to post invoice to SAP: %w", &sap.APIError{
+				StatusCode: 400,
+				Code:       -10,
+				Message:    `1470000341 - Fully allocate item "INV00028" to bin locations in warehouse "01"`,
+			})
+		},
+	}
+	mockNembus := newMockNembusClient()
+	mockNembus.stockHoldPolicyRequired = true
+	mockNembus.stockHoldPolicyRules = map[string]any{"hold_on_zero_stock": true}
+	mockNembus.unpostedPOSTransactions = []nembus.POSTransaction{
+		{
+			ID:                testUUID(910),
+			TransactionNumber: "TX-BIN-ERR",
+			TransactionDate:   time.Now(),
+			TotalAmount:       50.0,
+			Status:            "completed",
+		},
+	}
+	mockNembus.txLines[testUUID(910)] = []nembus.POSTransactionLine{
+		{ID: testUUID(9101), TransactionID: testUUID(910), ProductSKU: "INV00028", Quantity: 1, UnitPrice: 50, LineTotal: 50},
+	}
+
+	cfg := &config.Config{BatchSize: 10, NembusDefaultWarehouse: "01"}
+	u := pipeline.NewUpstreamSync(cfg, mockSAP, mockNembus)
+	stats, err := u.ProcessOutbox(context.Background())
+	if err != nil {
+		t.Fatalf("ProcessOutbox error: %v", err)
+	}
+	if stats.TransactionsHeld != 0 || len(mockNembus.heldTransactions) != 0 {
+		t.Fatalf("generic [code -10] bin allocation error must NOT create a stock-hold approval (held=%d)", len(mockNembus.heldTransactions))
+	}
+	if stats.Errors != 1 {
+		t.Fatalf("expected 1 error, got %d", stats.Errors)
 	}
 }
 

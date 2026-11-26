@@ -247,6 +247,196 @@ func (c *Client) GetSQLDB() *sql.DB {
 	return c.sqlDB
 }
 
+// Close releases the underlying MSSQL connection pool if open.
+func (c *Client) Close() error {
+	if c.sqlDB != nil {
+		return c.sqlDB.Close()
+	}
+	return nil
+}
+
+// ResolveWarehouseBinAllocations resolves SAP bin-location allocations for an item
+// in a bin-enabled warehouse (OWHS.BinActivat = 'Y'). When isReturn is true (Credit Memo),
+// stock is received back into the warehouse default bin (or primary item bin).
+func (c *Client) ResolveWarehouseBinAllocations(ctx context.Context, itemCode, warehouseCode string, requiredQty float64, isReturn bool) ([]SAPBinAllocation, error) {
+	if c.sqlDB == nil || requiredQty <= 0 || itemCode == "" || warehouseCode == "" {
+		return nil, nil
+	}
+
+	var binActivat string
+	var dftBinAbs int
+	err := c.sqlDB.QueryRowContext(ctx,
+		"SELECT ISNULL(BinActivat, 'N'), ISNULL(DftBinAbs, 0) FROM OWHS WITH (NOLOCK) WHERE WhsCode = @p1",
+		warehouseCode,
+	).Scan(&binActivat, &dftBinAbs)
+	if err != nil {
+		return nil, nil
+	}
+	if binActivat != "Y" {
+		return nil, nil
+	}
+
+	if isReturn {
+		targetBin := dftBinAbs
+		if targetBin <= 0 {
+			_ = c.sqlDB.QueryRowContext(ctx,
+				"SELECT TOP 1 BinAbs FROM OIBQ WITH (NOLOCK) WHERE ItemCode = @p1 AND WhsCode = @p2 ORDER BY OnHandQty DESC, BinAbs ASC",
+				itemCode, warehouseCode,
+			).Scan(&targetBin)
+		}
+		if targetBin <= 0 {
+			_ = c.sqlDB.QueryRowContext(ctx,
+				"SELECT TOP 1 AbsEntry FROM OBIN WITH (NOLOCK) WHERE WhsCode = @p1 AND ISNULL(Disabled, 'N') <> 'Y' ORDER BY AbsEntry ASC",
+				warehouseCode,
+			).Scan(&targetBin)
+		}
+		if targetBin > 0 {
+			return []SAPBinAllocation{{BinAbsEntry: targetBin, Quantity: requiredQty}}, nil
+		}
+		return nil, nil
+	}
+
+	rows, err := c.sqlDB.QueryContext(ctx,
+		`SELECT BinAbs, ISNULL(OnHandQty, 0)
+		 FROM OIBQ WITH (NOLOCK)
+		 WHERE ItemCode = @p1 AND WhsCode = @p2 AND ISNULL(OnHandQty, 0) > 0
+		 ORDER BY CASE WHEN BinAbs = @p3 THEN 0 ELSE 1 END, OnHandQty DESC, BinAbs ASC`,
+		itemCode, warehouseCode, dftBinAbs,
+	)
+	if err != nil {
+		if dftBinAbs > 0 {
+			return []SAPBinAllocation{{BinAbsEntry: dftBinAbs, Quantity: requiredQty}}, nil
+		}
+		return nil, nil
+	}
+	defer rows.Close()
+
+	var allocs []SAPBinAllocation
+	remaining := requiredQty
+	for rows.Next() && remaining > 1e-9 {
+		var binAbs int
+		var onHand float64
+		if scanErr := rows.Scan(&binAbs, &onHand); scanErr != nil || binAbs <= 0 || onHand <= 0 {
+			continue
+		}
+		take := remaining
+		if onHand < take {
+			take = onHand
+		}
+		allocs = append(allocs, SAPBinAllocation{
+			BinAbsEntry: binAbs,
+			Quantity:    take,
+		})
+		remaining -= take
+	}
+
+	if remaining > 1e-9 && dftBinAbs > 0 {
+		merged := false
+		for i := range allocs {
+			if allocs[i].BinAbsEntry == dftBinAbs {
+				allocs[i].Quantity += remaining
+				merged = true
+				break
+			}
+		}
+		if !merged {
+			allocs = append(allocs, SAPBinAllocation{
+				BinAbsEntry: dftBinAbs,
+				Quantity:    remaining,
+			})
+		}
+	}
+
+	return allocs, nil
+}
+
+// ResolveDocumentSeries resolves the active SAP numbering series (NNM1.Series) for
+// an ObjectCode ("13"=Invoice, "14"=Credit Memo, "24"=Incoming Payment) and posting date.
+// Explicit config overrides take precedence over MSSQL NNM1 lookup.
+func (c *Client) ResolveDocumentSeries(ctx context.Context, objectCode string, docDate string, bplID int) (*int, error) {
+	if c.cfg != nil {
+		switch objectCode {
+		case "13":
+			if c.cfg.SAPInvoiceSeries > 0 {
+				s := c.cfg.SAPInvoiceSeries
+				return &s, nil
+			}
+		case "14":
+			if c.cfg.SAPCreditMemoSeries > 0 {
+				s := c.cfg.SAPCreditMemoSeries
+				return &s, nil
+			}
+		case "24":
+			if c.cfg.SAPPaymentSeries > 0 {
+				s := c.cfg.SAPPaymentSeries
+				return &s, nil
+			}
+		}
+	}
+
+	if c.sqlDB == nil || objectCode == "" {
+		return nil, nil
+	}
+
+	var series int
+	// 1. Prefer an unlocked, automatic NNM1 series whose posting period (OFPR) covers docDate
+	if docDate != "" {
+		err := c.sqlDB.QueryRowContext(ctx, `
+			SELECT TOP 1 n.Series
+			FROM NNM1 n WITH (NOLOCK)
+			INNER JOIN OFPR p WITH (NOLOCK) ON p.Indicator = n.Indicator
+			WHERE n.ObjectCode = @p1
+			  AND ISNULL(n.Locked, 'N') <> 'Y'
+			  AND ISNULL(n.IsManual, 'N') <> 'Y'
+			  AND (@p3 <= 0 OR ISNULL(n.BPLId, 0) = @p3 OR n.BPLId IS NULL)
+			  AND p.F_RefDate <= CAST(@p2 AS DATE)
+			  AND p.T_RefDate >= CAST(@p2 AS DATE)
+			ORDER BY CASE WHEN n.BPLId = @p3 THEN 0 ELSE 1 END, n.Series ASC
+		`, objectCode, docDate, bplID).Scan(&series)
+		if err == nil && series > 0 {
+			return &series, nil
+		}
+	}
+
+	// 2. Fallback: only accept a period-agnostic ('Default' or empty Indicator) unlocked
+	// automatic series — never pick a series bound to a different fiscal period, which
+	// causes SAP error -5002 ("Series period does not match current period").
+	err := c.sqlDB.QueryRowContext(ctx, `
+		SELECT TOP 1 n.Series
+		FROM NNM1 n WITH (NOLOCK)
+		WHERE n.ObjectCode = @p1
+		  AND ISNULL(n.Locked, 'N') <> 'Y'
+		  AND ISNULL(n.IsManual, 'N') <> 'Y'
+		  AND (n.Indicator IS NULL OR n.Indicator = '' OR n.Indicator = 'Default')
+		  AND (@p2 <= 0 OR ISNULL(n.BPLId, 0) = @p2 OR n.BPLId IS NULL)
+		ORDER BY CASE WHEN n.BPLId = @p2 THEN 0 ELSE 1 END, n.Series ASC
+	`, objectCode, bplID).Scan(&series)
+	if err == nil && series > 0 {
+		return &series, nil
+	}
+
+	if docDate != "" {
+		log.Printf("⚠️ [SAP-Series] No unlocked NNM1 numbering series found for ObjectCode=%s covering DocDate=%s (BPLId=%d); check SAP Administration -> System Initialization -> Document Numbering", objectCode, docDate, bplID)
+	}
+	return nil, nil
+}
+
+// ResolveInvoiceBaseLine returns the 0-based INV1.LineNum for an item on a base A/R Invoice.
+func (c *Client) ResolveInvoiceBaseLine(ctx context.Context, baseDocEntry int, itemCode string) (*int, error) {
+	if c.sqlDB == nil || baseDocEntry <= 0 || itemCode == "" {
+		return nil, nil
+	}
+	var lineNum int
+	err := c.sqlDB.QueryRowContext(ctx,
+		"SELECT TOP 1 LineNum FROM INV1 WITH (NOLOCK) WHERE DocEntry = @p1 AND ItemCode = @p2 ORDER BY LineNum ASC",
+		baseDocEntry, itemCode,
+	).Scan(&lineNum)
+	if err != nil {
+		return nil, nil
+	}
+	return &lineNum, nil
+}
+
 // CheckItemWarehouseStock retrieves the current OnHand stock for an item in a specific warehouse.
 func (c *Client) CheckItemWarehouseStock(ctx context.Context, itemCode, warehouseCode string) (float64, error) {
 	if c.sqlDB != nil {

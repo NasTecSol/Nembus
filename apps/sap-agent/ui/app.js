@@ -57,6 +57,20 @@
         setInterval(syncRunState, 4000);
         checkAgentUpdates();
         setInterval(checkAgentUpdates, 600000);
+
+        // Support deep-linking from the Windows System Tray buttons
+        const applyHashRoute = () => {
+            const hash = (window.location.hash || '').replace(/^#/, '');
+            if (!hash) return;
+            if (hash === 'check-update') {
+                switchTab('tab-dashboard');
+                checkAgentUpdates();
+            } else if (document.getElementById(hash)) {
+                switchTab(hash);
+            }
+        };
+        setTimeout(applyHashRoute, 300);
+        window.addEventListener('hashchange', applyHashRoute);
     });
 
     // -------------------------------------------------------------

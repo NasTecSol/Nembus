@@ -1704,6 +1704,20 @@ WHERE o.organization_id = $1
 ORDER BY o.order_date ASC
 LIMIT $2;
 
+-- name: ListApprovedPendingSalesOrdersV2ForSAP :many
+SELECT o.*,
+    COALESCE(NULLIF(c.customer_code, ''), NULLIF(c.metadata->>'sap_card_code', ''), '')::text AS customer_sap_code
+FROM sales_orders_v2 o
+LEFT JOIN customers c ON c.id = o.customer_id
+WHERE o.organization_id = $1
+  AND o.order_number NOT LIKE 'SO-SAP-%'
+  AND LOWER(COALESCE(o.sales_channel, '')) <> 'pos'
+  AND (o.metadata->>'sap_doc_num' IS NULL OR o.metadata->>'sap_doc_num' = '')
+  AND o.metadata->>'sap_sync_state' = 'approved_pending_upload'
+  AND NOT EXISTS (SELECT 1 FROM pos_transactions pt WHERE pt.sales_order_id = o.id)
+ORDER BY o.order_date ASC
+LIMIT $2;
+
 -- name: MarkSalesOrderV2SAPSynced :one
 UPDATE sales_orders_v2
 SET metadata = COALESCE(metadata, '{}'::jsonb) || $2::jsonb,
