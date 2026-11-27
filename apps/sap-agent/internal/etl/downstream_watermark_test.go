@@ -62,7 +62,7 @@ func TestResolveDownstreamSince(t *testing.T) {
 	if err := store.SetDownstreamWatermark(ctx, string(contracts.DomainProducts), sync1Start, 3); err != nil {
 		t.Fatalf("SetDownstreamWatermark: %v", err)
 	}
-	if got := engine.resolveDownstreamSince(ctx, contracts.DomainProducts, time.Now()); !got.Equal(sync1Start) {
+	if got := engine.resolveDownstreamSince(ctx, contracts.DomainProducts, sync1Start.Add(time.Minute)); !got.Equal(sync1Start) {
 		t.Fatalf("scheduled downstream since: got %v, want sync1Start %v", got, sync1Start)
 	}
 
@@ -71,7 +71,18 @@ func TestResolveDownstreamSince(t *testing.T) {
 	if err := store.SetDownstreamWatermark(ctx, string(contracts.DomainInventory), olderSync, 1); err != nil {
 		t.Fatalf("SetDownstreamWatermark older: %v", err)
 	}
-	if got := engine.resolveDownstreamSince(ctx, contracts.DomainInventory, time.Now()); !got.Equal(*mig1End) {
+	if got := engine.resolveDownstreamSince(ctx, contracts.DomainInventory, mig1End.Add(time.Minute)); !got.Equal(*mig1End) {
 		t.Fatalf("post-migration override since: got %v, want mig1End %v", got, *mig1End)
+	}
+
+	// A legacy future-shifted watermark (ahead of SAP clock) is self-healed to SAP clock - 5m.
+	sapNow := time.Date(2026, 11, 27, 12, 0, 0, 0, time.FixedZone("AST", 3*3600))
+	futureWM := sapNow.Add(3 * time.Hour)
+	if err := store.SetDownstreamWatermark(ctx, string(contracts.DomainPriceLists), futureWM, 1); err != nil {
+		t.Fatalf("SetDownstreamWatermark future: %v", err)
+	}
+	gotHealed := engine.resolveDownstreamSince(ctx, contracts.DomainPriceLists, sapNow)
+	if wantHealed := sapNow.Add(-5 * time.Minute); !gotHealed.Equal(wantHealed) {
+		t.Fatalf("future watermark heal: got %v, want %v", gotHealed, wantHealed)
 	}
 }

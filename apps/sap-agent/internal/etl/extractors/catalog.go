@@ -214,16 +214,16 @@ func (e *CatalogExtractor) ExtractPriceListItems(ctx context.Context) ([]mapping
 }
 
 // sapDeltaParams converts a watermark timestamp into SAP B1's calendar date (YYYY-MM-DD)
-// and integer time-of-day (HHMMSS) in local server time.
+// and integer time-of-day (HHMMSS) using the timestamp's own location (SAP server clock),
+// never shifting it into the agent host's local timezone.
 func sapDeltaParams(since time.Time) (string, int, string) {
 	if since.IsZero() {
 		now := time.Now()
 		return now.Format("2006-01-02"), 0, now.Format("2006-01-02T00:00:00")
 	}
-	local := since.Local()
-	sinceDate := local.Format("2006-01-02")
-	sinceTime := local.Hour()*10000 + local.Minute()*100 + local.Second()
-	sinceDateTime := local.Format("2006-01-02T15:04:05")
+	sinceDate := since.Format("2006-01-02")
+	sinceTime := since.Hour()*10000 + since.Minute()*100 + since.Second()
+	sinceDateTime := since.Format("2006-01-02T15:04:05")
 	return sinceDate, sinceTime, sinceDateTime
 }
 

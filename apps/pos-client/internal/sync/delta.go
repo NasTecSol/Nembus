@@ -220,6 +220,12 @@ func (s *SyncService) pullChangeLog(client syncpb.SyncServiceClient, storeID int
 			nextSeq = snapshotMaxSeq
 		}
 
+		// Skip redundant local watermark writes and PullAckSeq frames when no new events
+		// were pulled and the sequence cursor did not advance.
+		if len(events) == 0 && nextSeq == fromSeq && !isSnapshotMode {
+			return totalApplied, nil
+		}
+
 		if err := s.saveChangePage(storeID, nextSeq, events, totalApplied); err != nil {
 			return totalApplied, err
 		}

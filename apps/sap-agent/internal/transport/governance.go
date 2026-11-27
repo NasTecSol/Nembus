@@ -422,30 +422,56 @@ func (c *CloudClient) lookupCloudProductBySKU(ctx context.Context, baseURL, jwt,
 }
 
 func (c *CloudClient) submitCatalogApprovalRequest(ctx context.Context, baseURL, jwt, tenantID string, orgID int, entityID, summary string, payload coreusecase.CatalogPriceChangePayload) error {
-	// Check if there is already a pending approval request for this entityID so we can replace it cleanly
+	// Check if there is already a pending approval request for this entityID.
+	// If it already proposes the exact same price, skip cancel+resubmit to avoid
+	// approval ID churn and notification spam on every sync cycle.
 	listURL := fmt.Sprintf("%s/api/approvals?domain=catalog&status=pending&limit=100", baseURL)
 	if listReq, err := http.NewRequestWithContext(ctx, http.MethodGet, listURL, nil); err == nil {
 		listReq.Header.Set("Authorization", "Bearer "+jwt)
 		listReq.Header.Set("x-tenant-id", tenantID)
 		if listResp, err := c.httpClient.Do(listReq); err == nil {
 			var pending []struct {
-				ID       int64  `json:"id"`
-				EntityID string `json:"entity_id"`
+				ID       int64           `json:"id"`
+				EntityID string          `json:"entity_id"`
+				Payload  json.RawMessage `json:"payload"`
 			}
 			_ = json.NewDecoder(listResp.Body).Decode(&pending)
 			listResp.Body.Close()
+
+			var staleIDs []int64
+			hasMatchingPending := false
 			for _, p := range pending {
-				if p.EntityID == entityID && p.ID > 0 {
-					// Cancel or delete the previous pending request from sap_migrator before submitting the updated one
-					cancelURL := fmt.Sprintf("%s/api/approvals/%d/cancel", baseURL, p.ID)
-					if cReq, cErr := http.NewRequestWithContext(ctx, http.MethodPost, cancelURL, nil); cErr == nil {
-						cReq.Header.Set("Authorization", "Bearer "+jwt)
-						cReq.Header.Set("x-tenant-id", tenantID)
-						if cResp, doErr := c.httpClient.Do(cReq); doErr == nil {
-							cResp.Body.Close()
+				if p.EntityID != entityID || p.ID <= 0 {
+					continue
+				}
+				if !hasMatchingPending && payload.NewPrice != nil && len(p.Payload) > 0 {
+					var existing map[string]any
+					if uErr := json.Unmarshal(p.Payload, &existing); uErr == nil {
+						if rawNew, ok := existing["new_price"]; ok && rawNew != nil {
+							existingNewPrice := parseFlexibleFloat(rawNew)
+							if math.Abs(existingNewPrice-*payload.NewPrice) <= 0.0001 {
+								hasMatchingPending = true
+								continue
+							}
 						}
 					}
 				}
+				staleIDs = append(staleIDs, p.ID)
+			}
+
+			for _, id := range staleIDs {
+				cancelURL := fmt.Sprintf("%s/api/approvals/%d/cancel", baseURL, id)
+				if cReq, cErr := http.NewRequestWithContext(ctx, http.MethodPost, cancelURL, nil); cErr == nil {
+					cReq.Header.Set("Authorization", "Bearer "+jwt)
+					cReq.Header.Set("x-tenant-id", tenantID)
+					if cResp, doErr := c.httpClient.Do(cReq); doErr == nil {
+						cResp.Body.Close()
+					}
+				}
+			}
+
+			if hasMatchingPending {
+				return nil
 			}
 		}
 	}
@@ -506,7 +532,12 @@ func (c *CloudClient) FilterDownstreamPriceItems(ctx context.Context, items []ma
 	}
 
 	requiresApproval, rules, err := c.fetchCatalogPricePolicy(ctx, baseURL, jwt, tenantID)
-	if err != nil || !requiresApproval {
+	if err != nil {
+		// Fail closed on transient policy lookup errors so price changes never bypass approval governance.
+		heldNotices = append(heldNotices, fmt.Sprintf("held %d price change(s): could not verify catalog.price_change policy: %v", len(items), err))
+		return nil, heldNotices
+	}
+	if !requiresApproval {
 		return items, nil
 	}
 

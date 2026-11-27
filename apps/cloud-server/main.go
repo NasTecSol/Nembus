@@ -6,6 +6,8 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/NasTecSol/nembus-core/biometrics"
@@ -324,14 +326,12 @@ func setupRouter(tenantManager *manager.Manager, masterPool *pgxpool.Pool, maste
 					c.JSON(401, gin.H{"error": "user claim missing"})
 					return
 				}
-				var n int
-				_, _ = os.Stdout.WriteString("")
-				for _, ch := range uid {
-					if ch >= '0' && ch <= '9' {
-						n = n*10 + int(ch-'0')
-					}
+				parsedUID, parseErr := strconv.ParseInt(strings.TrimSpace(uid), 10, 32)
+				if parseErr != nil || parsedUID <= 0 {
+					c.JSON(401, gin.H{"error": "invalid user claim"})
+					return
 				}
-				wsHub.ServeWs(c, orgID, int32(n))
+				wsHub.ServeWs(c, orgID, int32(parsedUID))
 			})
 		}
 	}
