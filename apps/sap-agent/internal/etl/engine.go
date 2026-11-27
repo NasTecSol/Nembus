@@ -347,9 +347,9 @@ func (e *Engine) ExecuteDownstreamSync(ctx context.Context, domains []contracts.
 		Timestamp: time.Now(),
 	})
 
-	// Anchor downstream watermarks to SAP SQL Server's clock (GETDATE()) to prevent
-	// timezone or clock-skew drift from skipping SAP edits.
-	syncStartTime := e.resolveSAPServerNow(ctx)
+	// Anchor downstream watermarks to SAP SQL Server's clock (SYSDATETIMEOFFSET()
+	// with GETDATE() fallback) so timezone or clock-skew drift never skips SAP edits.
+	syncStartTime, sapLoc := e.resolveSAPServerClock(ctx)
 	var domainErrors []string
 
 	for _, domain := range domains {
@@ -358,7 +358,7 @@ func (e *Engine) ExecuteDownstreamSync(ctx context.Context, domains []contracts.
 		if !querySince.IsZero() {
 			// Apply a 2-minute overlap window so transactions committed across the boundary
 			// are never missed (downstream ingestion is idempotent).
-			querySince = querySince.Add(-2 * time.Minute)
+			querySince = querySince.Add(-2 * time.Minute).In(sapLoc)
 		}
 
 		processed, err := e.executeDownstreamDomainStep(ctx, domain, querySince)
@@ -432,17 +432,28 @@ func (e *Engine) ExecuteDownstreamSync(ctx context.Context, domains []contracts.
 	return stats, nil
 }
 
-func (e *Engine) resolveSAPServerNow(ctx context.Context) time.Time {
+func (e *Engine) resolveSAPServerClock(ctx context.Context) (time.Time, *time.Location) {
 	mssqlClient, err := e.getMSSQLClient()
 	if err == nil && mssqlClient != nil && mssqlClient.DB != nil {
 		qCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		defer cancel()
+		var serverNowOffset time.Time
+		if scanErr := mssqlClient.DB.QueryRowContext(qCtx, schema.QueryServerNowOffset).Scan(&serverNowOffset); scanErr == nil && !serverNowOffset.IsZero() {
+			loc := serverNowOffset.Location()
+			if loc == nil {
+				loc = time.UTC
+			}
+			return serverNowOffset, loc
+		}
 		var serverNow time.Time
 		if scanErr := mssqlClient.DB.QueryRowContext(qCtx, schema.QueryServerNow).Scan(&serverNow); scanErr == nil && !serverNow.IsZero() {
-			return serverNow
+			// GETDATE() is timezone-naive SAP wall-clock time; keep it in UTC location
+			// so sapDeltaParams never applies an arbitrary agent-host .Local() offset.
+			return serverNow.UTC(), time.UTC
 		}
 	}
-	return time.Now()
+	now := time.Now()
+	return now, now.Location()
 }
 
 // resolveDownstreamSince returns the SAP delta cutoff for a downstream domain.
@@ -457,13 +468,26 @@ func (e *Engine) resolveDownstreamSince(ctx context.Context, domain contracts.Do
 		}
 		if migEnd, err := e.sqlite.GetLastCompletedFullMigrationEndTime(ctx, domain); err == nil && migEnd != nil {
 			if since.IsZero() || migEnd.Truncate(time.Second).After(since.Truncate(time.Second)) {
-				return *migEnd
+				since = *migEnd
 			}
 		}
 	}
+	// Self-heal legacy future-shifted watermarks (e.g. saved from naive GETDATE() before SYSDATETIMEOFFSET).
+	if !since.IsZero() && !now.IsZero() && since.After(now.Add(1*time.Minute)) {
+		healed := now.Add(-5 * time.Minute)
+		log.Printf("⚠️ [Downstream] %s watermark %s is ahead of SAP clock %s; clamping to %s",
+			domain, since.Format(time.RFC3339), now.Format(time.RFC3339), healed.Format(time.RFC3339))
+		since = healed
+	}
 	if since.IsZero() {
-		// Default baseline to start of today so Downstream Sync never dumps the entire historical catalog.
-		since = now.Truncate(24 * time.Hour)
+		// Default baseline to start of today in SAP server's timezone so Downstream Sync
+		// never dumps the entire historical catalog.
+		loc := now.Location()
+		if loc == nil {
+			loc = time.UTC
+		}
+		y, m, d := now.In(loc).Date()
+		since = time.Date(y, m, d, 0, 0, 0, 0, loc)
 		if e.sqlite != nil {
 			_ = e.sqlite.SetDownstreamWatermark(ctx, string(domain), since, 0)
 		}

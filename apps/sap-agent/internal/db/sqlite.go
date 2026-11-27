@@ -705,6 +705,53 @@ func (s *SQLiteStore) GetLastCompletedFullMigrationEndTime(ctx context.Context, 
 	return &t, nil
 }
 
+// GetLatestCompletedFullRun returns the most recent completed (or partial_success)
+// full migration run, used as the reconciliation baseline so partial/selective runs
+// do not overwrite counts for unselected domains.
+func (s *SQLiteStore) GetLatestCompletedFullRun(ctx context.Context) (*MigrationRun, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	query := `
+	SELECT id, organization_id, mode, status, total_domains, completed_steps, total_records, processed_count, failed_count, started_at, finished_at, error_message
+	FROM migration_runs
+	WHERE mode = ?
+	  AND status IN (?, ?)
+	ORDER BY COALESCE(finished_at, started_at) DESC, rowid DESC
+	LIMIT 1;
+	`
+	var run MigrationRun
+	var mode, status string
+	var finishedAt sql.NullTime
+	var errMsg sql.NullString
+	err := s.db.QueryRowContext(
+		ctx,
+		query,
+		string(contracts.MigrationModeFull),
+		string(contracts.StatusCompleted),
+		string(contracts.StatusPartialSuccess),
+	).Scan(
+		&run.ID, &run.OrganizationID, &mode, &status,
+		&run.TotalDomains, &run.CompletedSteps, &run.TotalRecords, &run.ProcessedCount, &run.FailedCount,
+		&run.StartedAt, &finishedAt, &errMsg,
+	)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	run.Mode = contracts.MigrationMode(mode)
+	run.Status = contracts.RunStatus(status)
+	if finishedAt.Valid {
+		run.FinishedAt = &finishedAt.Time
+	}
+	if errMsg.Valid {
+		run.ErrorMessage = errMsg.String
+	}
+	return &run, nil
+}
+
 // GetLatestCompletedFullMigrationEndTime returns the finished_at timestamp of the
 // most recent completed (or partial_success) full migration run.
 func (s *SQLiteStore) GetLatestCompletedFullMigrationEndTime(ctx context.Context) (*time.Time, error) {

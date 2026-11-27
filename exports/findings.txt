@@ -1,0 +1,14 @@
+That happens because of a timezone mismatch between SAP SQL Server's GETDATE() and sapDeltaParams (since.Local()):
+
+What happened when you changed the price in SAP UI:
+
+SAP wrote OITM.UpdateTS using the SAP server's clock (e.g. 12:xx).
+Meanwhile, resolveSAPServerNow() (engine.go) reads SELECT GETDATE() from SQL Server (which has no timezone, so Go's MSSQL driver treats it as UTC), and sapDeltaParams() (catalog.go) converts it with since.Local() (+5 hours in PKT → 17:xx).
+So QueryPriceListItemsDelta checked 12xxxx >= 17xxxx → false → 0 rows.
+When you manually ran UpdateTS = 235959, 235959 >= 17xxxx was true, so it synced!
+
+Why Goods Receipt PO (stock) synced:
+
+The inventory domain has its own watermark in downstream_watermarks. If inventory's watermark was still from yesterday (or before that shift), l.CreateDate >= @SinceDateTime in QueryInventoryStockDelta (tables.go) was true for today's date, so it picked up the Goods Receipt PO.
+
+(If you'd like, I can fix this in sap-agent so resolveSAPServerNow / sapDeltaParams doesn't apply a +05:00 .Local() shift onto SAP's GETDATE().)
