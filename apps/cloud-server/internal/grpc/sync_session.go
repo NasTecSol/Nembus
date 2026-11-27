@@ -333,6 +333,7 @@ func (s *SyncServer) StreamSession(stream syncpb.SyncService_StreamSessionServer
 
 	var currentBatchID string
 	var currentBatch []*syncpb.SyncEvent
+	var lastAckedSeq int64
 
 	for {
 		clientMsg, err := stream.Recv()
@@ -427,8 +428,11 @@ func (s *SyncServer) StreamSession(stream syncpb.SyncService_StreamSessionServer
 				}
 			}
 		} else if pullAckSeq := clientMsg.GetPullAckSeq(); pullAckSeq > 0 {
-			log.Printf("[gRPC SyncServer] Terminal %s (store %d) acknowledged change_log seq %d",
-				deviceID, storeID, pullAckSeq)
+			if pullAckSeq > lastAckedSeq {
+				lastAckedSeq = pullAckSeq
+				log.Printf("[gRPC SyncServer] Terminal %s (tenant=%s store=%d) acknowledged change_log seq %d",
+					deviceID, tenantSlug, storeID, pullAckSeq)
+			}
 		}
 	}
 }

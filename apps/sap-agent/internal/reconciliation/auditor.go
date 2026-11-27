@@ -38,10 +38,12 @@ func NewAuditEngine(mssql *db.MSSQLClient, cloudClient *transport.CloudClient, s
 // Reconcile runs count and financial-sum checks across all migration domains.
 // runID may be empty — in that case it fetches the latest completed run from SQLite.
 func (a *AuditEngine) Reconcile(ctx context.Context, runID string, orgID int) (*contracts.ReconciliationReport, error) {
-	// Resolve runID to the latest run if not supplied
-	if runID == "" {
-		run, err := a.sqlite.GetLatestRun(ctx)
-		if err == nil && run != nil {
+	// Resolve runID to the latest completed full migration run if not supplied,
+	// falling back to GetLatestRun only when no full migration exists yet.
+	if runID == "" && a.sqlite != nil {
+		if run, err := a.sqlite.GetLatestCompletedFullRun(ctx); err == nil && run != nil {
+			runID = run.ID
+		} else if run, err := a.sqlite.GetLatestRun(ctx); err == nil && run != nil {
 			runID = run.ID
 		}
 	}

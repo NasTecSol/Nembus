@@ -62,6 +62,31 @@ func TestWebSocketHubLifecycle(t *testing.T) {
 	close(stopCh)
 }
 
+func TestWebSocketHubBroadcastEvictsSlowClientSafely(t *testing.T) {
+	hub := NewWebSocketHub()
+	stopCh := make(chan struct{})
+	go hub.Run(stopCh)
+	defer close(stopCh)
+
+	slowClient := &Client{
+		Hub:    hub,
+		Send:   make(chan []byte, 1),
+		OrgID:  7,
+		UserID: 42,
+	}
+	// Pre-fill buffer so broadcast triggers slow-client eviction.
+	slowClient.Send <- []byte("prefill")
+	hub.register <- slowClient
+
+	// Trigger broadcast eviction and concurrent org/user sends to verify no map race
+	// and no panic from sending on a closed client.Send channel.
+	hub.broadcast <- []byte("evict")
+	for i := 0; i < 20; i++ {
+		hub.BroadcastToOrg(7, map[string]int{"i": i})
+		hub.SendToUser(7, 42, map[string]int{"i": i})
+	}
+}
+
 func TestSESClientMissingConfig(t *testing.T) {
 	client := NewSESClient(SESConfig{})
 	_, err := client.SendEmail(context.Background(), "user@test.com", "Subject", "<p>Hello</p>")

@@ -76,6 +76,9 @@ func LoadConfig(env string) *Config {
 	if configured, exists := os.LookupEnv("NEMBUS_GRPC_INSECURE"); exists {
 		grpcInsecure = strings.EqualFold(strings.TrimSpace(configured), "true")
 	}
+	if grpcInsecure && !isLoopbackGRPCAddr(grpcAddr) {
+		log.Printf("⚠️ [SECURITY WARNING] Plaintext gRPC transport (NEMBUS_GRPC_INSECURE=true / http://) is enabled for non-loopback target %q; configure TLS (GRPC_TLS_CERT_FILE/GRPC_TLS_KEY_FILE on cloud-server) and disable insecure transport in production.", grpcAddr)
+	}
 	var zatcaBaseURL string
 	switch zatcaEnv {
 	case "production":
@@ -127,4 +130,18 @@ func getEnv(key, defaultValue string) string {
 		return value
 	}
 	return defaultValue
+}
+
+func isLoopbackGRPCAddr(addr string) bool {
+	s := strings.ToLower(strings.TrimSpace(addr))
+	s = strings.TrimPrefix(s, "http://")
+	s = strings.TrimPrefix(s, "https://")
+	if idx := strings.IndexByte(s, '/'); idx >= 0 {
+		s = s[:idx]
+	}
+	if idx := strings.LastIndexByte(s, ':'); idx >= 0 {
+		s = s[:idx]
+	}
+	s = strings.Trim(s, "[]")
+	return s == "" || s == "localhost" || s == "127.0.0.1" || s == "::1"
 }
