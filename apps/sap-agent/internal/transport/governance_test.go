@@ -218,3 +218,110 @@ func TestFilterDownstreamPriceItems_BelowCostRuleWithCostLookup(t *testing.T) {
 		t.Fatalf("expected old_cost_price=60.0 from cost lookup, got %v", payload["old_cost_price"])
 	}
 }
+
+func TestFilterDownstreamPriceItems_SkipsDuplicatePendingApproval(t *testing.T) {
+	var cancelCount atomic.Int32
+	var submitCount atomic.Int32
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/auth/login":
+			_ = json.NewEncoder(w).Encode(map[string]any{"token": "test-jwt"})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/approvals/policies/catalog":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"is_enabled":        true,
+				"requires_approval": true,
+				"rules": map[string]any{
+					"price_drop_requires_approval": true,
+				},
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/products/master-catalog/search":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{
+					"data": []map[string]any{
+						{
+							"product_id": 1373,
+							"sku":        "INV01332",
+							"prices": []map[string]any{
+								{"price_list_id": 1, "price_list_code": "PL-1", "price": 100.0, "is_active": true},
+							},
+						},
+					},
+				},
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/approvals":
+			_ = json.NewEncoder(w).Encode([]map[string]any{
+				{
+					"id":        32,
+					"entity_id": "1373:pl:1",
+					"payload":   map[string]any{"new_price": 80.0},
+				},
+			})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/approvals/32/cancel":
+			cancelCount.Add(1)
+			w.WriteHeader(http.StatusOK)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/approvals/submit":
+			submitCount.Add(1)
+			w.WriteHeader(http.StatusCreated)
+		default:
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client := transport.NewCloudClient(config.CloudConfig{
+		BaseURL:        server.URL,
+		APIKey:         "test-key",
+		OrganizationID: 1,
+		TimeoutSeconds: 5,
+	})
+
+	items := []mappings.CanonicalPriceListItem{
+		{ProductSKU: "INV01332", PriceListCode: "PL-1", Price: 80.0},
+	}
+
+	direct, held := client.FilterDownstreamPriceItems(context.Background(), items)
+	if len(direct) != 0 {
+		t.Fatalf("expected item held, got direct=%+v", direct)
+	}
+	if len(held) != 1 {
+		t.Fatalf("expected 1 held notice, got %v", held)
+	}
+	if cancelCount.Load() != 0 || submitCount.Load() != 0 {
+		t.Fatalf("expected 0 cancel and 0 submit for identical pending approval, got cancel=%d submit=%d", cancelCount.Load(), submitCount.Load())
+	}
+}
+
+func TestFilterDownstreamPriceItems_PolicyLookupErrorFailsClosed(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/auth/login":
+			_ = json.NewEncoder(w).Encode(map[string]any{"token": "test-jwt"})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/approvals/policies/catalog":
+			http.Error(w, "internal error", http.StatusInternalServerError)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client := transport.NewCloudClient(config.CloudConfig{
+		BaseURL:        server.URL,
+		APIKey:         "test-key",
+		OrganizationID: 1,
+		TimeoutSeconds: 5,
+	})
+
+	items := []mappings.CanonicalPriceListItem{
+		{ProductSKU: "SKU-ERR", PriceListCode: "PL-1", Price: 10.0},
+	}
+
+	direct, held := client.FilterDownstreamPriceItems(context.Background(), items)
+	if len(direct) != 0 {
+		t.Fatalf("expected fail-closed (0 direct items) on policy 500, got %+v", direct)
+	}
+	if len(held) == 0 {
+		t.Fatalf("expected held notice on policy lookup failure")
+	}
+}

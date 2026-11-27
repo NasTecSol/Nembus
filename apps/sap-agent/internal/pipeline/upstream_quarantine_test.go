@@ -151,3 +151,21 @@ func TestBinAllocationMSSQLErrorAbortsPostWithoutQuarantine(t *testing.T) {
 		}
 	}
 }
+
+func TestIsSAPNegativeInventoryError_BinShortfall1470000340(t *testing.T) {
+	err := &sap.APIError{
+		StatusCode: http.StatusBadRequest,
+		Code:       -10,
+		Message:    `1470000340 - You cannot allocate item "INV00028" from bin location "2"; allocated quantity exceeds available quantity`,
+	}
+	if !isSAPNegativeInventoryError(err) {
+		t.Fatalf("expected SAP error 1470000340 bin shortfall to be classified as negative inventory error")
+	}
+}
+
+func TestResolveCardCode_RequiresConfiguredDefaultWhenMissing(t *testing.T) {
+	u := &UpstreamSync{}
+	if _, err := u.resolveCardCode(nil, nil); err == nil {
+		t.Fatalf("expected error when customerID is nil and NembusDefaultCustomer is empty (must not fall back to hardcoded C000001)")
+	}
+}

@@ -349,6 +349,8 @@ func (c *Client) ResolveWarehouseBinAllocations(ctx context.Context, itemCode, w
 	}
 
 	if remaining > 1e-9 && dftBinAbs > 0 {
+		log.Printf("⚠️ [SAP-Bin] Bin stock shortfall for item=%s whs=%s: required=%.3f, unallocated=%.3f (falling back to default bin %d)",
+			itemCode, warehouseCode, requiredQty, remaining, dftBinAbs)
 		merged := false
 		for i := range allocs {
 			if allocs[i].BinAbsEntry == dftBinAbs {

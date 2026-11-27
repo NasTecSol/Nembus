@@ -364,20 +364,10 @@ SELECT
     ISNULL(AvgPrice, 0.0) AS AvgPrice
 FROM OITM
 WHERE (
-    UpdateDate >= CAST(@SinceDateTime AS DATETIME)
-    OR (UpdateDate = @SinceDate AND (
-        CASE WHEN ISNULL(UpdateTS, 0) > 0 AND ISNULL(UpdateTS, 0) < 10000
-             THEN ISNULL(UpdateTS, 0) * 100
-             ELSE ISNULL(UpdateTS, 235959)
-        END
-    ) >= @SinceTime)
-    OR CreateDate >= CAST(@SinceDateTime AS DATETIME)
-    OR (CreateDate = @SinceDate AND (
-        CASE WHEN ISNULL(CreateTS, 0) > 0 AND ISNULL(CreateTS, 0) < 10000
-             THEN ISNULL(CreateTS, 0) * 100
-             ELSE ISNULL(CreateTS, 235959)
-        END
-    ) >= @SinceTime)
+    UpdateDate > CAST(@SinceDate AS DATE)
+    OR (UpdateDate = CAST(@SinceDate AS DATE) AND ISNULL(UpdateTS, 0) >= @SinceTime)
+    OR CreateDate > CAST(@SinceDate AS DATE)
+    OR (CreateDate = CAST(@SinceDate AS DATE) AND ISNULL(CreateTS, 0) >= @SinceTime)
 )
 ORDER BY ItemCode;
 `
@@ -405,25 +395,16 @@ FROM OBCD b
 LEFT JOIN OUOM u ON b.UomEntry = u.UomEntry
 INNER JOIN OITM m ON b.ItemCode = m.ItemCode
 WHERE (
-    m.UpdateDate >= CAST(@SinceDateTime AS DATETIME)
-    OR (m.UpdateDate = @SinceDate AND (
-        CASE WHEN ISNULL(m.UpdateTS, 0) > 0 AND ISNULL(m.UpdateTS, 0) < 10000
-             THEN ISNULL(m.UpdateTS, 0) * 100
-             ELSE ISNULL(m.UpdateTS, 235959)
-        END
-    ) >= @SinceTime)
-    OR m.CreateDate >= CAST(@SinceDateTime AS DATETIME)
-    OR (m.CreateDate = @SinceDate AND (
-        CASE WHEN ISNULL(m.CreateTS, 0) > 0 AND ISNULL(m.CreateTS, 0) < 10000
-             THEN ISNULL(m.CreateTS, 0) * 100
-             ELSE ISNULL(m.CreateTS, 235959)
-        END
-    ) >= @SinceTime)
+    m.UpdateDate > CAST(@SinceDate AS DATE)
+    OR (m.UpdateDate = CAST(@SinceDate AS DATE) AND ISNULL(m.UpdateTS, 0) >= @SinceTime)
+    OR m.CreateDate > CAST(@SinceDate AS DATE)
+    OR (m.CreateDate = CAST(@SinceDate AS DATE) AND ISNULL(m.CreateTS, 0) >= @SinceTime)
 )
 ORDER BY b.BcdEntry;
 `
 
 const QueryServerNow = `SELECT GETDATE();`
+const QueryServerNowOffset = `SELECT SYSDATETIMEOFFSET();`
 
 const QueryInventoryStock = `
 SELECT 
@@ -493,20 +474,10 @@ const QueryInventoryStockDelta = `
     INNER JOIN OITM m WITH (NOLOCK) ON m.ItemCode = w.ItemCode
     WHERE (w.OnHand <> 0 OR w.IsCommited <> 0 OR w.OnOrder <> 0 OR w.MinStock <> 0 OR w.MaxStock <> 0)
       AND (
-          m.UpdateDate >= CAST(@SinceDateTime AS DATETIME)
-          OR (m.UpdateDate = @SinceDate AND (
-              CASE WHEN ISNULL(m.UpdateTS, 0) > 0 AND ISNULL(m.UpdateTS, 0) < 10000
-                   THEN ISNULL(m.UpdateTS, 0) * 100
-                   ELSE ISNULL(m.UpdateTS, 235959)
-              END
-          ) >= @SinceTime)
-          OR m.CreateDate >= CAST(@SinceDateTime AS DATETIME)
-          OR (m.CreateDate = @SinceDate AND (
-              CASE WHEN ISNULL(m.CreateTS, 0) > 0 AND ISNULL(m.CreateTS, 0) < 10000
-                   THEN ISNULL(m.CreateTS, 0) * 100
-                   ELSE ISNULL(m.CreateTS, 235959)
-              END
-          ) >= @SinceTime)
+          m.UpdateDate > CAST(@SinceDate AS DATE)
+          OR (m.UpdateDate = CAST(@SinceDate AS DATE) AND ISNULL(m.UpdateTS, 0) >= @SinceTime)
+          OR m.CreateDate > CAST(@SinceDate AS DATE)
+          OR (m.CreateDate = CAST(@SinceDate AS DATE) AND ISNULL(m.CreateTS, 0) >= @SinceTime)
       )
     UNION
     SELECT DISTINCT l.ItemCode, l.Warehouse AS WhsCode
@@ -785,20 +756,10 @@ FROM ITM1 i
 LEFT JOIN OUOM u ON i.UomEntry = u.UomEntry
 INNER JOIN OITM m ON i.ItemCode = m.ItemCode
 WHERE i.Price > 0 AND (
-    m.UpdateDate >= CAST(@SinceDateTime AS DATETIME)
-    OR (m.UpdateDate = @SinceDate AND (
-        CASE WHEN ISNULL(m.UpdateTS, 0) > 0 AND ISNULL(m.UpdateTS, 0) < 10000
-             THEN ISNULL(m.UpdateTS, 0) * 100
-             ELSE ISNULL(m.UpdateTS, 235959)
-        END
-    ) >= @SinceTime)
-    OR m.CreateDate >= CAST(@SinceDateTime AS DATETIME)
-    OR (m.CreateDate = @SinceDate AND (
-        CASE WHEN ISNULL(m.CreateTS, 0) > 0 AND ISNULL(m.CreateTS, 0) < 10000
-             THEN ISNULL(m.CreateTS, 0) * 100
-             ELSE ISNULL(m.CreateTS, 235959)
-        END
-    ) >= @SinceTime)
+    m.UpdateDate > CAST(@SinceDate AS DATE)
+    OR (m.UpdateDate = CAST(@SinceDate AS DATE) AND ISNULL(m.UpdateTS, 0) >= @SinceTime)
+    OR m.CreateDate > CAST(@SinceDate AS DATE)
+    OR (m.CreateDate = CAST(@SinceDate AS DATE) AND ISNULL(m.CreateTS, 0) >= @SinceTime)
 )
 ORDER BY i.ItemCode, i.PriceList;
 `
