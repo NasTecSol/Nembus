@@ -365,8 +365,8 @@ func (s *Server) startUpstreamScheduler() {
 			if err != nil {
 				log.Printf("[SAP-AGENT] Scheduled upstream sync notice: %v", err)
 			} else if stats != nil && (stats.TransactionsPosted+stats.OrdersPosted+stats.ReturnsPosted+stats.TransactionsHeld+stats.OrdersHeld+stats.Errors > 0) {
-				log.Printf("[SAP-AGENT] Scheduled upstream sync completed: %d txns, %d orders, %d returns posted, %d held, %d errors in %v",
-					stats.TransactionsPosted, stats.OrdersPosted, stats.ReturnsPosted, stats.TransactionsHeld+stats.OrdersHeld, stats.Errors, stats.Duration.Round(time.Millisecond))
+				log.Printf("[SAP-AGENT] Scheduled upstream sync completed: %d txns, %d orders, %d returns posted, %d held, %d errors, %d quarantined in %v",
+					stats.TransactionsPosted, stats.OrdersPosted, stats.ReturnsPosted, stats.TransactionsHeld+stats.OrdersHeld, stats.Errors, stats.Quarantined, stats.Duration.Round(time.Millisecond))
 			}
 		},
 	)

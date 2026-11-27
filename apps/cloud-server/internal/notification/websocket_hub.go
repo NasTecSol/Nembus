@@ -94,16 +94,25 @@ func (h *WebSocketHub) Run(stopCh <-chan struct{}) {
 			log.Printf("[WebSocketHub] Client disconnected: OrgID=%d UserID=%d", client.OrgID, client.UserID)
 
 		case message := <-h.broadcast:
-			h.mu.RLock()
+			h.mu.Lock()
 			for client := range h.clients {
 				select {
 				case client.Send <- message:
 				default:
-					close(client.Send)
 					delete(h.clients, client)
+					if orgMap, exists := h.orgClients[client.OrgID]; exists {
+						delete(orgMap, client)
+						if len(orgMap) == 0 {
+							delete(h.orgClients, client.OrgID)
+						}
+					}
+					close(client.Send)
+					if client.Conn != nil {
+						_ = client.Conn.Close()
+					}
 				}
 			}
-			h.mu.RUnlock()
+			h.mu.Unlock()
 		}
 	}
 }

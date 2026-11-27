@@ -28,9 +28,10 @@ type SAPClient interface {
 	ResolveInvoiceBaseLine(ctx context.Context, baseDocEntry int, itemCode string) (*int, error)
 }
 
-// isSAPNegativeInventoryError returns true ONLY when SAP explicitly rejected the
-// document due to negative inventory / stock shortage — never on generic [code -10]
-// validation errors such as bin allocation (1470000341) or closed posting periods.
+// isSAPNegativeInventoryError returns true when SAP explicitly rejected the
+// document due to negative inventory, stock shortage, or bin-location quantity
+// shortfall (1470000340) — never on unrelated [code -10] configuration errors
+// such as missing bin allocation (1470000341) or closed posting periods.
 func isSAPNegativeInventoryError(err error) bool {
 	if err == nil {
 		return false
@@ -39,7 +40,9 @@ func isSAPNegativeInventoryError(err error) bool {
 	return strings.Contains(errStr, "fall below zero") ||
 		strings.Contains(errStr, "falls into negative") ||
 		strings.Contains(errStr, "negative inventory") ||
-		strings.Contains(errStr, "10000023")
+		strings.Contains(errStr, "10000023") ||
+		strings.Contains(errStr, "1470000340") ||
+		strings.Contains(errStr, "allocated quantity exceeds available quantity")
 }
 
 type NembusClient interface {
@@ -318,6 +321,7 @@ type UpstreamStats struct {
 	OrdersHeld         int           `json:"orders_held,omitempty"`
 	ReturnsPosted      int           `json:"returns_posted"`
 	PaymentsPosted     int           `json:"payments_posted,omitempty"`
+	Quarantined        int           `json:"quarantined,omitempty"`
 	Errors             int           `json:"errors"`
 	Duration           time.Duration `json:"duration"`
 }
@@ -395,9 +399,11 @@ func (s *UpstreamSync) ProcessOutbox(ctx context.Context) (*UpstreamStats, error
 	for _, tx := range approvedPOS {
 		retryKey := "tx:" + tx.TransactionNumber
 		if skip, nextAt, quarantined := s.shouldBackoff(retryKey, start); skip {
-			if !quarantined {
-				s.emitLog("pos_transactions", "WARN", fmt.Sprintf("[Upstream] pos_transactions: backing off %s until %s", tx.TransactionNumber, nextAt.Format(time.RFC3339)))
+			if quarantined {
+				stats.Quarantined++
+				continue
 			}
+			s.emitLog("pos_transactions", "WARN", fmt.Sprintf("[Upstream] pos_transactions: backing off %s until %s", tx.TransactionNumber, nextAt.Format(time.RFC3339)))
 			txErrors++
 			stats.Errors++
 			continue
@@ -428,9 +434,11 @@ func (s *UpstreamSync) ProcessOutbox(ctx context.Context) (*UpstreamStats, error
 	for _, order := range approvedOrders {
 		retryKey := "order:" + order.OrderNumber
 		if skip, nextAt, quarantined := s.shouldBackoff(retryKey, start); skip {
-			if !quarantined {
-				s.emitLog("sales_orders", "WARN", fmt.Sprintf("[Upstream] sales_orders: backing off %s until %s", order.OrderNumber, nextAt.Format(time.RFC3339)))
+			if quarantined {
+				stats.Quarantined++
+				continue
 			}
+			s.emitLog("sales_orders", "WARN", fmt.Sprintf("[Upstream] sales_orders: backing off %s until %s", order.OrderNumber, nextAt.Format(time.RFC3339)))
 			orderErrors++
 			stats.Errors++
 			continue
@@ -476,9 +484,11 @@ func (s *UpstreamSync) ProcessOutbox(ctx context.Context) (*UpstreamStats, error
 			}
 			retryKey := "tx:" + tx.TransactionNumber
 			if skip, nextAt, quarantined := s.shouldBackoff(retryKey, start); skip {
-				if !quarantined {
-					s.emitLog("pos_transactions", "WARN", fmt.Sprintf("[Upstream] pos_transactions: backing off %s until %s", tx.TransactionNumber, nextAt.Format(time.RFC3339)))
+				if quarantined {
+					stats.Quarantined++
+					continue
 				}
+				s.emitLog("pos_transactions", "WARN", fmt.Sprintf("[Upstream] pos_transactions: backing off %s until %s", tx.TransactionNumber, nextAt.Format(time.RFC3339)))
 				txErrors++
 				stats.Errors++
 				continue
@@ -534,9 +544,11 @@ func (s *UpstreamSync) ProcessOutbox(ctx context.Context) (*UpstreamStats, error
 			}
 			retryKey := "order:" + order.OrderNumber
 			if skip, nextAt, quarantined := s.shouldBackoff(retryKey, start); skip {
-				if !quarantined {
-					s.emitLog("sales_orders", "WARN", fmt.Sprintf("[Upstream] sales_orders: backing off %s until %s", order.OrderNumber, nextAt.Format(time.RFC3339)))
+				if quarantined {
+					stats.Quarantined++
+					continue
 				}
+				s.emitLog("sales_orders", "WARN", fmt.Sprintf("[Upstream] sales_orders: backing off %s until %s", order.OrderNumber, nextAt.Format(time.RFC3339)))
 				orderErrors++
 				stats.Errors++
 				continue
@@ -592,9 +604,11 @@ func (s *UpstreamSync) ProcessOutbox(ctx context.Context) (*UpstreamStats, error
 			}
 			retryKey := "ret:" + ret.ReturnNumber
 			if skip, nextAt, quarantined := s.shouldBackoff(retryKey, start); skip {
-				if !quarantined {
-					s.emitLog("sales_returns", "WARN", fmt.Sprintf("[Upstream] sales_returns: backing off %s until %s", ret.ReturnNumber, nextAt.Format(time.RFC3339)))
+				if quarantined {
+					stats.Quarantined++
+					continue
 				}
+				s.emitLog("sales_returns", "WARN", fmt.Sprintf("[Upstream] sales_returns: backing off %s until %s", ret.ReturnNumber, nextAt.Format(time.RFC3339)))
 				returnErrors++
 				stats.Errors++
 				continue
@@ -690,7 +704,10 @@ func (s *UpstreamSync) postTransactionToSAP(ctx context.Context, tx *nembus.POST
 	}
 
 	// 3. Prepare Invoice Header
-	cardCode := s.resolveDocumentCardCode(ctx, tx.CustomerSAPCode, tx.CustomerID)
+	cardCode, cardErr := s.resolveDocumentCardCode(ctx, tx.CustomerSAPCode, tx.CustomerID)
+	if cardErr != nil {
+		return cardErr
+	}
 
 	invDate := tx.TransactionDate.Format("2006-01-02")
 	invReq := &sap.SAPInvoiceRequest{
@@ -869,28 +886,32 @@ func (s *UpstreamSync) postTransactionToSAP(ctx context.Context, tx *nembus.POST
 	return s.nembusClient.MarkTransactionPostedToSAP(ctx, tx.ID, sapInv.DocEntry, sapInv.DocNum)
 }
 
-func (s *UpstreamSync) resolveDocumentCardCode(ctx context.Context, customerSAPCode string, customerID *uuid.UUID) string {
+func (s *UpstreamSync) resolveDocumentCardCode(ctx context.Context, customerSAPCode string, customerID *uuid.UUID) (string, error) {
 	if trimmed := strings.TrimSpace(customerSAPCode); trimmed != "" {
-		return trimmed
+		return trimmed, nil
 	}
 	return s.resolveCardCode(ctx, customerID)
 }
 
-func (s *UpstreamSync) resolveCardCode(ctx context.Context, customerID *uuid.UUID) string {
+func (s *UpstreamSync) resolveCardCode(ctx context.Context, customerID *uuid.UUID) (string, error) {
+	defaultCustomer := ""
+	if s.cfg != nil {
+		defaultCustomer = strings.TrimSpace(s.cfg.NembusDefaultCustomer)
+	}
 	if customerID == nil || *customerID == uuid.Nil {
-		if s.cfg.NembusDefaultCustomer != "" {
-			return s.cfg.NembusDefaultCustomer
+		if defaultCustomer != "" {
+			return defaultCustomer, nil
 		}
-		return "C000001"
+		return "", fmt.Errorf("missing customer SAP CardCode and NEMBUS_DEFAULT_CUSTOMER is not configured")
 	}
 	code, err := s.nembusClient.FetchCustomerSAPCode(ctx, *customerID)
 	if err != nil || strings.TrimSpace(code) == "" {
-		if s.cfg.NembusDefaultCustomer != "" {
-			return s.cfg.NembusDefaultCustomer
+		if defaultCustomer != "" {
+			return defaultCustomer, nil
 		}
-		return "C000001"
+		return "", fmt.Errorf("customer %s has no SAP CardCode and NEMBUS_DEFAULT_CUSTOMER is not configured", customerID.String())
 	}
-	return strings.TrimSpace(code)
+	return strings.TrimSpace(code), nil
 }
 
 func (s *UpstreamSync) postSalesReturnToSAP(ctx context.Context, ret *nembus.SalesReturn) error {
@@ -951,7 +972,10 @@ func (s *UpstreamSync) postSalesReturnToSAP(ctx context.Context, ret *nembus.Sal
 		docLines = append(docLines, docLine)
 	}
 
-	cardCode := s.resolveDocumentCardCode(ctx, ret.CustomerSAPCode, ret.CustomerID)
+	cardCode, cardErr := s.resolveDocumentCardCode(ctx, ret.CustomerSAPCode, ret.CustomerID)
+	if cardErr != nil {
+		return cardErr
+	}
 	retDate := ret.ReturnDate.Format("2006-01-02")
 	comments := fmt.Sprintf("Nembus POS Return: %s", ret.ReturnNumber)
 	if ret.ReturnReason != nil && *ret.ReturnReason != "" {
@@ -1035,7 +1059,10 @@ func (s *UpstreamSync) postSalesOrderToSAP(ctx context.Context, order *nembus.Sa
 		return fmt.Errorf("sales order %s has no billable lines", order.OrderNumber)
 	}
 
-	cardCode := s.resolveDocumentCardCode(ctx, order.CustomerSAPCode, order.CustomerID)
+	cardCode, cardErr := s.resolveDocumentCardCode(ctx, order.CustomerSAPCode, order.CustomerID)
+	if cardErr != nil {
+		return cardErr
+	}
 	invDate := order.OrderDate.Format("2006-01-02")
 	invReq := &sap.SAPInvoiceRequest{
 		CardCode:      cardCode,
